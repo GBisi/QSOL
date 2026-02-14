@@ -58,10 +58,13 @@ set Tasks;
 param K : Int[1 .. 10] = 3;
 param Cost[Workers,Tasks] : Real;
 param Allowed[Workers,Tasks] : Bool = true;
+param StartNode[Tasks] : Elem(Workers);
 ```
 
 Usage notes:
 - Indexed params can be referenced as `Cost[w, t]` or `Cost(w, t)`.
+- `Elem(SetName)` params return set elements and can be passed to methods like `Subset.has(...)`.
+- `Elem(SetName)` params do not allow defaults.
 - Scalar param usage in numeric expressions is currently limited; prefer indexed params or literals in backend-v1-safe models.
 
 ### 3.3 Finds
@@ -112,6 +115,16 @@ x > y
 x >= y
 ```
 
+Compare tolerance notes in boolean contexts (`if`, soft constraints, nested formulas):
+- fixed epsilon: `1e-6`
+- `<` means `lhs - rhs <= -1e-6`
+- `<=` means `lhs - rhs <= +1e-6`
+- `>` means `lhs - rhs >= +1e-6`
+- `>=` means `lhs - rhs >= -1e-6`
+- `=` means `lhs - rhs` inside `[-1e-6, +1e-6]`
+- `!=` means outside that band
+- exactly-on-boundary cases are intentionally indeterminate
+
 ### 5.2 Numeric expressions
 
 ```qsol
@@ -122,6 +135,7 @@ x - y
 x * y
 x / y
 if cond then a else b
+size(V)
 ```
 
 ### 5.3 Calls and member access
@@ -132,6 +146,7 @@ Assign.is(w, t)
 
 Cost(w, t)
 Cost[w, t]
+size(V)
 ```
 
 ## 6. Quantifiers

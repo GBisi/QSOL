@@ -39,7 +39,7 @@ def test_resolver_covers_duplicate_and_unknown_references() -> None:
                 span=span,
                 name="w",
                 indices=["MissingSet"],
-                scalar_type=ast.ScalarTypeRef(span=span, kind="Real"),
+                value_type=ast.ScalarTypeRef(span=span, kind="Real"),
                 default=None,
             ),
             ast.FindDecl(

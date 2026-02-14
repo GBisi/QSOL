@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
 from qsol.diag.diagnostic import Diagnostic, Severity
+from qsol.lower import ir
 from qsol.lower.ir import GroundIR, GroundProblem, KernelIR, KProblem
 
 LOGGER = logging.getLogger(__name__)
@@ -126,6 +127,39 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                     )
                     continue
 
+            if pdecl.elem_set is not None:
+                allowed = p_sets.get(pdecl.elem_set)
+                if allowed is None:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2201",
+                            message=f"missing set values for `{pdecl.elem_set}` used by `{pdecl.name}`",
+                            span=pdecl.span,
+                        )
+                    )
+                    continue
+
+                normalized, bad_value = _normalize_elem_value(
+                    value,
+                    list(pdecl.indices),
+                    allowed_members=frozenset(allowed),
+                )
+                if bad_value is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2201",
+                            message=(
+                                f"param `{pdecl.name}` has value `{bad_value}` not present in set "
+                                f"`{pdecl.elem_set}`"
+                            ),
+                            span=pdecl.span,
+                        )
+                    )
+                    continue
+                value = normalized
+
             p_params[pdecl.name] = value
 
         out.append(
@@ -135,8 +169,18 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 set_values=p_sets,
                 params=p_params,
                 finds=problem.finds,
-                constraints=problem.constraints,
-                objectives=problem.objectives,
+                constraints=_fold_size_in_constraints(
+                    problem.constraints,
+                    set_sizes={name: len(values) for name, values in p_sets.items()},
+                    declared_sets=frozenset(s.name for s in problem.sets),
+                    diagnostics=diagnostics,
+                ),
+                objectives=_fold_size_in_objectives(
+                    problem.objectives,
+                    set_sizes={name: len(values) for name, values in p_sets.items()},
+                    declared_sets=frozenset(s.name for s in problem.sets),
+                    diagnostics=diagnostics,
+                ),
             )
         )
 
@@ -172,3 +216,423 @@ def _expand_indexed_default(
     dim = dims[0]
     elems = sorted(sets.get(dim, []))
     return {elem: _expand_indexed_default(default_value, dims[1:], sets) for elem in elems}
+
+
+def _normalize_elem_value(
+    value: object,
+    dims: list[str],
+    *,
+    allowed_members: frozenset[str],
+) -> tuple[object, str | None]:
+    if dims:
+        if not isinstance(value, dict):
+            return value, "<non-object>"
+        normalized: dict[str, object] = {}
+        for key, inner in value.items():
+            normalized_inner, bad = _normalize_elem_value(
+                inner,
+                dims[1:],
+                allowed_members=allowed_members,
+            )
+            if bad is not None:
+                return value, bad
+            normalized[str(key)] = normalized_inner
+        return normalized, None
+
+    if isinstance(value, dict):
+        return value, "<object>"
+
+    member = str(value)
+    if member not in allowed_members:
+        return value, member
+    return member, None
+
+
+def _fold_size_in_constraints(
+    constraints: tuple[ir.KConstraint, ...],
+    *,
+    set_sizes: Mapping[str, int],
+    declared_sets: frozenset[str],
+    diagnostics: list[Diagnostic],
+) -> tuple[ir.KConstraint, ...]:
+    return tuple(
+        replace(
+            constraint,
+            expr=_as_kbool(
+                _fold_size_in_expr(
+                    constraint.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+        for constraint in constraints
+    )
+
+
+def _fold_size_in_objectives(
+    objectives: tuple[ir.KObjective, ...],
+    *,
+    set_sizes: Mapping[str, int],
+    declared_sets: frozenset[str],
+    diagnostics: list[Diagnostic],
+) -> tuple[ir.KObjective, ...]:
+    return tuple(
+        replace(
+            objective,
+            expr=_as_knum(
+                _fold_size_in_expr(
+                    objective.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+        for objective in objectives
+    )
+
+
+def _as_kbool(expr: ir.KExpr) -> ir.KBoolExpr:
+    return cast(ir.KBoolExpr, expr)
+
+
+def _as_knum(expr: ir.KExpr) -> ir.KNumExpr:
+    return cast(ir.KNumExpr, expr)
+
+
+def _fold_size_in_expr(
+    expr: ir.KExpr,
+    *,
+    set_sizes: Mapping[str, int],
+    declared_sets: frozenset[str],
+    diagnostics: list[Diagnostic],
+) -> ir.KExpr:
+    if isinstance(expr, ir.KFuncCall):
+        args = tuple(
+            _fold_size_in_expr(
+                arg,
+                set_sizes=set_sizes,
+                declared_sets=declared_sets,
+                diagnostics=diagnostics,
+            )
+            for arg in expr.args
+        )
+        call = expr if args == expr.args else replace(expr, args=args)
+        if call.name != "size":
+            return call
+        return _fold_size_call(
+            call,
+            set_sizes=set_sizes,
+            declared_sets=declared_sets,
+            diagnostics=diagnostics,
+        )
+
+    if isinstance(expr, ir.KMethodCall):
+        return replace(
+            expr,
+            target=_fold_size_in_expr(
+                expr.target,
+                set_sizes=set_sizes,
+                declared_sets=declared_sets,
+                diagnostics=diagnostics,
+            ),
+            args=tuple(
+                _fold_size_in_expr(
+                    arg,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+                for arg in expr.args
+            ),
+        )
+
+    if isinstance(expr, ir.KNot):
+        return replace(
+            expr,
+            expr=_as_kbool(
+                _fold_size_in_expr(
+                    expr.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KAnd):
+        return replace(
+            expr,
+            left=_as_kbool(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_kbool(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KOr):
+        return replace(
+            expr,
+            left=_as_kbool(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_kbool(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KImplies):
+        return replace(
+            expr,
+            left=_as_kbool(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_kbool(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KCompare):
+        return replace(
+            expr,
+            left=_fold_size_in_expr(
+                expr.left,
+                set_sizes=set_sizes,
+                declared_sets=declared_sets,
+                diagnostics=diagnostics,
+            ),
+            right=_fold_size_in_expr(
+                expr.right,
+                set_sizes=set_sizes,
+                declared_sets=declared_sets,
+                diagnostics=diagnostics,
+            ),
+        )
+    if isinstance(expr, ir.KAdd):
+        return replace(
+            expr,
+            left=_as_knum(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_knum(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KSub):
+        return replace(
+            expr,
+            left=_as_knum(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_knum(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KMul):
+        return replace(
+            expr,
+            left=_as_knum(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_knum(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KDiv):
+        return replace(
+            expr,
+            left=_as_knum(
+                _fold_size_in_expr(
+                    expr.left,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            right=_as_knum(
+                _fold_size_in_expr(
+                    expr.right,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KNeg):
+        return replace(
+            expr,
+            expr=_as_knum(
+                _fold_size_in_expr(
+                    expr.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KIfThenElse):
+        return replace(
+            expr,
+            cond=_as_kbool(
+                _fold_size_in_expr(
+                    expr.cond,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            then_expr=_as_knum(
+                _fold_size_in_expr(
+                    expr.then_expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            else_expr=_as_knum(
+                _fold_size_in_expr(
+                    expr.else_expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KQuantifier):
+        return replace(
+            expr,
+            expr=_as_kbool(
+                _fold_size_in_expr(
+                    expr.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KSum):
+        return replace(
+            expr,
+            comp=replace(
+                expr.comp,
+                term=_as_knum(
+                    _fold_size_in_expr(
+                        expr.comp.term,
+                        set_sizes=set_sizes,
+                        declared_sets=declared_sets,
+                        diagnostics=diagnostics,
+                    )
+                ),
+            ),
+        )
+
+    return expr
+
+
+def _fold_size_call(
+    call: ir.KFuncCall,
+    *,
+    set_sizes: Mapping[str, int],
+    declared_sets: frozenset[str],
+    diagnostics: list[Diagnostic],
+) -> ir.KNumLit | ir.KFuncCall:
+    fallback = ir.KNumLit(span=call.span, value=0.0)
+
+    if len(call.args) != 1:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2101",
+                message="size() expects exactly one set identifier argument",
+                span=call.span,
+            )
+        )
+        return fallback
+
+    arg = call.args[0]
+    if not isinstance(arg, ir.KName):
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2101",
+                message="size() expects a declared set identifier",
+                span=call.span,
+            )
+        )
+        return fallback
+
+    if arg.name in set_sizes:
+        return ir.KNumLit(span=call.span, value=float(set_sizes[arg.name]))
+
+    if arg.name in declared_sets:
+        # Keep existing missing-set QSOL2201 behavior from instance validation.
+        return call
+
+    diagnostics.append(
+        Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2101",
+            message=f"size() expects a declared set identifier, got `{arg.name}`",
+            span=arg.span,
+        )
+    )
+    return fallback

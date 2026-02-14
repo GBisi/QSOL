@@ -80,7 +80,7 @@ pred_formal: NAME ["in" NAME]
 
 set_decl: "set" NAME
 
-param_decl: "param" NAME param_indexing? ":" scalar_type param_default?
+param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
 param_indexing: "[" name_list "]"
 name_list: NAME ("," NAME)*
 
@@ -97,9 +97,14 @@ mapping_type: "Mapping" "(" NAME "->" NAME ")"
 user_unknown_type: NAME "(" [name_list] ")"
 
 // Scalar types
+param_value_type: scalar_type
+                | elem_type
+
 scalar_type: "Bool"
            | "Real"
            | int_type
+
+elem_type: "Elem" "(" NAME ")"
 
 int_type: "Int" "[" signed_int ".." signed_int "]"
 signed_int: SIGNED_NUMBER
@@ -191,6 +196,7 @@ predicate_call: NAME "(" [arg_list] ")"            -> func_call
               | dotted_call
 
 indexed_ref: NAME "[" [arg_list] "]"               -> func_call
+size_call: "size" "(" [arg_list] ")"
 
 dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
 
@@ -211,6 +217,7 @@ dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
 ?num_atom: "(" num_expr ")"
          | if_expr
          | num_aggregate          // STRICT: only sum/count here
+         | size_call
          | indexed_ref
          | NAME
          | NUMBER

@@ -21,6 +21,7 @@ class KParamDecl(KNode):
     name: str
     indices: tuple[str, ...]
     scalar_kind: str
+    elem_set: str | None
     default: object | None
 
 

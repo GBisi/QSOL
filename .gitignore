@@ -19,3 +19,6 @@ logs/
 .mypy_cache/
 .ruff_cache/
 .coverage
+
+# Qsol-specific files
+outdir/

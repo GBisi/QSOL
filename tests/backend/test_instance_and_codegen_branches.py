@@ -42,6 +42,36 @@ def _mapping_find(name: str, dom: str, cod: str) -> ir.KFindDecl:
     )
 
 
+def _contains_size_call(expr: ir.KExpr) -> bool:
+    if isinstance(expr, ir.KFuncCall):
+        return expr.name == "size" or any(_contains_size_call(arg) for arg in expr.args)
+    if isinstance(expr, ir.KMethodCall):
+        return _contains_size_call(expr.target) or any(
+            _contains_size_call(arg) for arg in expr.args
+        )
+    if isinstance(expr, ir.KNot):
+        return _contains_size_call(expr.expr)
+    if isinstance(expr, (ir.KAnd, ir.KOr, ir.KImplies)):
+        return _contains_size_call(expr.left) or _contains_size_call(expr.right)
+    if isinstance(expr, ir.KCompare):
+        return _contains_size_call(expr.left) or _contains_size_call(expr.right)
+    if isinstance(expr, (ir.KAdd, ir.KSub, ir.KMul, ir.KDiv)):
+        return _contains_size_call(expr.left) or _contains_size_call(expr.right)
+    if isinstance(expr, ir.KNeg):
+        return _contains_size_call(expr.expr)
+    if isinstance(expr, ir.KIfThenElse):
+        return (
+            _contains_size_call(expr.cond)
+            or _contains_size_call(expr.then_expr)
+            or _contains_size_call(expr.else_expr)
+        )
+    if isinstance(expr, ir.KQuantifier):
+        return _contains_size_call(expr.expr)
+    if isinstance(expr, ir.KSum):
+        return _contains_size_call(expr.comp.term)
+    return False
+
+
 def test_load_instance_requires_object_payload(tmp_path: Path) -> None:
     path = tmp_path / "bad.json"
     path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
@@ -68,6 +98,7 @@ def test_instantiate_ir_emits_shape_and_missing_errors() -> None:
                         name="w",
                         indices=("A",),
                         scalar_kind="Real",
+                        elem_set=None,
                         default=1.0,
                     ),
                 ),
@@ -89,6 +120,130 @@ def test_instantiate_ir_emits_shape_and_missing_errors() -> None:
     assert result.ground_ir is None
     codes = [d.code for d in result.diagnostics]
     assert "QSOL2201" in codes
+
+
+def test_instantiate_ir_validates_and_normalizes_elem_params() -> None:
+    span = _span()
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(
+                    ir.KSetDecl(span=span, name="V"),
+                    ir.KSetDecl(span=span, name="E"),
+                ),
+                params=(
+                    ir.KParamDecl(
+                        span=span,
+                        name="U",
+                        indices=("E",),
+                        scalar_kind="Elem",
+                        elem_set="V",
+                        default=None,
+                    ),
+                ),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    ok = instantiate_ir(
+        kernel,
+        {
+            "problem": "P",
+            "sets": {"V": [0, 1], "E": ["e0", "e1"]},
+            "params": {"U": {"e0": 0, "e1": "1"}},
+        },
+    )
+    assert ok.ground_ir is not None
+    assert not any(diag.is_error for diag in ok.diagnostics)
+    assert ok.ground_ir.problems[0].params["U"] == {"e0": "0", "e1": "1"}
+
+    bad = instantiate_ir(
+        kernel,
+        {
+            "problem": "P",
+            "sets": {"V": [0, 1], "E": ["e0", "e1"]},
+            "params": {"U": {"e0": 2, "e1": 1}},
+        },
+    )
+    assert bad.ground_ir is None
+    assert any("not present in set `V`" in diag.message for diag in bad.diagnostics)
+
+
+def test_instantiate_ir_folds_size_builtin_to_numeric_literal() -> None:
+    span = _span()
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="V"),),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(
+                    ir.KObjective(
+                        span=span,
+                        kind=ast.ObjectiveKind.MINIMIZE,
+                        expr=ir.KFuncCall(
+                            span=span,
+                            name="size",
+                            args=(ir.KName(span=span, name="V"),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    result = instantiate_ir(
+        kernel,
+        {"problem": "P", "sets": {"V": ["v1", "v2", "v3"]}, "params": {}},
+    )
+    assert result.ground_ir is not None
+    assert not any(diag.is_error for diag in result.diagnostics)
+
+    expr = result.ground_ir.problems[0].objectives[0].expr
+    assert isinstance(expr, ir.KNumLit)
+    assert expr.value == 3.0
+    assert not _contains_size_call(expr)
+
+
+def test_instantiate_ir_keeps_missing_set_behavior_for_size_builtin() -> None:
+    span = _span()
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="V"),),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(
+                    ir.KObjective(
+                        span=span,
+                        kind=ast.ObjectiveKind.MINIMIZE,
+                        expr=ir.KFuncCall(
+                            span=span,
+                            name="size",
+                            args=(ir.KName(span=span, name="V"),),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    result = instantiate_ir(kernel, {"problem": "P", "sets": {}, "params": {}})
+    assert result.ground_ir is None
+    assert any(diag.code == "QSOL2201" for diag in result.diagnostics)
+    assert not any(diag.code == "QSOL2101" for diag in result.diagnostics)
 
 
 def test_dimod_codegen_covers_soft_and_compare_paths() -> None:
@@ -245,6 +400,7 @@ def test_dimod_codegen_internal_error_paths() -> None:
         objectives=(),
     )
     binaries = {"S.has[a1]": dimod.Binary("S.has[a1]")}
+    cqm = dimod.ConstrainedQuadraticModel()
 
     # Unknown set in soft quantifier.
     bad_quant = ir.KQuantifier(
@@ -254,7 +410,7 @@ def test_dimod_codegen_internal_error_paths() -> None:
         domain_set="Missing",
         expr=ir.KBoolLit(span=span, value=True),
     )
-    assert codegen._soft_penalty(problem, bad_quant, binaries, diagnostics, env={}) is None
+    assert codegen._soft_penalty(problem, bad_quant, binaries, diagnostics, env={}, cqm=cqm) is None
 
     # Unknown method variable label path.
     bad_method = ir.KMethodCall(
@@ -268,7 +424,12 @@ def test_dimod_codegen_internal_error_paths() -> None:
     # Unsupported numeric expression and non-numeric binder path.
     assert (
         codegen._num_expr(
-            problem, ir.KName(span=span, name="x"), binaries, diagnostics, env={"x": "abc"}
+            problem,
+            ir.KName(span=span, name="x"),
+            binaries,
+            diagnostics,
+            env={"x": "abc"},
+            cqm=cqm,
         )
         is None
     )
@@ -284,6 +445,7 @@ def test_dimod_codegen_internal_error_paths() -> None:
             binaries,
             diagnostics,
             env={},
+            cqm=cqm,
         )
         is None
     )
@@ -413,8 +575,9 @@ def test_dimod_codegen_internal_error_paths() -> None:
             binaries,
             diagnostics,
             env={},
+            cqm=cqm2,
         )
-        is None
+        is not None
     )
     assert (
         codegen._num_expr(
@@ -436,6 +599,61 @@ def test_dimod_codegen_internal_error_paths() -> None:
             binaries,
             diagnostics,
             env={},
+            cqm=cqm2,
         )
         is None
     )
+
+
+def test_dimod_codegen_bool_ops_prefer_algebraic_forms() -> None:
+    span = _span()
+    codegen = DimodCodegen()
+    codegen._label_counter = 0
+    diagnostics: list = []
+    cqm = dimod.ConstrainedQuadraticModel()
+    x = dimod.Binary("x")
+    y = dimod.Binary("y")
+
+    and_expr = codegen._bool_and(cqm, x, y, span=span, diagnostics=diagnostics)
+    or_expr = codegen._bool_or(cqm, x, y, span=span, diagnostics=diagnostics)
+
+    assert and_expr is not None
+    assert or_expr is not None
+    assert codegen._is_quadratic_model(and_expr)
+    assert codegen._is_quadratic_model(or_expr)
+    assert len(cqm.constraints) == 0
+    assert not diagnostics
+
+
+def test_dimod_codegen_bool_ops_fallback_when_product_is_not_quadratic_safe() -> None:
+    span = _span()
+    codegen = DimodCodegen()
+    codegen._label_counter = 0
+    diagnostics: list = []
+    cqm = dimod.ConstrainedQuadraticModel()
+    x = dimod.Binary("x")
+    y = dimod.Binary("y")
+    z = dimod.Binary("z")
+
+    # x or y is quadratic in algebraic form; multiplying it by z is cubic and
+    # triggers the conservative aux-variable fallback path.
+    quadratic_or = codegen._bool_or(cqm, x, y, span=span, diagnostics=diagnostics)
+    assert quadratic_or is not None
+    constraints_before = len(cqm.constraints)
+
+    fallback_and = codegen._bool_and(cqm, quadratic_or, z, span=span, diagnostics=diagnostics)
+    assert fallback_and is not None
+    assert len(cqm.constraints) == constraints_before + 3
+    assert any(str(label).startswith("aux:and:") for label in fallback_and.variables)
+
+    # x and y is quadratic in algebraic form; combining with z via OR similarly
+    # triggers fallback to the reified constraints.
+    quadratic_and = codegen._bool_and(cqm, x, y, span=span, diagnostics=diagnostics)
+    assert quadratic_and is not None
+    constraints_before = len(cqm.constraints)
+
+    fallback_or = codegen._bool_or(cqm, quadratic_and, z, span=span, diagnostics=diagnostics)
+    assert fallback_or is not None
+    assert len(cqm.constraints) == constraints_before + 3
+    assert any(str(label).startswith("aux:or:") for label in fallback_or.variables)
+    assert not any(diag.is_error for diag in diagnostics)

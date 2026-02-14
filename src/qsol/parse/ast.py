@@ -63,6 +63,11 @@ class ScalarTypeRef(Node):
 
 
 @dataclass(frozen=True, slots=True)
+class ElemTypeRef(Node):
+    set_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class Literal(Node):
     value: bool | float | int | str
 
@@ -71,7 +76,7 @@ class Literal(Node):
 class ParamDecl(ProblemStmt):
     name: str
     indices: list[str]
-    scalar_type: ScalarTypeRef
+    value_type: ScalarTypeRef | ElemTypeRef
     default: Literal | None
 
 

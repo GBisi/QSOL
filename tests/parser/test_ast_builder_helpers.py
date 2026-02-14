@@ -85,6 +85,10 @@ def test_ast_builder_dispatch_branches() -> None:
         ast.UnknownTypeRef,
     )
     assert isinstance(builder._from_tree(_with_meta(Tree("scalar_type", []))), ast.ScalarTypeRef)
+    assert isinstance(
+        builder._from_tree(_with_meta(Tree("elem_type", [Token("NAME", "A")]))),
+        ast.ElemTypeRef,
+    )
     assert builder._from_tree(Tree("signed_int", [Token("SIGNED_NUMBER", "-2")])) == -2.0
     assert isinstance(builder._from_tree(_with_meta(Tree("hardness", []))), str)
 

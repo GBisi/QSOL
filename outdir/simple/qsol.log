@@ -1,22 +1,16 @@
-2026-02-14 16:25:45,615 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-34/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:25:45,648 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:26:47,145 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-35/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:26:47,179 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:26:56,854 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-36/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:26:56,888 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:29:58,995 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-37/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:29:59,033 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:35:48,263 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-38/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:35:48,299 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:36:27,844 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-40/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:36:27,878 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:41:24,600 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-44/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:41:24,635 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:43:12,331 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-45/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:43:12,366 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:44:39,298 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-46/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:44:39,329 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:45:31,429 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-47/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:45:31,462 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
-2026-02-14 16:45:50,814 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-48/test_run_errors_when_inferred_0/simple.instance.json
-2026-02-14 16:45:50,847 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:44:54,747 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-58/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:44:54,821 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:46:25,319 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-61/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:46:25,366 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:46:40,584 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-62/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:46:40,615 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:46:42,403 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-63/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:46:42,433 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:47:45,819 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-67/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:47:45,853 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:48:24,043 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-68/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:48:24,110 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 18:48:31,720 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-69/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 18:48:31,770 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-14 19:20:17,732 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-70/test_run_errors_when_inferred_0/simple.instance.json
+2026-02-14 19:20:17,778 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol

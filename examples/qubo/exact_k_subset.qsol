@@ -1,9 +1,0 @@
-problem ExactKSubset {
-  set Items;
-
-  find Pick : Subset(Items);
-
-  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
-
-  minimize sum(sum(if Pick.has(i) and Pick.has(j) then 1 else 0 for j in Items) for i in Items);
-}

@@ -67,3 +67,29 @@ problem BoundedMaxCut {
     program = parse_to_ast(text, filename="bounded_max_cut.qsol")
     assert len(program.items) == 1
     assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_elem_param_type() -> None:
+    text = """
+problem P {
+  set V;
+  set E;
+  param U[E] : Elem(V);
+}
+"""
+    program = parse_to_ast(text, filename="elem_param.qsol")
+    assert len(program.items) == 1
+    assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_size_builtin_in_numeric_context() -> None:
+    text = """
+problem P {
+  set V;
+  find S : Subset(V);
+  minimize size(V);
+}
+"""
+    program = parse_to_ast(text, filename="size_builtin.qsol")
+    assert len(program.items) == 1
+    assert isinstance(program.items[0], ast.ProblemDef)

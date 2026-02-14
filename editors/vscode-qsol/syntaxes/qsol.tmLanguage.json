@@ -40,6 +40,9 @@
       "include": "#unknownNames"
     },
     {
+      "include": "#setUses"
+    },
+    {
       "include": "#setIdentifiers"
     },
     {
@@ -142,7 +145,7 @@
               "name": "storage.modifier.declaration.qsol"
             },
             "2": {
-              "name": "entity.name.variable.qsol"
+              "name": "entity.name.type.set.qsol"
             }
           }
         },
@@ -249,12 +252,58 @@
       "name": "string.unquoted.qsol",
       "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\.\\s*(?:has|is)\\b)"
     },
+    "setUses": {
+      "patterns": [
+        {
+          "name": "meta.quantifier.domain.qsol",
+          "match": "\\b(in)\\s+([A-Za-z_][A-Za-z0-9_]*)\\b",
+          "captures": {
+            "1": {
+              "name": "keyword.control.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.set.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.type.subset.args.qsol",
+          "match": "\\b(Subset)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.set.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.set.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.type.mapping.args.qsol",
+          "match": "\\b(Mapping)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(->)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.set.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.set.qsol"
+            },
+            "3": {
+              "name": "keyword.operator.mapping.qsol"
+            },
+            "4": {
+              "name": "entity.name.type.set.qsol"
+            }
+          }
+        }
+      ]
+    },
     "setIdentifiers": {
       "name": "entity.name.type.set.qsol",
       "match": "\\b[A-Z][A-Z0-9_]*\\b"
     },
     "modelVariables": {
-      "name": "entity.name.variable.qsol",
+      "name": "entity.name.type.set.qsol",
       "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
     },
     "identifiers": {

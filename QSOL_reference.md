@@ -56,12 +56,14 @@ param Alpha : Real;
 param K : Int[1 .. 64] = 3;
 param Cost[Workers,Tasks] : Real;
 param Link[Workers,Tasks] : Bool = false;
+param StartNode[Tasks] : Elem(Workers);
 ```
 
-Supported scalar types:
+Supported parameter value types:
 - `Bool`
 - `Real`
 - `Int[lo .. hi]`
+- `Elem(SetName)` (an element drawn from a declared set)
 
 Indexing:
 - `param P[A,B] : Real;` means `P` is a nested map indexed first by `A`, then `B`.
@@ -69,10 +71,13 @@ Indexing:
 Default values:
 - Scalar defaults are allowed for all scalar types.
 - Indexed params may also have scalar defaults; instance expansion uses declared set elements.
+- `Elem(SetName)` params do not support defaults.
 
 Reading params in expressions:
 - Indexed params can be read as `Cost[w, t]` or `Cost(w, t)`.
+- Set-valued params can be used as set elements (for example `Pick.has(StartNode[t])`).
 - Scalar params are currently limited in numeric expression lowering; prefer literals or indexed params in backend-v1-safe models.
+- `size(SetName)` returns set cardinality and is constant-folded after instance loading.
 
 ### 3.3 Unknowns
 
@@ -132,6 +137,7 @@ Operators and forms:
 - unary `-E`
 - conditional: `if cond then A else B`
 - aggregates: `sum(...)`, `count(...)`
+- builtin set cardinality: `size(SetName)` (numeric)
 - parameter access:
   - call style: `Cost(i,j)`
   - index style: `Cost[i,j]` (numeric expression form)
@@ -279,6 +285,7 @@ Notes:
 - All declared sets must appear in `sets` and be arrays.
 - Missing params without defaults produce errors.
 - Indexed params must match declared dimension keys.
+- For `Elem(SetName)` params, every leaf value is normalized to string and must be present in `sets.SetName`.
 
 ## 9. Backend v1 Support Matrix
 
@@ -288,6 +295,7 @@ The language accepted by parser/typechecker is broader than backend v1 codegen.
 
 - `find` with `Subset` and `Mapping`
 - hard numeric comparisons (`=`, `<`, `<=`, `>`, `>=`) where both sides lower to numeric backend expressions
+- boolean-context comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`) are supported in objectives/soft expressions via indicator encoding
 - hard constraints as conjunctions of supported atoms/comparisons
 - hard `not <atom>`
 - hard implications where both sides are atom-like
@@ -297,12 +305,19 @@ The language accepted by parser/typechecker is broader than backend v1 codegen.
 
 ### 9.2 Known unsupported/partial areas
 
-- `!=` in hard constraints
+- `!=` in hard constraints (`must`/`should`/`nice` comparisons lowered as direct constraints)
 - custom unknown kinds in `find` (user-defined unknown instantiation)
 - many template-style function calls (for example `exactly_one(...)`) are not backend primitives in v1
 - some boolean expression shapes may parse/typecheck but fail backend lowering with `QSOL3001`
 - backend quantifier handling is expansion-based; use quantified forms carefully and verify generated behavior on your problem
 - scalar params in numeric expressions are not consistently supported across all stages yet
+
+Compare tolerance notes:
+- Boolean-context compare encoding uses a fixed epsilon `1e-6`.
+- `<` is interpreted as `lhs - rhs <= -1e-6`; `<=` as `lhs - rhs <= +1e-6`.
+- `>` is interpreted as `lhs - rhs >= +1e-6`; `>=` as `lhs - rhs >= -1e-6`.
+- `=` is interpreted as inside `[-1e-6, +1e-6]`; `!=` as outside that band.
+- At exact tolerance boundaries, truth value is intentionally indeterminate.
 
 Practical rule: run `qsol compile` early; treat `QSOL3001` as a signal that model syntax is valid but backend lowering is not yet implemented for that shape.
 

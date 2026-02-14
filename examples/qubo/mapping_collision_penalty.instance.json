@@ -1,8 +1,0 @@
-{
-  "problem": "MappingCollisionPenalty",
-  "sets": {
-    "Workers": ["w1", "w2", "w3", "w4"],
-    "Tasks": ["t1", "t2", "t3"]
-  },
-  "params": {}
-}

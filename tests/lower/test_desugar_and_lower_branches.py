@@ -98,6 +98,30 @@ def test_desugar_and_lower_cover_additional_expression_paths() -> None:
                             args=[ast.NameRef(span=span, name="x")],
                         ),
                     ),
+                    ast.Objective(
+                        span=span,
+                        kind=ast.ObjectiveKind.MINIMIZE,
+                        expr=ast.IfThenElse(
+                            span=span,
+                            cond=ast.Compare(
+                                span=span,
+                                op="=",
+                                left=ast.MethodCall(
+                                    span=span,
+                                    target=ast.NameRef(span=span, name="S"),
+                                    name="has",
+                                    args=[ast.NameRef(span=span, name="x")],
+                                ),
+                                right=ast.FuncCall(
+                                    span=span,
+                                    name="f",
+                                    args=[ast.NameRef(span=span, name="x")],
+                                ),
+                            ),
+                            then_expr=ast.NumLit(span=span, value=1),
+                            else_expr=ast.NumLit(span=span, value=0),
+                        ),
+                    ),
                 ],
             )
         ],
@@ -116,4 +140,4 @@ def test_desugar_and_lower_cover_additional_expression_paths() -> None:
     lowered = lower_symbolic(desugared)
     assert lowered.problems
     assert len(lowered.problems[0].constraints) == 2
-    assert len(lowered.problems[0].objectives) == 3
+    assert len(lowered.problems[0].objectives) == 4

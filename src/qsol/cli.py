@@ -159,6 +159,12 @@ def _resolve_outdir(file: Path, outdir: Path | None) -> Path:
     return inferred_outdir
 
 
+def _is_internal_variable(label: str) -> bool:
+    # Internal variables introduced by the backend for reification / linearization.
+    # Keep these out of CLI-facing output.
+    return label.startswith("aux:") or label.startswith("slack:")
+
+
 def _write_run_output(
     *,
     outdir: Path,
@@ -169,15 +175,23 @@ def _write_run_output(
     varmap: dict[str, str],
 ) -> Path:
     first = sampleset.first
-    selected = [
-        {
-            "variable": str(var),
-            "meaning": str(varmap.get(str(var), str(var))),
-            "value": int(value),
-        }
-        for var, value in sorted(first.sample.items(), key=lambda item: str(item[0]))
-        if int(value) == 1
-    ]
+
+    # Only export user-facing (mapped) assignments; internal variables are omitted.
+    selected: list[dict[str, object]] = []
+    for var, value in sorted(first.sample.items(), key=lambda item: str(item[0])):
+        if int(value) != 1:
+            continue
+        label = str(var)
+        if _is_internal_variable(label) or label not in varmap:
+            continue
+        selected.append(
+            {
+                "variable": label,
+                "meaning": str(varmap[label]),
+                "value": int(value),
+            }
+        )
+
     run_payload = {
         "sampler": sampler.value,
         "num_reads": num_reads,
@@ -423,13 +437,16 @@ def run_cmd(
     selected.add_column("Meaning")
     selected_count = 0
     for var, value in sorted(first.sample.items(), key=lambda item: str(item[0])):
-        if int(value) == 1:
-            label = str(var)
-            selected.add_row(escape(label), escape(str(varmap.get(label, label))))
-            selected_count += 1
+        if int(value) != 1:
+            continue
+        label = str(var)
+        if _is_internal_variable(label) or label not in varmap:
+            continue
+        selected.add_row(escape(label), escape(str(varmap[label])))
+        selected_count += 1
     if selected_count == 0:
         LOGGER.warning("No selected assignments in best sample")
-        selected.add_row("-", "No binary variable set to 1 in the best sample")
+        selected.add_row("-", "No (non-aux) binary variable set to 1 in the best sample")
     console.print(selected)
 
 

@@ -20,12 +20,23 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
             if isinstance(stmt, ast.SetDecl):
                 sets.append(ir.KSetDecl(span=stmt.span, name=stmt.name))
             elif isinstance(stmt, ast.ParamDecl):
+                scalar_kind = (
+                    stmt.value_type.kind
+                    if isinstance(stmt.value_type, ast.ScalarTypeRef)
+                    else "Elem"
+                )
+                elem_set = (
+                    stmt.value_type.set_name
+                    if isinstance(stmt.value_type, ast.ElemTypeRef)
+                    else None
+                )
                 params.append(
                     ir.KParamDecl(
                         span=stmt.span,
                         name=stmt.name,
                         indices=tuple(stmt.indices),
-                        scalar_kind=stmt.scalar_type.kind,
+                        scalar_kind=scalar_kind,
+                        elem_set=elem_set,
                         default=stmt.default.value if stmt.default else None,
                     )
                 )
@@ -62,6 +73,17 @@ def _lower_expr(expr: ast.Expr) -> ir.KExpr:
         return _lower_bool(expr)
     if isinstance(expr, ast.NumExpr):
         return _lower_num(expr)
+    if isinstance(expr, ast.MethodCall):
+        return ir.KMethodCall(
+            span=expr.span,
+            target=_lower_expr(expr.target),
+            name=expr.name,
+            args=tuple(_lower_expr(a) for a in expr.args),
+        )
+    if isinstance(expr, ast.FuncCall):
+        return ir.KFuncCall(
+            span=expr.span, name=expr.name, args=tuple(_lower_expr(a) for a in expr.args)
+        )
     if isinstance(expr, ast.NameRef):
         return ir.KName(span=expr.span, name=expr.name)
     raise TypeError(f"Unsupported AST expression in lowering: {type(expr)}")

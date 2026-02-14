@@ -207,23 +207,23 @@ class ASTBuilder:
         if data == "param_decl":
             name = self._name(c[0])
             indices: list[str] = []
-            scalar_type: ast.ScalarTypeRef | None = None
+            value_type: ast.ScalarTypeRef | ast.ElemTypeRef | None = None
             default: ast.Literal | None = None
             for ch in c[1:]:
                 v = self._from_tree(ch)
                 if isinstance(v, list) and all(isinstance(it, str) for it in v):
                     indices = cast(list[str], v)
-                elif isinstance(v, ast.ScalarTypeRef):
-                    scalar_type = v
+                elif isinstance(v, (ast.ScalarTypeRef, ast.ElemTypeRef)):
+                    value_type = v
                 elif isinstance(v, ast.Literal):
                     default = v
-            if scalar_type is None:
-                raise ValueError("param declaration missing scalar type")
+            if value_type is None:
+                raise ValueError("param declaration missing value type")
             return ast.ParamDecl(
                 span=self._span(node),
                 name=name,
                 indices=indices,
-                scalar_type=scalar_type,
+                value_type=value_type,
                 default=default,
             )
 
@@ -268,12 +268,18 @@ class ASTBuilder:
                 span=self._span(node), kind=self._name(c[0]), args=tuple(user_type_args)
             )
 
+        if data == "param_value_type":
+            return self._from_tree(c[0])
+
         if data == "scalar_type":
             if c:
                 return cast(ast.ScalarTypeRef, self._from_tree(c[0]))
             text = self._slice(node).strip()
             kind = "Bool" if text == "Bool" else "Real"
             return ast.ScalarTypeRef(span=self._span(node), kind=kind)
+
+        if data == "elem_type":
+            return ast.ElemTypeRef(span=self._span(node), set_name=self._name(c[0]))
 
         if data == "int_type":
             lo = int(cast(float, self._from_tree(c[0])))
@@ -468,6 +474,12 @@ class ASTBuilder:
             if len(c) == 2:
                 func_args = cast(list[ast.Expr], self._from_tree(c[1]))
             return ast.FuncCall(span=self._span(node), name=self._name(c[0]), args=func_args)
+
+        if data == "size_call":
+            size_args: list[ast.Expr] = []
+            if len(c) == 1:
+                size_args = cast(list[ast.Expr], self._from_tree(c[0]))
+            return ast.FuncCall(span=self._span(node), name="size", args=size_args)
 
         if data == "method_call":
             method_args: list[ast.Expr] = []

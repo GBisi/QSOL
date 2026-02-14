@@ -61,12 +61,20 @@ class TypeChecker:
                                 )
                             )
                     elif isinstance(stmt, ast.ParamDecl) and stmt.default is not None:
-                        default_ty = self._literal_type(stmt.default)
-                        decl_ty = self._scalar_type(stmt)
-                        if not self._compatible(decl_ty, default_ty):
+                        if isinstance(stmt.value_type, ast.ElemTypeRef):
                             diagnostics.append(
-                                self._type_err(stmt.default.span, "param default type mismatch")
+                                self._type_err(
+                                    stmt.default.span,
+                                    "set-valued params do not support defaults",
+                                )
                             )
+                        else:
+                            default_ty = self._literal_type(stmt.default)
+                            decl_ty = self._param_decl_type(stmt)
+                            if not self._compatible(decl_ty, default_ty):
+                                diagnostics.append(
+                                    self._type_err(stmt.default.span, "param default type mismatch")
+                                )
 
         return TypeCheckResult(typed_program=typed, diagnostics=diagnostics)
 
@@ -135,28 +143,40 @@ class TypeChecker:
                 ok = (is_numeric(left) and is_numeric(right)) or (
                     isinstance(left, type(BOOL)) and isinstance(right, type(BOOL))
                 )
+                same_elem = (
+                    isinstance(left, ElemOfType)
+                    and isinstance(right, ElemOfType)
+                    and left.set_name == right.set_name
+                )
                 if not ok:
-                    diagnostics.append(
-                        self._type_err(
-                            expr.span, "equality requires matching Bool or numeric operands"
+                    if not same_elem:
+                        diagnostics.append(
+                            self._type_err(
+                                expr.span,
+                                "equality requires matching Bool, numeric, or same-set element operands",
+                            )
                         )
-                    )
             out = BOOL
         elif isinstance(expr, ast.FuncCall):
-            symbol = scope.lookup(expr.name)
-            if (
-                symbol is not None
-                and symbol.kind == SymbolKind.PARAM
-                and isinstance(symbol.type, ParamType)
-            ):
-                out = self._param_call_type(expr, symbol.type, scope, binders, diagnostics, tmap)
+            if expr.name == "size":
+                out = self._size_call_type(expr, scope, binders, diagnostics, tmap)
             else:
-                for arg in expr.args:
-                    self._expr_type(arg, scope, binders, diagnostics, tmap)
-                if expr.name in {"exactly_one", "at_most_one", "and", "or"}:
-                    out = BOOL
+                symbol = scope.lookup(expr.name)
+                if (
+                    symbol is not None
+                    and symbol.kind == SymbolKind.PARAM
+                    and isinstance(symbol.type, ParamType)
+                ):
+                    out = self._param_call_type(
+                        expr, symbol.type, scope, binders, diagnostics, tmap
+                    )
                 else:
-                    out = BOOL
+                    for arg in expr.args:
+                        self._expr_type(arg, scope, binders, diagnostics, tmap)
+                    if expr.name in {"exactly_one", "at_most_one", "and", "or"}:
+                        out = BOOL
+                    else:
+                        out = BOOL
         elif isinstance(expr, ast.MethodCall):
             target_ty = self._expr_type(expr.target, scope, binders, diagnostics, tmap)
             out = self._method_type(expr, target_ty, scope, binders, diagnostics, tmap)
@@ -360,6 +380,42 @@ class TypeChecker:
                 )
         return ptype.elem
 
+    def _size_call_type(
+        self,
+        expr: ast.FuncCall,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        if len(expr.args) != 1:
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(self._type_err(expr.span, "size() expects exactly one argument"))
+            return UNKNOWN
+
+        arg = expr.args[0]
+        if not isinstance(arg, ast.NameRef):
+            self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(
+                self._type_err(
+                    arg.span,
+                    "size() expects a declared set identifier",
+                )
+            )
+            return UNKNOWN
+
+        symbol = scope.lookup(arg.name)
+        if symbol is None or symbol.kind != SymbolKind.SET:
+            diagnostics.append(
+                self._type_err(
+                    arg.span,
+                    f"size() expects a declared set identifier, got `{arg.name}`",
+                )
+            )
+            return UNKNOWN
+        return IntRangeType(0, 2**31 - 1)
+
     def _lookup_set(self, scope: Scope, name: str) -> Symbol | None:
         sym = scope.lookup(name)
         if sym is None or sym.kind != SymbolKind.SET:
@@ -373,13 +429,17 @@ class TypeChecker:
             return REAL
         return UnknownType()
 
-    def _scalar_type(self, stmt: ast.ParamDecl) -> Type:
-        if stmt.scalar_type.kind == "Bool":
+    def _param_decl_type(self, stmt: ast.ParamDecl) -> Type:
+        if isinstance(stmt.value_type, ast.ElemTypeRef):
+            return ElemOfType(stmt.value_type.set_name)
+
+        scalar = stmt.value_type
+        if scalar.kind == "Bool":
             return BOOL
-        if stmt.scalar_type.kind == "Real":
+        if scalar.kind == "Real":
             return REAL
-        lo = stmt.scalar_type.lo or -(2**31)
-        hi = stmt.scalar_type.hi or (2**31 - 1)
+        lo = scalar.lo or -(2**31)
+        hi = scalar.hi or (2**31 - 1)
         return IntRangeType(lo=lo, hi=hi)
 
     def _compatible(self, left: Type, right: Type) -> bool:

@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import io
 
+import dimod
 from rich.console import Console
 
+from qsol.backend.dimod_codegen import DimodCodegen
+from qsol.backend.instance import instantiate_ir
+from qsol.compiler.options import CompileOptions
+from qsol.compiler.pipeline import compile_source
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.reporter import DiagnosticReporter
 from qsol.diag.source import SourceText, Span
 from qsol.parse import ast
 from qsol.sema.validate import validate_program
+from qsol.util.bqm_equivalence import check_qsol_program_bqm_equivalence
 from qsol.util.stable_hash import stable_hash
 
 
@@ -89,3 +95,91 @@ def test_validate_program_reports_unknown_block_issues() -> None:
     assert "QSOL2101" in codes
     assert Severity.WARNING in severities
     assert Severity.ERROR in severities
+
+
+def _compile_bqm_from_program(
+    program: str, instance: dict[str, object]
+) -> dimod.BinaryQuadraticModel:
+    unit = compile_source(program, options=CompileOptions(filename="equivalence_test.qsol"))
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.lowered_ir_symbolic is not None
+
+    inst = instantiate_ir(unit.lowered_ir_symbolic, instance)
+    assert not any(diag.is_error for diag in inst.diagnostics)
+    assert inst.ground_ir is not None
+
+    codegen = DimodCodegen().compile(inst.ground_ir)
+    assert not any(diag.is_error for diag in codegen.diagnostics)
+    return codegen.bqm
+
+
+def test_check_qsol_program_bqm_equivalence_reports_equivalent() -> None:
+    program = """
+problem FirstProgram {
+  set Items;
+  param Value[Items] : Real = 1;
+  find Pick : Subset(Items);
+  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
+  maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items);
+}
+""".strip()
+    instance: dict[str, object] = {
+        "problem": "FirstProgram",
+        "sets": {"Items": ["i1", "i2", "i3", "i4"]},
+        "params": {"Value": {"i1": 3, "i2": 8, "i3": 5, "i4": 2}},
+    }
+    reference_bqm = _compile_bqm_from_program(program, instance)
+    stream = io.StringIO()
+    console = Console(file=stream, force_terminal=False, color_system=None)
+
+    report = check_qsol_program_bqm_equivalence(
+        program,
+        reference_bqm,
+        instance=instance,
+        filename="equivalence_test.qsol",
+        console=console,
+    )
+
+    assert report.equivalent
+    output = stream.getvalue()
+    assert "Equivalent" in output
+    assert "Linear Bias Mismatches" not in output
+
+
+def test_check_qsol_program_bqm_equivalence_reports_differences() -> None:
+    program = """
+problem FirstProgram {
+  set Items;
+  param Value[Items] : Real = 1;
+  find Pick : Subset(Items);
+  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
+  maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items);
+}
+""".strip()
+    instance: dict[str, object] = {
+        "problem": "FirstProgram",
+        "sets": {"Items": ["i1", "i2", "i3", "i4"]},
+        "params": {"Value": {"i1": 3, "i2": 8, "i3": 5, "i4": 2}},
+    }
+    provided_bqm = _compile_bqm_from_program(program, instance)
+    first_var = next(iter(provided_bqm.variables))
+    provided_bqm.set_linear(first_var, float(provided_bqm.get_linear(first_var)) + 5.0)
+    provided_bqm.add_variable("unexpected_var", 1.0)
+
+    stream = io.StringIO()
+    console = Console(file=stream, force_terminal=False, color_system=None)
+
+    report = check_qsol_program_bqm_equivalence(
+        program,
+        provided_bqm,
+        instance=instance,
+        filename="equivalence_test.qsol",
+        console=console,
+    )
+
+    assert not report.equivalent
+    assert report.linear_bias_mismatches
+    assert "unexpected_var" in report.extra_variables
+    output = stream.getvalue()
+    assert "Not Equivalent" in output
+    assert "Linear Bias Mismatches" in output

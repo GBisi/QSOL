@@ -1,5 +1,0 @@
-2026-02-14 17:02:04,792 | INFO | qsol.cli | Running compile on examples/tutorials/first_program.qsol
-2026-02-14 17:02:04,857 | INFO | qsol.backend.instance | Instance instantiation completed for 1 problem(s)
-2026-02-14 17:02:04,859 | INFO | qsol.backend.export | Artifacts exported to outdir/first_program
-2026-02-14 17:02:04,859 | INFO | qsol.compiler.pipeline | Compilation pipeline completed for examples/tutorials/first_program.qsol with 0 diagnostics
-2026-02-14 17:02:04,860 | INFO | qsol.cli | Compilation artifacts exported to outdir/first_program

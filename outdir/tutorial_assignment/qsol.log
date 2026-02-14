@@ -1,9 +1,0 @@
-2026-02-14 16:59:14,874 | INFO | qsol.cli | Running compile on examples/tutorials/assignment_balance.qsol
-2026-02-14 16:59:14,947 | ERROR | qsol.compiler.pipeline | Parse failure for examples/tutorials/assignment_balance.qsol
-2026-02-14 16:59:14,947 | ERROR | qsol.cli | error[QSOL1001] parse error
-2026-02-14 16:59:29,101 | INFO | qsol.cli | Running compile on examples/tutorials/assignment_balance.qsol
-2026-02-14 17:01:08,389 | INFO | qsol.cli | Running compile on examples/tutorials/assignment_balance.qsol
-2026-02-14 17:01:08,456 | INFO | qsol.backend.instance | Instance instantiation completed for 1 problem(s)
-2026-02-14 17:01:08,462 | INFO | qsol.backend.export | Artifacts exported to outdir/tutorial_assignment
-2026-02-14 17:01:08,462 | INFO | qsol.compiler.pipeline | Compilation pipeline completed for examples/tutorials/assignment_balance.qsol with 0 diagnostics
-2026-02-14 17:01:08,463 | INFO | qsol.cli | Compilation artifacts exported to outdir/tutorial_assignment

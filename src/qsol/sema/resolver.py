@@ -83,7 +83,7 @@ class Resolver:
                         )
                     else:
                         indices.append(SetType(index_name))
-                elem = self._scalar_to_type(stmt.scalar_type)
+                elem = self._param_value_to_type(scope, stmt.value_type, diagnostics, stmt.span)
                 ptype = ParamType(indices=tuple(indices), elem=elem)
                 if not scope.define(Symbol(stmt.name, SymbolKind.PARAM, ptype, stmt.span)):
                     diagnostics.append(self._dup(stmt.span, stmt.name))
@@ -141,6 +141,28 @@ class Resolver:
             hi = scalar.hi if scalar.hi is not None else 2**31 - 1
             return IntRangeType(lo=lo, hi=hi)
         return REAL
+
+    def _param_value_to_type(
+        self,
+        scope: Scope,
+        value_type: ast.ScalarTypeRef | ast.ElemTypeRef,
+        diagnostics: list[Diagnostic],
+        span: Span,
+    ) -> Type:
+        if isinstance(value_type, ast.ScalarTypeRef):
+            return self._scalar_to_type(value_type)
+
+        set_symbol = scope.lookup(value_type.set_name)
+        if set_symbol is None or set_symbol.kind != SymbolKind.SET:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"unknown set `{value_type.set_name}` in param value type",
+                    span=span,
+                )
+            )
+        return ElemOfType(value_type.set_name)
 
     def _dup(self, span: Span, name: str) -> Diagnostic:
         return Diagnostic(

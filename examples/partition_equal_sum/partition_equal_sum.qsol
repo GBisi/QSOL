@@ -1,0 +1,15 @@
+problem PartitionEqualSum {
+  set Items;
+
+  // Positive integer value for each item
+  param Value[Items] : Int[1 .. 1000000000];
+
+  // Choose a subset R ⊆ Items; the complement is Items - R
+  find R : Subset(Items);
+
+  // Enforce: sum(R) = sum(Items \ R)
+  must
+    sum(if R.has(i) then Value[i] else 0 for i in Items)
+    =
+    sum(if not R.has(i) then Value[i] else 0 for i in Items);
+}

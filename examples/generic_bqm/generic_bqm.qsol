@@ -1,0 +1,44 @@
+// Generic BQM in QSOL (backend-v1/dimod friendly)
+//
+// This models the unconstrained binary quadratic objective:
+//
+//   minimize   C + Σ_i L[i] * x_i + Σ_{i,j} Q[i,j] * x_i * x_j
+//
+// where each x_i ∈ {0,1} and is represented by X.has(i).
+//
+// NOTE about double-counting:
+// - This program sums over *all* ordered pairs (i,j).
+// - If your BQM is given in the common symmetric form with i<j off-diagonals,
+//   you have two easy options:
+//     (A) Provide Q as a full matrix already (include both Q[i,j] and Q[j,i]),
+//         and keep your intended objective as-is.
+//     (B) If you only have an upper-triangular matrix, either mirror it into Q,
+//         or put half the off-diagonal weight in each direction so the full sum
+//         matches your intended symmetric BQM.
+//
+problem GenericBQM {
+  set Vars;
+
+  // Quadratic coefficients (default 0 everywhere)
+  param Q[Vars, Vars] : Real = 0;
+
+  // Linear coefficients (default 0)
+  param L[Vars] : Real = 0;
+
+  // Constant offset (optional; default 0)
+  param C : Real = 0;
+
+  // Decision variables: one binary variable per v in Vars
+  find X : Subset(Vars);
+
+  minimize
+    C[]
+    + sum(if X.has(v) then L[v] else 0 for v in Vars)
+    + sum(
+        sum(
+          Q[i, j] * (if X.has(i) and X.has(j) then 1 else 0)
+          for j in Vars
+        )
+        for i in Vars
+      );
+}
