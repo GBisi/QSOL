@@ -1,0 +1,325 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "QSOL",
+  "scopeName": "source.qsol",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#unknownTypes"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#booleans"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#memberCalls"
+    },
+    {
+      "include": "#aggregates"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#unknownNames"
+    },
+    {
+      "include": "#setIdentifiers"
+    },
+    {
+      "include": "#modelVariables"
+    },
+    {
+      "include": "#identifiers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.qsol",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.qsol",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.qsol",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.qsol",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.definition.problem.qsol",
+          "match": "\\b(problem)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.problem.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.problem.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.definition.unknown.qsol",
+          "match": "\\b(unknown)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.unknown.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.unknown.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.definition.predicate.qsol",
+          "match": "\\b(predicate)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.predicate.qsol"
+            },
+            "2": {
+              "name": "entity.name.function.predicate.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.set.qsol",
+          "match": "\\b(set)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.qsol"
+            },
+            "2": {
+              "name": "entity.name.type.set.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.param.qsol",
+          "match": "\\b(param)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.qsol"
+            },
+            "2": {
+              "name": "entity.name.variable.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.find.qsol",
+          "match": "\\b(find)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.qsol"
+            },
+            "2": {
+              "name": "string.unquoted.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.declaration.findlike.qsol",
+          "match": "(^|[;{]\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*:\\s*(Subset|Mapping)\\s*\\(",
+          "captures": {
+            "2": {
+              "name": "string.unquoted.qsol"
+            },
+            "3": {
+              "name": "entity.name.type.set.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.binding.iteration.qsol",
+          "match": "\\b(forall|exists|for)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.quantifier.qsol"
+            },
+            "2": {
+              "name": "variable.other.readwrite.qsol"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "name": "keyword.control.qsol",
+      "match": "\\b(problem|unknown|rep|laws|view|predicate|must|should|nice|minimize|maximize|if|then|else|where|forall|exists|for|in|and|or|not)\\b"
+    },
+    "aggregates": {
+      "name": "support.function.builtin.qsol",
+      "match": "\\b(sum|count|any|all)\\b(?=\\s*\\()"
+    },
+    "unknownTypes": {
+      "name": "entity.name.type.set.qsol",
+      "match": "\\b(Subset|Mapping)\\b"
+    },
+    "types": {
+      "name": "storage.type.qsol",
+      "match": "\\b(Bool|Real|Int)\\b"
+    },
+    "booleans": {
+      "name": "constant.language.boolean.qsol",
+      "match": "\\b(true|false)\\b"
+    },
+    "numbers": {
+      "name": "constant.numeric.qsol",
+      "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"
+    },
+    "memberCalls": {
+      "patterns": [
+        {
+          "name": "meta.member.call.builtin.qsol",
+          "match": "(\\.)(has|is)\\b(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.dot.qsol"
+            },
+            "2": {
+              "name": "support.function.builtin.qsol"
+            }
+          }
+        },
+        {
+          "name": "meta.member.call.qsol",
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)\\b(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.dot.qsol"
+            },
+            "2": {
+              "name": "support.function.member.qsol"
+            }
+          }
+        }
+      ]
+    },
+    "functions": {
+      "name": "entity.name.function.qsol",
+      "match": "(?<!\\.)\\b(?!(sum|count|any|all|if|then|else|forall|exists|for|in|problem|unknown|set|param|find|rep|laws|view|predicate|must|should|nice|minimize|maximize|Subset|Mapping|Bool|Real|Int|true|false)\\b)([A-Za-z_][A-Za-z0-9_]*)\\b(?=\\s*\\()",
+      "captures": {
+        "2": {
+          "name": "entity.name.function.qsol"
+        }
+      }
+    },
+    "unknownNames": {
+      "name": "string.unquoted.qsol",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\.\\s*(?:has|is)\\b)"
+    },
+    "setIdentifiers": {
+      "name": "entity.name.type.set.qsol",
+      "match": "\\b[A-Z][A-Z0-9_]*\\b"
+    },
+    "modelVariables": {
+      "name": "entity.name.variable.qsol",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "identifiers": {
+      "name": "variable.other.readwrite.qsol",
+      "match": "\\b(?!(sum|count|any|all|if|then|else|forall|exists|for|in|problem|unknown|set|param|find|rep|laws|view|predicate|must|should|nice|minimize|maximize|Subset|Mapping|Bool|Real|Int|true|false)\\b)[A-Za-z_][A-Za-z0-9_]*\\b"
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.implication.qsol",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.mapping.qsol",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.range.qsol",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.arithmetic.qsol",
+          "match": "[+\\-*/]"
+        },
+        {
+          "name": "punctuation.separator.comma.qsol",
+          "match": ","
+        },
+        {
+          "name": "punctuation.separator.colon.qsol",
+          "match": ":"
+        },
+        {
+          "name": "punctuation.terminator.statement.qsol",
+          "match": ";"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.section.block.begin.qsol",
+          "match": "\\{"
+        },
+        {
+          "name": "punctuation.section.block.end.qsol",
+          "match": "\\}"
+        },
+        {
+          "name": "punctuation.section.parens.begin.qsol",
+          "match": "\\("
+        },
+        {
+          "name": "punctuation.section.parens.end.qsol",
+          "match": "\\)"
+        },
+        {
+          "name": "punctuation.section.brackets.begin.qsol",
+          "match": "\\["
+        },
+        {
+          "name": "punctuation.section.brackets.end.qsol",
+          "match": "\\]"
+        }
+      ]
+    }
+  }
+}

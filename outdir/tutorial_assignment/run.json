@@ -1,0 +1,60 @@
+{
+  "best_sample": {
+    "Assign.is[t1,w1]": 1,
+    "Assign.is[t1,w2]": 0,
+    "Assign.is[t1,w3]": 0,
+    "Assign.is[t2,w1]": 0,
+    "Assign.is[t2,w2]": 1,
+    "Assign.is[t2,w3]": 0,
+    "Assign.is[t3,w1]": 0,
+    "Assign.is[t3,w2]": 0,
+    "Assign.is[t3,w3]": 1,
+    "Assign.is[t4,w1]": 0,
+    "Assign.is[t4,w2]": 1,
+    "Assign.is[t4,w3]": 0,
+    "slack_v2c7b2d77335044f9afae4854d83ad619_0": 0,
+    "slack_v2c7b2d77335044f9afae4854d83ad619_1": 0,
+    "slack_v95bf248fe88b478eba2df1a163c580d7_0": 0,
+    "slack_v95bf248fe88b478eba2df1a163c580d7_1": 1,
+    "slack_vdcc3b48f67c04f7c95596a1fe0ce2ea0_0": 0,
+    "slack_vdcc3b48f67c04f7c95596a1fe0ce2ea0_1": 1
+  },
+  "energy": 9.0,
+  "num_reads": 100,
+  "reads": 262144,
+  "sampler": "exact",
+  "seed": null,
+  "selected_assignments": [
+    {
+      "meaning": "Assign.is(t1,w1)",
+      "value": 1,
+      "variable": "Assign.is[t1,w1]"
+    },
+    {
+      "meaning": "Assign.is(t2,w2)",
+      "value": 1,
+      "variable": "Assign.is[t2,w2]"
+    },
+    {
+      "meaning": "Assign.is(t3,w3)",
+      "value": 1,
+      "variable": "Assign.is[t3,w3]"
+    },
+    {
+      "meaning": "Assign.is(t4,w2)",
+      "value": 1,
+      "variable": "Assign.is[t4,w2]"
+    },
+    {
+      "meaning": "slack_v95bf248fe88b478eba2df1a163c580d7_1",
+      "value": 1,
+      "variable": "slack_v95bf248fe88b478eba2df1a163c580d7_1"
+    },
+    {
+      "meaning": "slack_vdcc3b48f67c04f7c95596a1fe0ce2ea0_1",
+      "value": 1,
+      "variable": "slack_vdcc3b48f67c04f7c95596a1fe0ce2ea0_1"
+    }
+  ],
+  "variables": 18
+}

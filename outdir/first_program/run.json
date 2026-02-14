@@ -1,0 +1,26 @@
+{
+  "best_sample": {
+    "Pick.has[i1]": 0,
+    "Pick.has[i2]": 1,
+    "Pick.has[i3]": 1,
+    "Pick.has[i4]": 0
+  },
+  "energy": -13.0,
+  "num_reads": 100,
+  "reads": 16,
+  "sampler": "exact",
+  "seed": null,
+  "selected_assignments": [
+    {
+      "meaning": "Pick.has(i2)",
+      "value": 1,
+      "variable": "Pick.has[i2]"
+    },
+    {
+      "meaning": "Pick.has(i3)",
+      "value": 1,
+      "variable": "Pick.has[i3]"
+    }
+  ],
+  "variables": 4
+}

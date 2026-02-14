@@ -1,0 +1,145 @@
+{
+  "offset": 1450.0,
+  "terms": [
+    {
+      "bias": -506.5,
+      "u": "Left.has[v1]",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 201.0,
+      "u": "Left.has[v2]",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": -501.5,
+      "u": "Left.has[v2]",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": 200.0,
+      "u": "Left.has[v3]",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 202.0,
+      "u": "Left.has[v3]",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": -502.0,
+      "u": "Left.has[v3]",
+      "v": "Left.has[v3]"
+    },
+    {
+      "bias": 210.0,
+      "u": "Left.has[v4]",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 200.0,
+      "u": "Left.has[v4]",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": 202.0,
+      "u": "Left.has[v4]",
+      "v": "Left.has[v3]"
+    },
+    {
+      "bias": -507.0,
+      "u": "Left.has[v4]",
+      "v": "Left.has[v4]"
+    },
+    {
+      "bias": 202.0,
+      "u": "Left.has[v5]",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 200.0,
+      "u": "Left.has[v5]",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": 200.0,
+      "u": "Left.has[v5]",
+      "v": "Left.has[v3]"
+    },
+    {
+      "bias": 202.0,
+      "u": "Left.has[v5]",
+      "v": "Left.has[v4]"
+    },
+    {
+      "bias": -502.0,
+      "u": "Left.has[v5]",
+      "v": "Left.has[v5]"
+    },
+    {
+      "bias": 200.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 200.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": 200.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "Left.has[v3]"
+    },
+    {
+      "bias": 200.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "Left.has[v4]"
+    },
+    {
+      "bias": 200.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "Left.has[v5]"
+    },
+    {
+      "bias": -500.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_0",
+      "v": "slack_v1239bceb9b724123b0089b0723a1f2f0_0"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "Left.has[v1]"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "Left.has[v2]"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "Left.has[v3]"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "Left.has[v4]"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "Left.has[v5]"
+    },
+    {
+      "bias": 400.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "slack_v1239bceb9b724123b0089b0723a1f2f0_0"
+    },
+    {
+      "bias": -800.0,
+      "u": "slack_v1239bceb9b724123b0089b0723a1f2f0_1",
+      "v": "slack_v1239bceb9b724123b0089b0723a1f2f0_1"
+    }
+  ]
+}

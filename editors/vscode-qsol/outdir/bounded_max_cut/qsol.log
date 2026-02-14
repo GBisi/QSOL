@@ -1,0 +1,1 @@
+2026-02-14 17:09:31,775 | ERROR | qsol.cli | instance file not provided and default instance was not found: examples/qubo/bounded_max_cut.instance.json

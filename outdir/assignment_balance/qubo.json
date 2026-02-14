@@ -1,0 +1,380 @@
+{
+  "offset": 1280.0,
+  "terms": [
+    {
+      "bias": -318.0,
+      "u": "Assign.is[t1,w1]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t1,w2]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": -315.0,
+      "u": "Assign.is[t1,w2]",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t1,w3]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t1,w3]",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": -314.0,
+      "u": "Assign.is[t1,w3]",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w1]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": -312.0,
+      "u": "Assign.is[t2,w1]",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w2]",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w2]",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": -317.0,
+      "u": "Assign.is[t2,w2]",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w3]",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w3]",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t2,w3]",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": -316.0,
+      "u": "Assign.is[t2,w3]",
+      "v": "Assign.is[t2,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w1]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w1]",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": -316.0,
+      "u": "Assign.is[t3,w1]",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w2]",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w2]",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w2]",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": -313.0,
+      "u": "Assign.is[t3,w2]",
+      "v": "Assign.is[t3,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w3]",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w3]",
+      "v": "Assign.is[t2,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w3]",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t3,w3]",
+      "v": "Assign.is[t3,w2]"
+    },
+    {
+      "bias": -318.0,
+      "u": "Assign.is[t3,w3]",
+      "v": "Assign.is[t3,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w1]",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w1]",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w1]",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": -314.0,
+      "u": "Assign.is[t4,w1]",
+      "v": "Assign.is[t4,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w2]",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w2]",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w2]",
+      "v": "Assign.is[t3,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w2]",
+      "v": "Assign.is[t4,w1]"
+    },
+    {
+      "bias": -318.0,
+      "u": "Assign.is[t4,w2]",
+      "v": "Assign.is[t4,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t2,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t3,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t4,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t4,w2]"
+    },
+    {
+      "bias": -315.0,
+      "u": "Assign.is[t4,w3]",
+      "v": "Assign.is[t4,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_0",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_0",
+      "v": "Assign.is[t2,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_0",
+      "v": "Assign.is[t3,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_0",
+      "v": "Assign.is[t4,w3]"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_0",
+      "v": "slack_v43c4e66e1e0a4b739def62980790e572_0"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "Assign.is[t1,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "Assign.is[t2,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "Assign.is[t3,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "Assign.is[t4,w3]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "slack_v43c4e66e1e0a4b739def62980790e572_0"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v43c4e66e1e0a4b739def62980790e572_1",
+      "v": "slack_v43c4e66e1e0a4b739def62980790e572_1"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_0",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_0",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_0",
+      "v": "Assign.is[t3,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_0",
+      "v": "Assign.is[t4,w2]"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_0",
+      "v": "slack_v4c11e1915f164c659a29d638b56b2426_0"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "Assign.is[t1,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "Assign.is[t2,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "Assign.is[t3,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "Assign.is[t4,w2]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "slack_v4c11e1915f164c659a29d638b56b2426_0"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v4c11e1915f164c659a29d638b56b2426_1",
+      "v": "slack_v4c11e1915f164c659a29d638b56b2426_1"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0",
+      "v": "Assign.is[t4,w1]"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0",
+      "v": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "Assign.is[t1,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "Assign.is[t2,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "Assign.is[t3,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "Assign.is[t4,w1]"
+    },
+    {
+      "bias": 160.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "slack_v907dad5c77294fada4dcd7e7d407a1b6_0"
+    },
+    {
+      "bias": -240.0,
+      "u": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1",
+      "v": "slack_v907dad5c77294fada4dcd7e7d407a1b6_1"
+    }
+  ]
+}

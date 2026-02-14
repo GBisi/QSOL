@@ -1,0 +1,42 @@
+{
+  "name": "qsol-syntax",
+  "displayName": "QSOL Syntax Highlighting",
+  "description": "TextMate grammar and language configuration for QSOL files.",
+  "version": "0.1.0",
+  "publisher": "qsol",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "qsol",
+    "qubo",
+    "syntax",
+    "textmate"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "qsol",
+        "aliases": [
+          "QSOL",
+          "qsol"
+        ],
+        "extensions": [
+          ".qsol"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "qsol",
+        "scopeName": "source.qsol",
+        "path": "./syntaxes/qsol.tmLanguage.json"
+      }
+    ]
+  }
+}

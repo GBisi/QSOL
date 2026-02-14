@@ -1,0 +1,34 @@
+{
+  "best_sample": {
+    "Left.has[v1]": 1,
+    "Left.has[v2]": 0,
+    "Left.has[v3]": 1,
+    "Left.has[v4]": 0,
+    "Left.has[v5]": 1,
+    "slack_v1239bceb9b724123b0089b0723a1f2f0_0": 0,
+    "slack_v1239bceb9b724123b0089b0723a1f2f0_1": 0
+  },
+  "energy": 541.5,
+  "num_reads": 100,
+  "reads": 100,
+  "sampler": "simulated-annealing",
+  "seed": null,
+  "selected_assignments": [
+    {
+      "meaning": "Left.has(v1)",
+      "value": 1,
+      "variable": "Left.has[v1]"
+    },
+    {
+      "meaning": "Left.has(v3)",
+      "value": 1,
+      "variable": "Left.has[v3]"
+    },
+    {
+      "meaning": "Left.has(v5)",
+      "value": 1,
+      "variable": "Left.has[v5]"
+    }
+  ],
+  "variables": 7
+}

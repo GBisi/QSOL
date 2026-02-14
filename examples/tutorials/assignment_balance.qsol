@@ -1,0 +1,16 @@
+problem WorkerAssignment {
+  set Workers;
+  set Tasks;
+
+  param Cost[Workers,Tasks] : Real = 1;
+
+  find Assign : Mapping(Tasks -> Workers);
+
+  must forall w in Workers:
+    sum(if Assign.is(t, w) then 1 else 0 for t in Tasks) <= 2;
+
+  minimize sum(
+    sum(if Assign.is(t, w) then Cost[w, t] else 0 for w in Workers)
+    for t in Tasks
+  );
+}

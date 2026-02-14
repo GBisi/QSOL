@@ -1,0 +1,5 @@
+2026-02-14 17:02:04,792 | INFO | qsol.cli | Running compile on examples/tutorials/assignment_balance.qsol
+2026-02-14 17:02:04,858 | INFO | qsol.backend.instance | Instance instantiation completed for 1 problem(s)
+2026-02-14 17:02:04,861 | INFO | qsol.backend.export | Artifacts exported to outdir/assignment_balance
+2026-02-14 17:02:04,861 | INFO | qsol.compiler.pipeline | Compilation pipeline completed for examples/tutorials/assignment_balance.qsol with 0 diagnostics
+2026-02-14 17:02:04,862 | INFO | qsol.cli | Compilation artifacts exported to outdir/assignment_balance

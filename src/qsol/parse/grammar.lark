@@ -1,0 +1,258 @@
+// =======================
+// QSOL grammar (semicolon-terminated, indentation-insensitive)
+// =======================
+//
+// Statement terminator:
+//   END: ";"
+//
+// Notes:
+// - NEWLINE is ignored and has no semantic meaning.
+// - Aggregates are split by result type:
+//     bool_aggregate = any/all
+//     num_aggregate  = sum/count
+// - Designed to work well with LALR + contextual lexer.
+//
+// References:
+// - Lark grammar language (EBNF, terminals/rules): see Lark docs.
+// - Contextual lexer behavior (keywords vs NAME): see Lark docs/examples.
+
+start: program
+
+program: sep* (item sep*)*
+sep: END
+
+item: problem
+    | unknown_def
+
+// -----------------------
+// Top-level blocks
+// -----------------------
+
+problem: "problem" NAME "{" block_problem "}"
+block_problem: sep* problem_stmt_list?
+problem_stmt_list: problem_stmt (sep+ problem_stmt)* sep*
+
+problem_stmt: set_decl
+            | param_decl
+            | find_decl
+            | constraint_stmt
+            | objective_stmt
+
+unknown_def: "unknown" NAME "(" [formal_params] ")" "{" block_unknown "}"
+block_unknown: sep* unknown_stmt_list?
+unknown_stmt_list: unknown_stmt (sep* unknown_stmt)* sep*
+
+unknown_stmt: rep_block
+            | laws_block
+            | view_block
+
+rep_block:  "rep"  "{" block_rep "}"
+block_rep: sep* rep_stmt_list?
+rep_stmt_list: rep_stmt (sep+ rep_stmt)* sep*
+
+laws_block: "laws" "{" block_laws "}"
+block_laws: sep* laws_stmt_list?
+laws_stmt_list: laws_stmt (sep+ laws_stmt)* sep*
+
+view_block: "view" "{" block_view "}"
+block_view: sep* view_stmt_list?
+view_stmt_list: view_stmt (sep+ view_stmt)* sep*
+
+rep_stmt: find_like_decl
+
+// In rep { f : Mapping(A -> B) } there is no 'find' keyword in the spec
+find_like_decl: NAME ":" unknown_type
+
+laws_stmt: constraint_stmt
+
+view_stmt: predicate_def
+
+formal_params: formal_param ("," formal_param)*
+formal_param: NAME
+
+predicate_def: "predicate" NAME "(" [pred_formals] ")" "=" bool_expr
+pred_formals: pred_formal ("," pred_formal)*
+pred_formal: NAME ["in" NAME]
+
+// -----------------------
+// Declarations
+// -----------------------
+
+set_decl: "set" NAME
+
+param_decl: "param" NAME param_indexing? ":" scalar_type param_default?
+param_indexing: "[" name_list "]"
+name_list: NAME ("," NAME)*
+
+param_default: "=" literal
+
+find_decl: "find" NAME ":" unknown_type
+
+unknown_type: subset_type
+            | mapping_type
+            | user_unknown_type
+
+subset_type: "Subset" "(" NAME ")"
+mapping_type: "Mapping" "(" NAME "->" NAME ")"
+user_unknown_type: NAME "(" [name_list] ")"
+
+// Scalar types
+scalar_type: "Bool"
+           | "Real"
+           | int_type
+
+int_type: "Int" "[" signed_int ".." signed_int "]"
+signed_int: SIGNED_NUMBER
+
+// -----------------------
+// Constraints & objectives
+// -----------------------
+
+constraint_stmt: hardness bool_expr guard?
+hardness: "must" | "should" | "nice"
+guard: "if" bool_expr
+
+objective_stmt: ("minimize" | "maximize") num_expr
+
+// -----------------------
+// Quantifiers
+// -----------------------
+
+quantifier: "forall" NAME "in" NAME ":" bool_expr
+          | "exists" NAME "in" NAME ":" bool_expr
+
+// -----------------------
+// Aggregates + comprehensions (STRICT BY TYPE)
+// -----------------------
+
+num_aggregate: sum_agg | count_agg
+bool_aggregate: any_agg | all_agg
+
+sum_agg: "sum" "(" comp_num ")"
+count_agg: "count" "(" comp_count ")"
+any_agg: "any" "(" comp_bool ")"
+all_agg: "all" "(" comp_bool ")"
+
+// Comprehensions: term for x in X [where pred] [else alt]
+comp_num: num_expr "for" NAME "in" NAME comp_tail_num?
+comp_bool: bool_expr "for" NAME "in" NAME comp_tail_bool?
+comp_count: NAME "for" NAME "in" NAME comp_tail_bool?   // count(x for x in X where ...)
+
+comp_tail_num: where_clause else_clause_num?
+             | else_clause_num
+
+comp_tail_bool: where_clause else_clause_bool?
+              | else_clause_bool
+
+where_clause: "where" bool_expr
+else_clause_num: "else" num_expr
+else_clause_bool: "else" bool_expr
+
+// -----------------------
+// Expressions (precedence)
+// -----------------------
+
+// --- Bool expressions ---
+?bool_expr: bool_imp
+
+?bool_imp: bool_or
+         | bool_or "=>" bool_imp   -> implies
+
+?bool_or: bool_and
+        | bool_or "or" bool_and    -> or_op
+
+?bool_and: bool_not
+         | bool_and "and" bool_not -> and_op
+
+?bool_not: "not" bool_not          -> not_op
+         | bool_atom
+
+?bool_atom: "(" bool_expr ")"
+          | quantifier
+          | comparison
+          | predicate_call
+          | bool_aggregate          // STRICT: only any/all here
+          | BOOL
+
+// comparisons: numeric comparisons OR boolean equality/inequality
+comparison: num_expr comp_op num_expr
+          | num_expr eq_op num_expr
+          | bool_value eq_op bool_value
+
+bool_value: BOOL
+          | predicate_call
+          | "(" bool_expr ")"
+
+comp_op: "<" | "<=" | ">" | ">="
+eq_op: "=" | "!="
+
+// Predicates/templates/member calls
+predicate_call: NAME "(" [arg_list] ")"            -> func_call
+              | dotted_call
+
+indexed_ref: NAME "[" [arg_list] "]"               -> func_call
+
+dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
+
+// --- Numeric expressions ---
+?num_expr: num_add
+
+?num_add: num_mul
+        | num_add "+" num_mul   -> add
+        | num_add "-" num_mul   -> sub
+
+?num_mul: num_unary
+        | num_mul "*" num_unary -> mul
+        | num_mul "/" num_unary -> div
+
+?num_unary: "-" num_unary       -> neg
+          | num_atom
+
+?num_atom: "(" num_expr ")"
+         | if_expr
+         | num_aggregate          // STRICT: only sum/count here
+         | indexed_ref
+         | NAME
+         | NUMBER
+
+if_expr: "if" bool_expr "then" num_expr "else" num_expr
+
+// -----------------------
+// Atoms, literals, args
+// -----------------------
+
+?atom: NAME
+     | literal
+
+arg_list: expr ("," expr)*
+?expr: bool_expr | num_expr
+
+literal: BOOL
+       | NUMBER
+       | STRING
+
+// -----------------------
+// Terminals, ignores
+// -----------------------
+
+END: ";"
+
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+
+BOOL.2: "true" | "false"
+
+%import common.SIGNED_NUMBER -> NUMBER
+%import common.ESCAPED_STRING -> STRING
+%import common.WS_INLINE
+%import common.NEWLINE
+
+SIGNED_NUMBER: NUMBER
+
+%ignore WS_INLINE
+%ignore NEWLINE
+
+// line comments //
+%ignore /\/\/[^\n]*/
+
+// block comments /* ... */
+%ignore /\/\*[\s\S]*?\*\//
