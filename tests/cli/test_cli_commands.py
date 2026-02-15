@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from qsol.cli import app
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def _write_model(path: Path) -> None:
@@ -303,4 +308,6 @@ def test_targets_and_build_reject_backend_option(tmp_path: Path) -> None:
     for args in invocations:
         result = runner.invoke(app, args)
         assert result.exit_code != 0
-        assert "No such option: --backend" in result.output
+        plain_output = _strip_ansi(result.output)
+        assert "No such option" in plain_output
+        assert "--backend" in plain_output

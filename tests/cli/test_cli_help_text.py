@@ -11,7 +11,7 @@ from qsol.cli import app
 
 def test_qsol_root_help_includes_command_descriptions() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["-h"])
+    result = runner.invoke(app, ["-h"], env={"COLUMNS": "120"})
 
     assert result.exit_code == 0
     assert "Compile model+scenario and export backend artifacts." in result.stdout
@@ -24,8 +24,9 @@ def test_qsol_root_help_includes_command_descriptions() -> None:
 
 def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     runner = CliRunner()
+    env = {"COLUMNS": "120"}
 
-    inspect_help = runner.invoke(app, ["inspect", "-h"])
+    inspect_help = runner.invoke(app, ["inspect", "-h"], env=env)
     assert inspect_help.exit_code == 0
     assert "Parse a QSOL model and print AST output." in inspect_help.stdout
     assert "Run frontend checks (parse/resolve/typecheck/validate)." in inspect_help.stdout
@@ -34,7 +35,7 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "Alias for `inspect check`." in inspect_help.stdout
     assert "Alias for `inspect lower`." in inspect_help.stdout
 
-    targets_help = runner.invoke(app, ["targets", "-h"])
+    targets_help = runner.invoke(app, ["targets", "-h"], env=env)
     assert targets_help.exit_code == 0
     assert "List discovered runtime and backend plugins." in targets_help.stdout
     assert "Show capability catalogs and pair compatibility." in targets_help.stdout
@@ -43,7 +44,7 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "Alias for `targets capabilities`." in targets_help.stdout
     assert "Alias for `targets check`." in targets_help.stdout
 
-    solve_help = runner.invoke(app, ["solve", "-h"])
+    solve_help = runner.invoke(app, ["solve", "-h"], env=env)
     assert solve_help.exit_code == 0
     assert "Path to the QSOL model source file." in solve_help.stdout
     assert "--backend" not in solve_help.stdout
@@ -60,7 +61,7 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "--energy-max" in solve_help.stdout
     assert "Inclusive maximum" in solve_help.stdout
 
-    build_help = runner.invoke(app, ["build", "-h"])
+    build_help = runner.invoke(app, ["build", "-h"], env=env)
     assert build_help.exit_code == 0
     assert "--backend" not in build_help.stdout
     assert "--config" in build_help.stdout
@@ -68,11 +69,11 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "--all-scenarios" in build_help.stdout
     assert "--failure-policy" in build_help.stdout
 
-    caps_help = runner.invoke(app, ["targets", "capabilities", "-h"])
+    caps_help = runner.invoke(app, ["targets", "capabilities", "-h"], env=env)
     assert caps_help.exit_code == 0
     assert "--backend" not in caps_help.stdout
 
-    check_help = runner.invoke(app, ["targets", "check", "-h"])
+    check_help = runner.invoke(app, ["targets", "check", "-h"], env=env)
     assert check_help.exit_code == 0
     assert "--backend" not in check_help.stdout
     assert "--config" in check_help.stdout
