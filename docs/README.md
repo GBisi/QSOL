@@ -6,5 +6,4 @@
 - Syntax guide: `QSOL_SYNTAX.md`
 - Codebase architecture: `CODEBASE.md`
 - Tutorials: `tutorials/README.md`
-- Tutorial models: `../examples/tutorials/README.md`
-- Example models: `../examples/generic_bqm/`, `../examples/min_bisection/`, `../examples/partition_equal_sum/`
+- Examples index: `../examples/README.md`

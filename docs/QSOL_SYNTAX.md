@@ -244,5 +244,5 @@ The canonical grammar lives in:
 When in doubt, validate with:
 
 ```bash
-uv run qsol compile path/to/model.qsol --parse --json
+uv run qsol inspect parse path/to/model.qsol --json
 ```

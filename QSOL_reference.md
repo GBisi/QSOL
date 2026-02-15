@@ -1,13 +1,13 @@
 # QSOL Language Reference (Compiler v0.1.0)
 
-This reference describes the language accepted by the current QSOL parser/typechecker and the subset supported by backend v1 (`dimod` codegen).
+This reference describes the language accepted by the current QSOL parser/typechecker and the subset supported by backend v1 (`dimod-cqm-v1`).
 
 ## 1. Versioning and Compatibility
 
 QSOL currently has two practical compatibility layers:
 
 - Parse/typecheck layer: what the grammar and semantic passes accept.
-- Backend layer: what `compile`/`run` can lower to CQM/BQM without `QSOL3001` unsupported diagnostics.
+- Backend layer: what selected targets can lower/run without `QSOL3001` or target capability failures.
 
 This document calls out both layers explicitly so you can write models that are valid and compilable.
 
@@ -280,6 +280,10 @@ Required shape:
       "a1": {"b1": 5.0},
       "a2": {"b1": 7.0}
     }
+  },
+  "execution": {
+    "runtime": "local-dimod",
+    "backend": "dimod-cqm-v1"
   }
 }
 ```
@@ -290,6 +294,10 @@ Notes:
 - Missing params without defaults produce errors.
 - Indexed params must match declared dimension keys.
 - For `Elem(SetName)` params, every leaf value is normalized to string and must be present in `sets.SetName`.
+- `execution` is optional and provides default target selection:
+  - `execution.runtime`
+  - `execution.backend`
+- CLI `--runtime` / `--backend` override `execution` defaults.
 
 ## 9. Backend v1 Support Matrix
 
@@ -321,7 +329,7 @@ Compare tolerance notes:
 - `=` is interpreted as inside `[-1e-6, +1e-6]`; `!=` as outside that band.
 - At exact tolerance boundaries, truth value is intentionally indeterminate.
 
-Practical rule: run `qsol compile` early; treat `QSOL3001` as a signal that model syntax is valid but backend lowering is not yet implemented for that shape.
+Practical rule: run `qsol targets check` early; treat `QSOL3001`/`QSOL4010` as signals that model syntax is valid but selected target support is incomplete for that shape.
 
 ## 10. Diagnostics
 
@@ -333,12 +341,16 @@ Common diagnostic codes:
 - `QSOL2101`: type rule violation
 - `QSOL2201`: instance data or indexing/shape issue
 - `QSOL3001`: unsupported backend shape or validation/backend limitation
-- `QSOL4001`: invalid CLI flag combination
-- `QSOL4002`: missing inferred instance file for `run`/`compile`
+- `QSOL4002`: missing inferred instance file
 - `QSOL4003`: model or payload file read failure
 - `QSOL4004`: instance JSON load/validation failure before compilation
-- `QSOL4005`: runtime preparation/artifact loading failure
-- `QSOL5001`: sampler runtime failure
+- `QSOL4005`: missing expected artifacts or target outputs
+- `QSOL4006`: runtime/backend selection unresolved
+- `QSOL4007`: unknown runtime/backend id
+- `QSOL4008`: incompatible runtime/backend pair
+- `QSOL4009`: plugin load/registration failure
+- `QSOL4010`: unsupported required capability for selected target
+- `QSOL5001`: runtime execution failure
 
 CLI diagnostics are rendered in rustc-style format by default:
 
@@ -349,23 +361,26 @@ CLI diagnostics are rendered in rustc-style format by default:
 - final summary with error/warning/info totals
 
 Use CLI commands progressively:
-- `compile --parse` to validate syntax
-- `compile --check` to validate semantics/types
-- `compile --lower` to inspect normalized IR
-- `compile` to validate backend support on concrete instances
+- `inspect parse` to validate syntax
+- `inspect check` to validate semantics/types
+- `inspect lower` to inspect normalized IR
+- `targets check` to validate concrete target support on model+instance
+- `build` to export artifacts for selected runtime/backend
+- `solve` to execute selected runtime/backend
 
 ## 11. Complete Example
 
 Model:
 
 ```qsol
-problem ExactKSubset {
+problem FirstProgram {
   set Items;
+  param Value[Items] : Real = 1;
 
   find Pick : Subset(Items);
 
   must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
-  minimize sum(sum(if Pick.has(i) and Pick.has(j) then 1 else 0 for j in Items) for i in Items);
+  maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items);
 }
 ```
 
@@ -373,19 +388,32 @@ Instance:
 
 ```json
 {
-  "problem": "ExactKSubset",
+  "problem": "FirstProgram",
   "sets": {
-    "Items": ["i1", "i2", "i3", "i4", "i5"]
+    "Items": ["i1", "i2", "i3", "i4"]
   },
-  "params": {}
+  "params": {
+    "Value": {
+      "i1": 3,
+      "i2": 8,
+      "i3": 5,
+      "i4": 2
+    }
+  },
+  "execution": {
+    "runtime": "local-dimod",
+    "backend": "dimod-cqm-v1"
+  }
 }
 ```
 
-Compile and run:
+Inspect, check support, build, and solve:
 
 ```bash
-uv run qsol compile examples/qubo/exact_k_subset.qsol --instance examples/qubo/exact_k_subset.instance.json --out outdir/exact_k_subset --format qubo
-uv run qsol run examples/qubo/exact_k_subset.qsol --instance examples/qubo/exact_k_subset.instance.json --out outdir/exact_k_subset --sampler exact
+uv run qsol inspect check examples/tutorials/first_program.qsol
+uv run qsol targets check examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1
+uv run qsol build examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1 --out outdir/first_program --format qubo
+uv run qsol solve examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1 --out outdir/first_program --runtime-option sampler=exact
 ```
 
 ## 12. Related Docs

@@ -40,13 +40,13 @@ QSOL should preserve high-level abstraction as a primary objective and hide low-
 
 QSOL uses a staged compiler-plus-runtime flow:
 
-`parse -> sema -> desugar/lower -> ground -> codegen -> artifacts -> run`
+`parse -> sema -> desugar/lower -> ground -> target selection/support check -> codegen -> artifacts -> run`
 
 - Parse: convert text into structured syntax with spans for precise diagnostics.
 - Sema: resolve symbols and types before expensive backend work.
 - Desugar/lower: normalize surface forms into a smaller kernel for predictable codegen.
 - Ground: apply instance data so backend operations run on concrete domains.
-- Codegen: produce backend models and exports from normalized IR.
+- Codegen: produce backend models and exports from normalized IR after target support is validated.
 - Artifacts: emit inspectable outputs (`model.cqm`, `model.bqm`, exports, maps, logs, explain data).
 - Run: sample generated models while preserving traceability through persisted outputs.
 

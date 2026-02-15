@@ -99,5 +99,7 @@ def runtime_sampling_error(model_path: Path, exc: Exception) -> Diagnostic:
         message="sampler runtime failure",
         span=_span_for_file(model_path),
         notes=[str(exc)],
-        help=["Retry with `--sampler exact` to isolate backend/sampler issues."],
+        help=[
+            "Retry with a different runtime option profile (for example `--runtime-option sampler=exact`)."
+        ],
     )

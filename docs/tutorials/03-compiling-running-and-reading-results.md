@@ -1,142 +1,189 @@
-# Tutorial 3: Compile, Run, and Read Results
+# Tutorial 3: Build, Solve, and Read Results
 
-Goal: understand the full CLI workflow and what each output artifact means.
+Goal: understand the target-aware CLI workflow and output artifacts.
 
 This tutorial uses `examples/tutorials/first_program.qsol`.
 
-## 1. Compile Command Anatomy
+## 1. Target Discovery
+
+List available targets:
 
 ```bash
-uv run qsol compile \
+uv run qsol targets list
+```
+
+Inspect pair capability catalogs:
+
+```bash
+uv run qsol targets capabilities \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1
+```
+
+## 2. Support Check Before Build
+
+```bash
+uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
   --out outdir/first_program \
-  --format qubo \
   --log-level debug
 ```
 
-Key flags:
-- `--instance` (`-i`): JSON instance payload
-- `--out` (`-o`): output folder
-- `--format` (`-f`): exported payload flavor (`qubo` or `ising`)
-- `--log-level` (`-l`): logging verbosity
+Outputs:
+- `outdir/first_program/capability_report.json`
+- `outdir/first_program/qsol.log`
 
-## 2. Output Files
+`targets check` hard-fails on unsupported model+instance+target combinations.
 
-After compile, inspect:
-
-- `model.cqm`: constrained model before CQM->BQM conversion
-- `model.bqm`: binary quadratic model used for sampling
-- `qubo.json` or `ising.json`: coefficient export
-- `varmap.json`: maps backend variable labels to QSOL semantics
-- `explain.json`: backend diagnostic list
-- `qsol.log`: execution log
-
-## 3. Run and Sampling
-
-Run with exact solver:
+## 3. Build Artifacts
 
 ```bash
-uv run qsol run \
+uv run qsol build \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
   --out outdir/first_program \
-  --sampler exact
+  --format qubo
 ```
 
-Run with simulated annealing:
+Build outputs:
+- `model.cqm`
+- `model.bqm`
+- `qubo.json` or `ising.json`
+- `varmap.json`
+- `explain.json`
+- `capability_report.json`
+- `qsol.log`
+
+## 4. Solve
+
+Exact solver:
 
 ```bash
-uv run qsol run \
+uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
-  --out outdir/first_program_sa \
-  --sampler simulated-annealing \
-  --num-reads 200 \
-  --seed 7
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
+  --out outdir/first_program \
+  --runtime-option sampler=exact
 ```
 
-## 4. Understanding `run.json`
+Simulated annealing:
 
-`run.json` contains:
-- sampler metadata (`sampler`, `num_reads`, `seed`)
-- best energy
-- full best sample bit-vector
-- `selected_assignments`: only variables set to `1`, decoded with human-readable meaning
+```bash
+uv run qsol solve \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
+  --out outdir/first_program_sa \
+  --runtime-option sampler=simulated-annealing \
+  --runtime-option num_reads=200 \
+  --runtime-option seed=7
+```
+
+Top-3 solutions with an energy guard:
+
+```bash
+uv run qsol solve \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
+  --out outdir/first_program_multi \
+  --runtime-option sampler=exact \
+  --solutions 3 \
+  --energy-max 0
+```
+
+## 5. Understanding `run.json`
+
+`run.json` has a stable core schema:
+- `schema_version`
+- `runtime`, `backend`
+- `status`
+- `energy`, `reads`
+- `best_sample`
+- `selected_assignments`
+- `timing_ms`
+- `capability_report_path`
+- `extensions` (runtime-specific fields)
+
+When `--solutions` is used, `extensions` includes:
+- `requested_solutions`
+- `returned_solutions`
+- `solutions` (ordered candidates with `rank`, `energy`, `num_occurrences`, `sample`, `selected_assignments`)
+
+When `--energy-min`/`--energy-max` are used, `extensions.energy_threshold` records:
+- `min`, `max`
+- `scope` (`all_returned`)
+- `inclusive` (`true`)
+- `passed`
+- `violations`
+
+Threshold behavior:
+- Threshold checks are inclusive and apply to all returned solutions.
+- If any returned solution violates thresholds, `run.json` is still written.
+- In that case, solve exits non-zero and `status` is `threshold_failed`.
 
 Example snippet:
 
 ```json
 {
-  "sampler": "exact",
+  "schema_version": "1.0",
+  "runtime": "local-dimod",
+  "backend": "dimod-cqm-v1",
+  "status": "ok",
   "energy": -13.0,
   "selected_assignments": [
-    {"variable": "Pick.has[i2]", "meaning": "Pick.has(i2)", "value": 1},
-    {"variable": "Pick.has[i3]", "meaning": "Pick.has(i3)", "value": 1}
-  ]
+    {"variable": "Pick.has[i2]", "meaning": "Pick.has(i2)", "value": 1}
+  ],
+  "extensions": {
+    "sampler": "exact",
+    "requested_solutions": 3,
+    "returned_solutions": 3
+  }
 }
 ```
 
-## 5. Stage-by-Stage Debugging
+## 6. Selection Precedence
 
-When something fails, use this order:
+Runtime/backend resolution order:
 
-1. Syntax stage:
+1. CLI: `--runtime`, `--backend`
+2. Instance defaults: `execution.runtime`, `execution.backend`
 
-```bash
-uv run qsol compile model.qsol --parse --json
-```
+If unresolved, QSOL emits `QSOL4006`.
 
-2. Semantic/type stage:
+## 7. Stage-by-Stage Debugging
 
-```bash
-uv run qsol compile model.qsol --check
-```
+1. `uv run qsol inspect parse model.qsol --json`
+2. `uv run qsol inspect check model.qsol`
+3. `uv run qsol inspect lower model.qsol --json`
+4. `uv run qsol targets check model.qsol -i model.instance.json --runtime <id> --backend <id>`
+5. `uv run qsol build model.qsol -i model.instance.json --runtime <id> --backend <id> -o outdir/model`
+6. `uv run qsol solve model.qsol -i model.instance.json --runtime <id> --backend <id> -o outdir/model`
 
-3. Lowering stage:
-
-```bash
-uv run qsol compile model.qsol --lower --json
-```
-
-4. Backend stage:
-
-```bash
-uv run qsol compile model.qsol -i model.instance.json -o outdir/model
-```
-
-## 6. Diagnosing Common Errors
-
-QSOL CLI diagnostics are rustc-style by default:
-
-```text
-error[QSOL2201]: missing set values for `Items`
-  --> model.qsol:2:3
-   |
-  2 |   set Items;
-   |   ^^^^^^^^^
-   = help: Add `sets.Items` as a JSON array in the instance payload.
-aborting due to 1 error(s), 0 warning(s), 0 info message(s)
-```
+## 8. Common Diagnostics
 
 - `QSOL1001`: parse grammar mismatch
-  - Often missing semicolons or malformed comprehensions
-- `QSOL2001`: unknown set/identifier/unknown type reference
-- `QSOL2101`: invalid types or method arity
+- `QSOL2101`: type/arity mismatch
 - `QSOL2201`: instance schema/shape mismatch
-- `QSOL3001`: backend unsupported expression/unknown kind
-- `QSOL400x`: CLI/runtime-preparation issues (invalid flags, missing files, artifact load errors)
-- `QSOL500x`: sampler/runtime execution failures
+- `QSOL3001`: backend unsupported language shape
+- `QSOL4006`: runtime/backend not resolved
+- `QSOL4007`: unknown runtime/backend id
+- `QSOL4008`: incompatible runtime/backend pair
+- `QSOL4009`: plugin loading failure
+- `QSOL4010`: unsupported required capability for selected target
+- `QSOL5001`: runtime execution failure
+- `QSOL5002`: runtime policy/output contract failure (for example threshold rejection)
 
-For backend errors, inspect both:
-- CLI diagnostic output
-- `outdir/<model>/explain.json`
-
-Run-specific examples:
-
-- Missing inferred instance (`run` without `--instance` and no `<model>.instance.json`):
-  - emits `QSOL4002` with a suggestion to create the default instance file or pass `--instance`.
-- Corrupt/missing artifacts after compile:
-  - emits `QSOL4005` with guidance to regenerate artifacts.
-- Sampler crashes or rejects payload:
-  - emits `QSOL5001` and suggests retrying with `--sampler exact`.
+For target failures, inspect:
+- CLI diagnostics
+- `capability_report.json`
+- `explain.json` (backend-specific)

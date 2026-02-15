@@ -20,6 +20,12 @@ class InstanceResult:
     diagnostics: list[Diagnostic]
 
 
+@dataclass(frozen=True, slots=True)
+class InstanceExecutionConfig:
+    runtime: str | None = None
+    backend: str | None = None
+
+
 def load_instance(path: str | Path) -> dict[str, object]:
     LOGGER.debug("Loading instance payload from %s", path)
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -27,6 +33,18 @@ def load_instance(path: str | Path) -> dict[str, object]:
         msg = f"instance payload must be a JSON object: {path}"
         raise ValueError(msg)
     return cast(dict[str, object], payload)
+
+
+def read_execution_config(instance: Mapping[str, object]) -> InstanceExecutionConfig:
+    execution = instance.get("execution")
+    if not isinstance(execution, Mapping):
+        return InstanceExecutionConfig()
+
+    runtime_raw = execution.get("runtime")
+    backend_raw = execution.get("backend")
+    runtime = str(runtime_raw) if isinstance(runtime_raw, str) and runtime_raw.strip() else None
+    backend = str(backend_raw) if isinstance(backend_raw, str) and backend_raw.strip() else None
+    return InstanceExecutionConfig(runtime=runtime, backend=backend)
 
 
 def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> InstanceResult:

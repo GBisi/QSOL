@@ -1,23 +1,23 @@
 # Tutorial 2: Writing Your Own QSOL Model
 
-Goal: build a model from scratch using a practical pattern and keep it backend-v1 compatible.
+Goal: build a model from scratch and run it through the target-aware workflow.
 
 ## 1. Modeling Pattern
 
 Use this sequence:
 
-1. Declare sets (entities).
-2. Declare params (known data).
-3. Declare unknown structure with `find`.
-4. Add hard feasibility rules with `must`.
-5. Add objective with `minimize` or `maximize`.
+1. Declare sets.
+2. Declare params.
+3. Declare unknowns with `find`.
+4. Add hard feasibility with `must`.
+5. Add objective with `minimize`/`maximize`.
 
 ## 2. Example Problem
 
 Assign tasks to workers with:
 - implicit exactly-one worker per task (from `Mapping`)
-- explicit max load per worker
-- total assignment cost minimization
+- explicit worker load limit
+- cost minimization
 
 Model (`examples/tutorials/assignment_balance.qsol`):
 
@@ -57,6 +57,10 @@ problem WorkerAssignment {
       "w2": {"t1": 5, "t2": 3, "t3": 7, "t4": 2},
       "w3": {"t1": 6, "t2": 4, "t3": 2, "t4": 5}
     }
+  },
+  "execution": {
+    "runtime": "local-dimod",
+    "backend": "dimod-cqm-v1"
   }
 }
 ```
@@ -64,37 +68,41 @@ problem WorkerAssignment {
 ## 4. Run Workflow
 
 ```bash
-uv run qsol compile examples/tutorials/assignment_balance.qsol --check
+uv run qsol inspect check examples/tutorials/assignment_balance.qsol
 
-uv run qsol compile \
+uv run qsol targets check \
+  examples/tutorials/assignment_balance.qsol \
+  --instance examples/tutorials/assignment_balance.instance.json
+
+uv run qsol build \
   examples/tutorials/assignment_balance.qsol \
   --instance examples/tutorials/assignment_balance.instance.json \
   --out outdir/assignment_balance \
   --format qubo
 
-uv run qsol run \
+uv run qsol solve \
   examples/tutorials/assignment_balance.qsol \
   --instance examples/tutorials/assignment_balance.instance.json \
   --out outdir/assignment_balance \
-  --sampler exact
+  --runtime-option sampler=exact
 ```
 
-## 5. Backend-v1 Safe Modeling Checklist
+The second command uses `execution` defaults from the instance. Add CLI `--runtime/--backend` to override.
 
-To reduce `QSOL3001` unsupported diagnostics:
+## 5. Backend-v1 Safety Checklist
 
-- Prefer `Subset` and `Mapping` only for `find`.
-- Use hard constraints as conjunctions of:
-  - numeric comparisons (`=`, `<`, `<=`, `>`, `>=`)
-  - atom-like predicates (`S.has(...)`, `F.is(...)`, bool params)
-- Use `sum` + arithmetic for objectives.
-- Add quantifiers carefully and test with `compile` early.
-- Treat user-defined unknown instantiation as experimental for now.
+To reduce unsupported diagnostics:
 
-## 6. Extend This Example
+- Prefer `Subset` and `Mapping` in `find`.
+- Keep hard constraints to supported numeric comparisons and atom-like predicates.
+- Use `sum` + arithmetic in objectives.
+- Validate early with `targets check` on concrete instances.
+- Treat user-defined unknown instantiation in `find` as unsupported on `dimod-cqm-v1`.
 
-Try these incremental changes and re-run `compile --check` then `compile` each time:
+## 6. Incremental Extensions
 
-1. Add a `should` preference for balancing worker loads.
-2. Add a `param Forbidden[Workers,Tasks] : Bool = false;` and forbid matches with `must`.
-3. Add a second objective term (for example penalize assignments to a specific worker).
+Try one at a time and rerun `inspect check` and `targets check`:
+
+1. Add a `should` balance preference.
+2. Add a boolean forbidden-assignment param and hard exclusion.
+3. Add a second weighted objective term.

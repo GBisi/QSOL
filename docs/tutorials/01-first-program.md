@@ -1,6 +1,6 @@
 # Tutorial 1: Your First QSOL Program
 
-Goal: write and run a minimal QSOL model end to end.
+Goal: write and run a minimal QSOL model end to end with explicit runtime/backend targeting.
 
 ## 1. Model
 
@@ -18,14 +18,8 @@ problem FirstProgram {
 }
 ```
 
-A ready-to-run copy already exists at:
+Ready-to-run copy:
 - `examples/tutorials/first_program.qsol`
-
-What it means:
-- `set Items`: domain of candidate items
-- `find Pick : Subset(Items)`: solver chooses which items are selected
-- `must ... = 2`: exactly two items must be selected
-- `maximize ...`: maximize sum of selected item values
 
 ## 2. Instance Data
 
@@ -44,6 +38,10 @@ Create `first_program.instance.json`:
       "i3": 5,
       "i4": 2
     }
+  },
+  "execution": {
+    "runtime": "local-dimod",
+    "backend": "dimod-cqm-v1"
   }
 }
 ```
@@ -51,62 +49,83 @@ Create `first_program.instance.json`:
 Ready-to-run copy:
 - `examples/tutorials/first_program.instance.json`
 
-## 3. Validate the Model
+`execution` is optional. CLI flags can override it.
 
-Parse only:
+## 3. Inspect Frontend Stages
+
+Parse:
 
 ```bash
-uv run qsol compile examples/tutorials/first_program.qsol --parse --json
+uv run qsol inspect parse examples/tutorials/first_program.qsol --json
 ```
 
-Type and semantic checks:
+Type/semantic checks:
 
 ```bash
-uv run qsol compile examples/tutorials/first_program.qsol --check
+uv run qsol inspect check examples/tutorials/first_program.qsol
 ```
 
-Inspect lowered symbolic IR:
+Lowered symbolic IR:
 
 ```bash
-uv run qsol compile examples/tutorials/first_program.qsol --lower --json
+uv run qsol inspect lower examples/tutorials/first_program.qsol --json
 ```
 
-## 4. Compile to Artifacts
+## 4. Check Target Support
 
 ```bash
-uv run qsol compile \
+uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1
+```
+
+This writes `capability_report.json` and hard-fails if unsupported.
+
+## 5. Build Artifacts
+
+```bash
+uv run qsol build \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --format qubo
 ```
 
-Artifacts appear in `outdir/first_program`:
+Artifacts in `outdir/first_program`:
 - `model.cqm`
 - `model.bqm`
 - `qubo.json`
 - `varmap.json`
 - `explain.json`
+- `capability_report.json`
 - `qsol.log`
 
-## 5. Run the Sampler
+## 6. Solve
 
 ```bash
-uv run qsol run \
+uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
   --out outdir/first_program \
-  --sampler exact
+  --runtime-option sampler=exact
 ```
 
-This command also writes:
-- `outdir/first_program/run.json`
+This also writes `run.json`.
 
-`run.json` includes best energy, selected binary variables, and decoded QSOL meanings via `varmap.json`.
+## 7. Quick Troubleshooting
 
-## 6. Quick Troubleshooting
-
-- `QSOL1001`: syntax issue; check missing semicolons.
-- `QSOL2101`: type issue; check method call arguments (`Subset.has`, `Mapping.is`).
-- `QSOL2201`: instance mismatch; check set/param keys and indexed shape.
-- `QSOL3001`: backend limitation; simplify expression shape or use supported patterns.
+- `QSOL1001`: syntax issue (often missing semicolon).
+- `QSOL2101`: type issue (method call target/arity mismatch).
+- `QSOL2201`: instance shape mismatch.
+- `QSOL3001`: backend-lowering limitation for valid language shape.
+- `QSOL4006`: runtime/backend not resolved from CLI or `execution` defaults.
+- `QSOL4007`: unknown runtime/backend id.
+- `QSOL4008`: incompatible runtime/backend pair.
+- `QSOL4009`: plugin loading/config issue.
+- `QSOL5001`: runtime execution failure.

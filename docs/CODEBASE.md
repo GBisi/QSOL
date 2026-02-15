@@ -1,10 +1,10 @@
 # QSOL Codebase Guide
 
-This guide explains how the current QSOL compiler/runtime is organized and where to make changes safely.
+This guide explains QSOL's staged compiler + pluggable targeting architecture.
 
 ## 1. High-Level Architecture
 
-Pipeline from source to artifacts:
+Pipeline from source to runtime result:
 
 1. Parse source text into AST (`qsol.parse`)
 2. Resolve symbols (`qsol.sema.resolver`)
@@ -12,150 +12,117 @@ Pipeline from source to artifacts:
 4. Validate structural rules (`qsol.sema.validate`)
 5. Desugar syntax sugar (`qsol.lower.desugar`)
 6. Lower to symbolic kernel IR (`qsol.lower.lower`)
-7. Ground IR using instance JSON (`qsol.backend.instance`)
-8. Generate dimod CQM/BQM (`qsol.backend.dimod_codegen`)
-9. Export files (`qsol.backend.export`)
-
-The pipeline entrypoint is `qsol.compiler.pipeline.compile_source`.
+7. Ground IR from instance JSON (`qsol.backend.instance`)
+8. Resolve runtime/backend selection (`qsol.targeting.resolution`)
+9. Check pair support and capability requirements (`qsol.targeting.compatibility`)
+10. Compile/export with selected backend plugin (`qsol.targeting.plugins`, backend export)
+11. Run with selected runtime plugin (`qsol.targeting.plugins`)
 
 ## 2. Directory Map
 
-- `src/qsol/cli.py`: Typer CLI (`compile`, `run`)
-- `src/qsol/compiler/`: compile options + pipeline orchestration
+- `src/qsol/cli.py`: Typer CLI (`inspect`, `targets`, `build`, `solve`)
+- `src/qsol/compiler/`: frontend + targeting pipeline orchestration
+- `src/qsol/targeting/`: plugin interfaces, registry, selection, compatibility
 - `src/qsol/parse/`: grammar, parser, AST, AST builder
 - `src/qsol/sema/`: symbol resolution, type checking, static validation
 - `src/qsol/lower/`: desugaring + kernel IR lowering
-- `src/qsol/backend/`: instance instantiation, dimod codegen, artifact export
+- `src/qsol/backend/`: instance grounding + dimod codegen/export primitives
 - `src/qsol/diag/`: diagnostics, spans, reporter
-- `src/qsol/util/`: utility helpers (stable hashing)
-- `examples/qubo/`: runnable QSOL examples and instances
-- `tests/`: parser, sema, lowering, backend, CLI tests
-- `editors/vscode-qsol/`: VS Code syntax highlighting extension
+- `src/qsol/util/`: utility helpers
+- `tests/`: parser, sema, lowering, backend, targeting, CLI tests
 
 ## 3. Key Data Structures
 
-### 3.1 AST (`src/qsol/parse/ast.py`)
+### 3.1 Frontend IR (`src/qsol/lower/ir.py`)
 
-Core nodes:
-- `Program`, `ProblemDef`, `UnknownDef`
-- declarations: `SetDecl`, `ParamDecl`, `FindDecl`
-- constraints/objectives: `Constraint`, `Objective`
-- expressions: bool/numeric expression classes + aggregates + quantifiers
+- `KernelIR`: symbolic model after lowering
+- `GroundIR`: kernel IR + concrete sets/params
+- `BackendArtifacts`: exported file paths/stats
 
-All AST nodes carry a `Span` for diagnostics.
+### 3.2 Targeting Types (`src/qsol/targeting/types.py`)
 
-### 3.2 Symbols and Types (`src/qsol/sema/`)
+- `TargetSelection`: selected runtime/backend ids
+- `SupportIssue`, `SupportReport`: capability and compatibility diagnostics
+- `CompiledModel`: backend-compiled model payload (canonical `kind="cqm"` in v1)
+- `StandardRunResult`: runtime output contract (`run.json` core schema)
 
-- `SymbolTable` stores global + per-problem scopes.
-- `Resolver` defines symbols and checks unknown declarations.
-- `TypeChecker` infers/checks expression types and annotates `TypedProgram.types`.
+### 3.3 Compilation Unit (`src/qsol/compiler/pipeline.py`)
 
-### 3.3 IR (`src/qsol/lower/ir.py`)
+`CompilationUnit` includes:
+- frontend outputs: `ast`, `symbol_table`, `typed_program`, `lowered_ir_symbolic`, `ground_ir`
+- targeting outputs: `target_selection`, `support_report`, `compiled_model`
+- exported artifacts: `artifacts`
+- diagnostics: `diagnostics`
 
-- `KernelIR`: symbolic model after desugaring/lowering
-- `GroundIR`: kernel IR plus concrete set/param values from instance
-- `BackendArtifacts`: output file paths and model stats
+## 4. Pipeline Entrypoints
 
-### 3.4 Compilation Unit (`src/qsol/compiler/pipeline.py`)
+- `compile_frontend`: parse/sema/lower/ground only
+- `check_target_support`: frontend + selection + capability checks
+- `build_for_target`: support check + backend compile/export
+- `run_for_target`: build + runtime execution
+- `compile_source`: backward-compatible wrapper (legacy API behavior)
 
-`CompilationUnit` is the main output object used by CLI/API:
-- `ast`, `symbol_table`, `typed_program`
-- `lowered_ir_symbolic`, `ground_ir`, `artifacts`
-- `diagnostics`
+## 5. CLI Flow
 
-## 4. Command Flow
+### 5.1 Inspect Commands
 
-### 4.1 `compile --parse`
+- `inspect parse`: parse output
+- `inspect check`: semantic diagnostics
+- `inspect lower`: lowered symbolic IR
 
-- Reads file
-- Runs `compile_source` without instance/outdir
-- Prints AST (pretty or JSON)
+### 5.2 Targets Commands
 
-### 4.2 `compile --check`
+- `targets list`: discover runtime/backend plugins
+- `targets capabilities`: inspect capability catalogs and pair compatibility
+- `targets check`: evaluate specific model+instance against selected pair
 
-- Same pipeline stage range as `parse`
-- Prints diagnostics only
+### 5.3 Build and Solve
 
-### 4.3 `compile --lower`
+- `build`: compile/export artifacts for selected pair
+- `solve`: build + runtime execution + standardized `run.json`
 
-- Runs through desugaring/lowering
-- Prints symbolic kernel IR
+Selection precedence:
+1. CLI `--runtime/--backend`
+2. Instance `execution.runtime/execution.backend`
 
-### 4.4 `compile` (full backend build)
+## 6. Plugin Model
 
-- Resolves instance path + output directory
-- Runs full pipeline with instance and codegen
-- Writes artifacts and build log
+Plugins use protocols in `src/qsol/targeting/interfaces.py`.
 
-### 4.5 `run`
+- Backends implement capability catalog, support checks, compile, export.
+- Runtimes implement capability catalog, compatible backend ids, support checks, run.
 
-- Performs `compile` flow to produce BQM
-- Samples with dimod `ExactSolver` or `SimulatedAnnealingSampler`
-- Writes `run.json` summary and prints selected assignments
+Discovery:
+- Built-ins are always registered first.
+- Entry points: `qsol.backends`, `qsol.runtimes`.
+- Optional module specs: `--plugin module:attribute`.
 
-## 5. Diagnostics Model
+Reference built-ins:
+- Backend: `dimod-cqm-v1`
+- Runtime: `local-dimod`
 
-Diagnostics are created across all stages with a shared structure:
+## 7. Diagnostics Model
 
-- `severity`: `error` / `warning` / `info`
-- `code`: stable ID (e.g. `QSOL1001`)
-- `message`
-- `span`
-- optional `notes` and `help`
-
-Typical code groups:
+Families:
 - `QSOL1xxx`: parse
-- `QSOL2xxx`: semantic/type/instance errors
-- `QSOL3xxx`: backend limitations/unsupported shapes
-
-## 6. Backend Behavior Notes
-
-Current dimod backend (`src/qsol/backend/dimod_codegen.py`) is intentionally narrow:
-
-- Native variable declaration support for `Subset` and `Mapping` only.
-- Many grammar-valid expressions can still fail lowering/codegen.
-- Unsupported patterns emit `QSOL3001` diagnostics rather than crashing.
-
-When extending backend support, update:
-- expression lowering paths (`_bool_expr`, `_num_expr`, `_emit_constraint`)
-- diagnostics coverage
-- backend tests in `tests/backend/`
-
-## 7. How To Add a Language Feature
-
-Use this order to minimize regressions:
-
-1. Update grammar (`src/qsol/parse/grammar.lark`)
-2. Update AST builder (`src/qsol/parse/ast_builder.py`)
-3. Add/adjust AST nodes if needed (`src/qsol/parse/ast.py`)
-4. Extend resolver/typechecker
-5. Add desugaring rule if feature is surface sugar
-6. Extend lowering to kernel IR
-7. Extend backend codegen and/or instance handling
-8. Add tests per stage (parser, sema, lower, backend, CLI)
-9. Update docs (`README`, `QSOL_reference.md`, syntax/tutorial docs)
+- `QSOL2xxx`: semantic/type/instance
+- `QSOL3xxx`: backend language-shape limitations
+- `QSOL4xxx`: CLI/targeting/plugin resolution/preparation
+- `QSOL5xxx`: runtime execution
 
 ## 8. Test Suite Map
 
-- `tests/parser/`: grammar and AST builder coverage
-- `tests/sema/`: resolver/typechecker coverage
-- `tests/lower/`: desugar/lower behavior
-- `tests/backend/`: instance + codegen + compile pipeline
+- `tests/parser/`: grammar + AST builder
+- `tests/sema/`: resolver/typechecker
+- `tests/lower/`: desugar/lower
+- `tests/backend/`: grounding/codegen/export behavior
+- `tests/targeting/`: registry/resolution/compatibility/pipeline branches
 - `tests/cli/`: end-user command behavior
-- `tests/golden/`: stable diagnostic expectations
+- `tests/golden/`: diagnostic rendering/stability
 
-Run all tests:
+Run all checks:
 
 ```bash
+uv run pre-commit run --all-files
 uv run pytest
 ```
-
-## 9. Practical Debugging Workflow
-
-1. `uv run qsol compile model.qsol --parse --json`
-2. `uv run qsol compile model.qsol --check`
-3. `uv run qsol compile model.qsol --lower --json`
-4. `uv run qsol compile model.qsol -i instance.json -o outdir/model --log-level debug`
-5. Inspect `outdir/model/explain.json` and `outdir/model/qsol.log`
-
-This stage-by-stage process makes it easy to isolate grammar vs typing vs backend issues.

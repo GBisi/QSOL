@@ -23,116 +23,201 @@ problem Demo {
     )
 
 
-def _write_instance(path: Path) -> None:
-    path.write_text(
-        json.dumps({"problem": "Demo", "sets": {"A": ["a1", "a2"]}, "params": {}}),
-        encoding="utf-8",
+def _write_instance(path: Path, *, with_execution: bool = False) -> None:
+    payload: dict[str, object] = {
+        "problem": "Demo",
+        "sets": {"A": ["a1", "a2"]},
+        "params": {},
+    }
+    if with_execution:
+        payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_inspect_parse_check_lower_commands(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    runner = CliRunner()
+
+    parse_result = runner.invoke(app, ["ins", "p", str(model), "-j", "-n"])
+    assert parse_result.exit_code == 0
+    assert '"name": "Demo"' in parse_result.stdout
+
+    check_result = runner.invoke(app, ["ins", "c", str(model), "-n"])
+    assert check_result.exit_code == 0
+    assert "No diagnostics." in check_result.stdout
+
+    lower_result = runner.invoke(app, ["ins", "l", str(model), "-j", "-n"])
+    assert lower_result.exit_code == 0
+    assert '"problems"' in lower_result.stdout
+
+
+def test_inspect_parse_reports_error_for_invalid_input(tmp_path: Path) -> None:
+    invalid = tmp_path / "bad.qsol"
+    invalid.write_text("problem P { set A find S : Subset(A); }", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect", "parse", str(invalid), "--no-color"])
+    assert result.exit_code == 1
+    assert "error[QSOL1001]" in result.stdout
+
+
+def test_targets_list_and_capabilities_commands() -> None:
+    runner = CliRunner()
+
+    list_result = runner.invoke(app, ["tg", "ls", "-n"])
+    assert list_result.exit_code == 0
+    assert "Runtimes" in list_result.stdout
+    assert "Backends" in list_result.stdout
+    assert "local-dimod" in list_result.stdout
+    assert "dimod-cqm-v1" in list_result.stdout
+
+    caps_result = runner.invoke(
+        app,
+        [
+            "tg",
+            "caps",
+            "-u",
+            "local-dimod",
+            "-b",
+            "dimod-cqm-v1",
+            "-n",
+        ],
+    )
+    assert caps_result.exit_code == 0
+    assert "Runtime Capabilities" in caps_result.stdout
+    assert "Backend Capabilities" in caps_result.stdout
+    assert "constraint.compare.eq.v1" in caps_result.stdout
+
+
+def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    instance = tmp_path / "demo.instance.json"
+    _write_instance(instance)
+    outdir = tmp_path / "target-check"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "tg",
+            "chk",
+            str(model),
+            "-i",
+            str(instance),
+            "-u",
+            "local-dimod",
+            "-b",
+            "dimod-cqm-v1",
+            "-o",
+            str(outdir),
+            "-n",
+        ],
     )
 
+    assert result.exit_code == 0
+    report_path = outdir / "capability_report.json"
+    assert report_path.exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["supported"] is True
+    assert report["selection"]["runtime"] == "local-dimod"
+    assert report["selection"]["backend"] == "dimod-cqm-v1"
 
-def test_compile_stage_flags_and_compile_command(tmp_path: Path) -> None:
+
+def test_targets_check_uses_instance_execution_defaults(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    instance = tmp_path / "demo.instance.json"
+    _write_instance(instance, with_execution=True)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "tg",
+            "chk",
+            str(model),
+            "-i",
+            str(instance),
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Supported" in result.stdout
+
+
+def test_targets_check_errors_when_target_selection_missing(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    instance = tmp_path / "demo.instance.json"
+    _write_instance(instance, with_execution=False)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "targets",
+            "chk",
+            str(model),
+            "-i",
+            str(instance),
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "error[QSOL4006]" in result.stdout
+
+
+def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
     instance = tmp_path / "demo.instance.json"
     _write_instance(instance)
     outdir = tmp_path / "out"
+
     runner = CliRunner()
-
-    parse_result = runner.invoke(app, ["compile", str(model), "--parse", "--json", "--no-color"])
-    assert parse_result.exit_code == 0
-    assert '"name": "Demo"' in parse_result.stdout
-
-    check_result = runner.invoke(app, ["compile", str(model), "--check", "--no-color"])
-    assert check_result.exit_code == 0
-    assert "No diagnostics." in check_result.stdout
-
-    lower_result = runner.invoke(app, ["compile", str(model), "--lower", "--json", "--no-color"])
-    assert lower_result.exit_code == 0
-    assert '"problems"' in lower_result.stdout
-
-    compile_result = runner.invoke(
-        app,
-        [
-            "compile",
-            str(model),
-            "--instance",
-            str(instance),
-            "--out",
-            str(outdir),
-            "--format",
-            "ising",
-            "--verbose",
-            "--no-color",
-            "--log-level",
-            "debug",
-        ],
-    )
-    assert compile_result.exit_code == 0
-    assert "Compilation Artifacts" in compile_result.stdout
-    assert (outdir / "ising.json").exists()
-
-
-def test_run_command_simulated_annealing_branch(tmp_path: Path) -> None:
-    model = tmp_path / "demo.qsol"
-    _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance)
-    outdir = tmp_path / "run-out"
-    runner = CliRunner()
-
     result = runner.invoke(
         app,
         [
-            "run",
+            "b",
             str(model),
-            "--instance",
+            "-i",
             str(instance),
-            "--out",
+            "-u",
+            "local-dimod",
+            "-b",
+            "dimod-cqm-v1",
+            "-o",
             str(outdir),
-            "--sampler",
-            "simulated-annealing",
-            "--num-reads",
-            "5",
-            "--seed",
-            "7",
-            "--no-color",
-            "--log-level",
-            "debug",
+            "-f",
+            "ising",
+            "-n",
         ],
     )
+
     assert result.exit_code == 0
-    payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
-    assert payload["sampler"] == "simulated-annealing"
-    assert payload["num_reads"] == 5
-    assert payload["seed"] == 7
+    assert (outdir / "model.cqm").exists()
+    assert (outdir / "model.bqm").exists()
+    assert (outdir / "ising.json").exists()
+    assert (outdir / "capability_report.json").exists()
 
 
-def test_compile_parse_flag_reports_error_for_invalid_input(tmp_path: Path) -> None:
-    invalid = tmp_path / "bad.qsol"
-    invalid.write_text("problem P { set A find S : Subset(A); }", encoding="utf-8")
+def test_targets_capabilities_unknown_id_error() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["compile", str(invalid), "--parse", "--no-color"])
+    result = runner.invoke(
+        app,
+        [
+            "targets",
+            "caps",
+            "-u",
+            "missing-runtime",
+            "-b",
+            "dimod-cqm-v1",
+            "-n",
+        ],
+    )
+
     assert result.exit_code == 1
-    assert "error[QSOL1001]" in result.stdout
-    assert "--> " in result.stdout
-    assert "expected one of:" in result.stdout
-
-
-def test_compile_stage_flags_are_mutually_exclusive(tmp_path: Path) -> None:
-    model = tmp_path / "demo.qsol"
-    _write_model(model)
-    runner = CliRunner()
-    result = runner.invoke(app, ["compile", str(model), "--parse", "--check"])
-    assert result.exit_code != 0
-    assert "error[QSOL4001]" in result.stdout
-    assert "choose only one of --parse, --check, or --lower" in result.stdout
-
-
-def test_compile_json_requires_parse_or_lower_flag(tmp_path: Path) -> None:
-    model = tmp_path / "demo.qsol"
-    _write_model(model)
-    runner = CliRunner()
-    result = runner.invoke(app, ["compile", str(model), "--check", "--json"])
-    assert result.exit_code != 0
-    assert "error[QSOL4001]" in result.stdout
-    assert "--json is only valid with --parse or --lower" in result.stdout
+    assert "error[QSOL4007]" in result.stdout

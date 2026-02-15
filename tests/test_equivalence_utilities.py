@@ -158,6 +158,28 @@ def test_parse_args_positive_int_and_read_json(
         exeq._read_json(payload_path)
 
 
+def test_parse_args_help_has_useful_descriptions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    spec = _build_spec(tmp_path)
+    monkeypatch.setattr("sys.argv", ["prog", "--help"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        exeq._parse_args(spec)
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert spec.description in help_text
+    assert "--simulated-annealing" in help_text
+    assert "SimulatedAnnealingSampler" in help_text
+    assert "runtime" in help_text
+    assert "solve" in help_text
+    assert "checks" in help_text
+    assert "Number of reads for simulated annealing" in help_text
+
+
 def test_compile_qsol_bqm_branching(monkeypatch: pytest.MonkeyPatch) -> None:
     good_bqm = _single_var_bqm()
     lowered = object()

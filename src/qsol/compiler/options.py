@@ -10,3 +10,6 @@ class CompileOptions:
     outdir: str | None = None
     output_format: str = "qubo"
     verbose: bool = False
+    runtime_id: str | None = None
+    backend_id: str | None = None
+    plugin_specs: tuple[str, ...] = ()

@@ -1,186 +1,189 @@
 # QSOL
 
-QSOL is a declarative modeling language and compiler for combinatorial optimization.
+## What QSOL Is
 
-You describe sets, parameters, unknown structures (`Subset`, `Mapping`), constraints, and objectives. QSOL compiles the model plus instance data into dimod artifacts (CQM/BQM + QUBO/Ising export), and can run local samplers.
+QSOL is a declarative language and compiler for combinatorial optimization.
+You model sets, params, unknowns, constraints, and objectives; QSOL compiles model + instance data into inspectable dimod artifacts and can run a selected runtime/backend target pair.
 
-Pipeline:
+## Idea, Vision, and Why
 
-`QSOL -> AST -> semantic/type checks -> desugaring -> symbolic IR -> grounded IR -> dimod CQM/BQM -> exported artifacts`
+QSOL exists to keep optimization models explicit, reviewable, and reproducible.
 
-## Current Scope (v1)
+- Idea: express optimization intent at the language level, not solver procedure details.
+- Vision: preserve declarative clarity, staged compiler ownership, and strong diagnostics.
+- Why: predictable semantics and inspectable artifacts are more trustworthy than opaque workflows.
 
-Implemented and stable:
-- Parsing with Lark (`src/qsol/parse/grammar.lark`)
-- Source-spanned AST and diagnostics
-- Name resolution and type checking
-- Desugaring for guards and aggregate sugar (`if`, `where`, `else`, `count`, `any`, `all`)
-- Symbolic and grounded IR
-- dimod backend for core patterns
-- CLI workflows: `compile`, `run`
+Project purpose, principles, and coherence rubric are in `VISION.md`.
 
-Important limitation:
-- The grammar/type system accepts more forms than backend v1 can encode. Unsupported codegen shapes are reported as `QSOL3001` during `compile`/`run`.
+## Compiler Pipeline Architecture
 
-Backend behavior note:
-- `must` constraints enforce hard feasibility; `should` and `nice` are soft-only weighted penalties.
-- Hard `!=` comparisons are supported for backend-supported numeric expressions using the same `1e-6` tolerance band policy as boolean-context comparisons.
+QSOL is staged and target-aware:
 
-## Diagnostics UX
+`parse -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
 
-`compile` and `run` now emit rustc-style diagnostics by default:
+Reference target pair:
+- Runtime: `local-dimod`
+- Backend: `dimod-cqm-v1`
 
-- `error[CODE]: message`
-- `--> file:line:col`
-- source excerpt with caret highlights
-- contextual `= note:` and `= help:` lines
-- final summary line with error/warning/info counts
+Module map:
+- `/Users/gbisi/Documents/code/qsol/src/qsol/parse/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/sema/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/lower/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/backend/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/targeting/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/compiler/`
+- `/Users/gbisi/Documents/code/qsol/src/qsol/cli.py`
 
-Example:
+## Libraries and Tooling
 
-```text
-error[QSOL2101]: size() expects a declared set identifier
-  --> model.qsol:4:13
-   |
-  4 |   must size(3) = 1;
-   |             ^
-   = help: Pass a declared set name, for example `size(V)`.
-aborting due to 1 error(s), 0 warning(s), 0 info message(s)
-```
+- `lark`: parser and grammar engine
+- `dimod`: CQM/BQM model representation and local sampling
+- `typer`: CLI command surface
+- `rich`: terminal rendering
+- `pytest`: tests and coverage checks
+- `pre-commit`: quality-gate runner
+- `ruff`: lint/format checks
+- `mypy`: static typing checks
+- `uv`: environment and command execution
 
-Diagnostic code families:
-- `QSOL1xxx`: parser diagnostics
-- `QSOL2xxx`: semantic/type/instance schema diagnostics
-- `QSOL3xxx`: backend support/validation diagnostics
-- `QSOL4xxx`: CLI/runtime preparation diagnostics (flags, file IO, artifact loading)
-- `QSOL5xxx`: sampler runtime diagnostics
-
-## Install
+## Setup
 
 ```bash
 uv sync --extra dev
+uv run qsol -h
 ```
 
 ## Quickstart
 
-Compile an included example:
+Use tutorial files:
+- `examples/tutorials/first_program.qsol`
+- `examples/tutorials/first_program.instance.json`
+
+Inspect frontend stages:
 
 ```bash
-uv run qsol compile \
-  examples/qubo/bounded_max_cut.qsol \
-  --instance examples/qubo/bounded_max_cut.instance.json \
-  --out outdir/bounded_max_cut \
+uv run qsol inspect parse examples/tutorials/first_program.qsol --json
+uv run qsol inspect check examples/tutorials/first_program.qsol
+uv run qsol inspect lower examples/tutorials/first_program.qsol --json
+```
+
+List available targets:
+
+```bash
+uv run qsol targets list
+```
+
+Check pair capabilities:
+
+```bash
+uv run qsol targets capabilities --runtime local-dimod --backend dimod-cqm-v1
+```
+
+Check model+instance support:
+
+```bash
+uv run qsol targets check \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1
+```
+
+Build artifacts:
+
+```bash
+uv run qsol build \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
+  --out outdir/first_program \
   --format qubo
 ```
 
-Run it with a sampler:
+Solve:
 
 ```bash
-uv run qsol run \
-  examples/qubo/bounded_max_cut.qsol \
-  --instance examples/qubo/bounded_max_cut.instance.json \
-  --out outdir/bounded_max_cut \
-  --sampler exact
+uv run qsol solve \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime local-dimod \
+  --backend dimod-cqm-v1 \
+  --out outdir/first_program \
+  --runtime-option sampler=exact \
+  --solutions 3 \
+  --energy-max 0
 ```
 
-Inspect syntax/semantics quickly:
+## CLI Overview
+
+Core command groups:
 
 ```bash
-uv run qsol compile examples/qubo/bounded_max_cut.qsol --parse --json
-uv run qsol compile examples/qubo/bounded_max_cut.qsol --check
-uv run qsol compile examples/qubo/bounded_max_cut.qsol --lower --json
-```
+uv run qsol inspect parse <model.qsol> [--json]
+uv run qsol inspect check <model.qsol>
+uv run qsol inspect lower <model.qsol> [--json]
 
-## CLI Reference
+uv run qsol targets list [--plugin module:attr]
+uv run qsol targets capabilities --runtime <id> --backend <id> [--plugin module:attr]
+uv run qsol targets check <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] [--plugin module:attr]
 
-```bash
-uv run qsol compile <model.qsol> [--parse|--check|--lower] [--json]
-uv run qsol compile <model.qsol> [-i <instance.json>] [-o <outdir>] [-f qubo|ising]
-uv run qsol run <model.qsol> [-i <instance.json>] [-o <outdir>] [-s exact|simulated-annealing]
+uv run qsol build <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] -o <outdir>
+uv run qsol solve <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] -o <outdir> [-x key=value] [-X runtime_options.json] [--solutions <n>] [--energy-min <value>] [--energy-max <value>]
 ```
 
 Defaults:
-- Instance path: `<model>.instance.json` if present next to the model
-- Output directory: `<cwd>/outdir/<model_stem>`
-- `run` sampler: `simulated-annealing` with `--num-reads 100`
+- instance path: `<model>.instance.json` if present
+- outdir: `<cwd>/outdir/<model_stem>`
+- solve runtime options default to `sampler=simulated-annealing` and `num_reads=100`
+- solve returns the best solution by default (`--solutions 1`)
 
-## Output Artifacts
+`solve` multi-solution and thresholds:
+- `--solutions N` returns up to `N` best unique solutions.
+- Returned solutions are ordered by energy ascending (ties are deterministic).
+- `--energy-min`/`--energy-max` are inclusive thresholds.
+- Threshold checks are applied to all returned solutions.
+- If any returned solution violates thresholds, `solve` writes `run.json` and exits non-zero (`status: "threshold_failed"`).
 
-`compile` and `run` generate:
-- `model.cqm`: dimod constrained quadratic model
-- `model.bqm`: dimod binary quadratic model
-- `qubo.json` or `ising.json`: exported coefficient payload
-- `varmap.json`: binary variable label to QSOL meaning
-- `explain.json`: backend diagnostics summary
-- `qsol.log`: run/compile log file
-- `run.json`: only for `run`, sampler result summary
+Short command aliases:
+- `inspect` / `ins`
+- `targets` / `tg`
+- `build` / `b`
+- `solve` / `s`
+- `targets list` / `targets ls`
+- `targets capabilities` / `targets caps`
+- `targets check` / `targets chk`
 
-## Instance Format
+Runtime/backend selection precedence:
 
-```json
-{
-  "problem": "ProblemName",
-  "sets": {
-    "A": ["a1", "a2"],
-    "B": ["b1"]
-  },
-  "params": {
-    "K": 3
-  }
-}
-```
+1. CLI `--runtime` and `--backend`
+2. Instance defaults in `execution.runtime` and `execution.backend`
 
-Rules enforced by instantiation:
-- Every declared `set` must be present and must be a JSON array
-- Missing scalar params use defaults when provided in model
-- Indexed params must match declared index shape
+If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4006`.
 
-## Documentation
+## Documentation Reading Path (Humans and Agents)
 
-- Vision and design principles: `VISION.md`
-- Language reference: `QSOL_reference.md`
-- Syntax guide: `docs/QSOL_SYNTAX.md`
-- Tutorials: `docs/tutorials/README.md`
-- Codebase guide: `docs/CODEBASE.md`
-- Tutorial model files: `examples/tutorials/README.md`
-- Example models: `examples/generic_bqm/`, `examples/min_bisection/`, `examples/partition_equal_sum/`
-- VS Code syntax extension: `editors/vscode-qsol/README.md`
+1. `README.md` (Both): project overview and getting started.
+2. `VISION.md` (Both): project purpose, principles, and coherence rubric.
+3. `docs/tutorials/01-first-program.md` (Human-first): first end-to-end workflow.
+4. `docs/tutorials/02-writing-your-own-model.md` (Human-first): build your own model.
+5. `docs/tutorials/03-compiling-running-and-reading-results.md` (Both): artifacts and troubleshooting.
+6. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
+7. `QSOL_reference.md` (Both): detailed language/reference guide.
+8. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
+9. `docs/README.md` (Both): documentation index.
+10. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
+11. `AGENTS.md` (Agent-first): repository execution/completion policy.
 
-## Python API
+## Roadmap
 
-```python
-from qsol import CompileOptions, compile_source
+Roadmap tracking is in `ROADMAP.md`.
 
-source = """
-problem Demo {
-  set A;
-  find S : Subset(A);
-  must forall x in A: S.has(x) or not S.has(x);
-  minimize sum(if S.has(x) then 1 else 0 for x in A);
-}
-"""
+## Contributing
 
-unit = compile_source(source, options=CompileOptions(filename="demo.qsol"))
-print(unit.diagnostics)
-```
+Contribution workflow and quality gates are in `CONTRIBUTING.md`.
+Agent-specific policy requirements are in `AGENTS.md`.
 
-`CompilationUnit` exposes:
-- `ast`
-- `symbol_table`
-- `typed_program`
-- `lowered_ir_symbolic`
-- `ground_ir`
-- `artifacts`
-- `diagnostics`
+## License
 
-## Development
-
-```bash
-uv run pre-commit install
-uv run pre-commit run --all-files
-uv run pytest
-uv run ruff check .
-uv run mypy src
-```
-
-`pytest` is configured with coverage enforcement (`--cov-fail-under=90`).
+MIT. See `LICENSE`.
