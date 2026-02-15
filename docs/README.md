@@ -4,6 +4,7 @@
 - Vision and design principles: `../VISION.md`
 - Language reference: `../QSOL_reference.md`
 - Syntax guide: `QSOL_SYNTAX.md`
+- Plugin guide: `PLUGINS.md`
 - Codebase architecture: `CODEBASE.md`
 - Tutorials: `tutorials/README.md`
 - Examples index: `../examples/README.md`

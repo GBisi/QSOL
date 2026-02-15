@@ -46,6 +46,7 @@ class CompilationUnit:
     artifacts: BackendArtifacts | None = None
     diagnostics: list[Diagnostic] = field(default_factory=list)
     instance_payload: dict[str, object] | None = None
+    resolved_plugin_specs: tuple[str, ...] = ()
     target_selection: TargetSelection | None = None
     support_report: SupportReport | None = None
     compiled_model: CompiledModel | None = None
@@ -163,8 +164,25 @@ def check_target_support(text: str, *, options: CompileOptions) -> CompilationUn
         )
         return unit
 
+    resolution = resolve_target_selection(
+        instance_payload=unit.instance_payload,
+        cli_runtime=options.runtime_id,
+        cli_backend=options.backend_id,
+        cli_plugin_specs=options.plugin_specs,
+    )
+    unit.resolved_plugin_specs = tuple(resolution.plugin_specs)
+    unit.target_selection = resolution.selection
+    if resolution.issues:
+        unit.support_report = SupportReport(
+            selection=resolution.selection
+            or TargetSelection(runtime_id="<missing>", backend_id="<missing>"),
+            supported=False,
+            issues=resolution.issues,
+        )
+        return _with_support_diagnostics(unit, filename=options.filename)
+
     try:
-        registry = PluginRegistry.from_discovery(module_specs=list(options.plugin_specs))
+        registry = PluginRegistry.from_discovery(module_specs=list(unit.resolved_plugin_specs))
     except Exception as exc:
         unit.diagnostics.append(
             _diag(
@@ -176,21 +194,15 @@ def check_target_support(text: str, *, options: CompileOptions) -> CompilationUn
         )
         return unit
 
-    resolution = resolve_target_selection(
-        instance_payload=unit.instance_payload,
-        cli_runtime=options.runtime_id,
-        cli_backend=options.backend_id,
-    )
     if resolution.selection is None:
         unit.support_report = SupportReport(
             selection=TargetSelection(runtime_id="<missing>", backend_id="<missing>"),
             supported=False,
-            issues=resolution.issues,
         )
         return _with_support_diagnostics(unit, filename=options.filename)
 
     selection = resolution.selection
-    unit.target_selection = selection
+    assert selection is not None
 
     backend = registry.backend(selection.backend_id)
     if backend is None:
@@ -251,7 +263,7 @@ def build_for_target(text: str, *, options: CompileOptions) -> CompilationUnit:
         return unit
 
     try:
-        registry = PluginRegistry.from_discovery(module_specs=list(options.plugin_specs))
+        registry = PluginRegistry.from_discovery(module_specs=list(unit.resolved_plugin_specs))
         backend = registry.require_backend(unit.target_selection.backend_id)
     except Exception as exc:
         unit.diagnostics.append(
@@ -293,7 +305,7 @@ def run_for_target(
         return unit, None
 
     try:
-        registry = PluginRegistry.from_discovery(module_specs=list(options.plugin_specs))
+        registry = PluginRegistry.from_discovery(module_specs=list(unit.resolved_plugin_specs))
         runtime = registry.require_runtime(unit.target_selection.runtime_id)
     except Exception as exc:
         unit.diagnostics.append(

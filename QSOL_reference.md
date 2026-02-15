@@ -283,7 +283,8 @@ Required shape:
   },
   "execution": {
     "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1"
+    "backend": "dimod-cqm-v1",
+    "plugins": []
   }
 }
 ```
@@ -297,7 +298,15 @@ Notes:
 - `execution` is optional and provides default target selection:
   - `execution.runtime`
   - `execution.backend`
+- `execution.plugins` is optional and, when present, must be an array of non-empty
+  plugin specs (`module:attribute`).
 - CLI `--runtime` / `--backend` override `execution` defaults.
+- Plugin loading order for `targets check`/`build`/`solve`:
+  1. built-ins
+  2. installed entry points (`qsol.backends`, `qsol.runtimes`)
+  3. `execution.plugins`
+  4. CLI `--plugin`
+- Instance/CLI plugin specs are merged in order and deduplicated by exact string.
 
 ## 9. Backend v1 Support Matrix
 
@@ -402,7 +411,8 @@ Instance:
   },
   "execution": {
     "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1"
+    "backend": "dimod-cqm-v1",
+    "plugins": []
   }
 }
 ```

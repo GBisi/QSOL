@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -23,13 +24,20 @@ problem Demo {
     )
 
 
-def _write_instance(path: Path, *, with_execution: bool = False) -> None:
+def _write_instance(
+    path: Path,
+    *,
+    with_execution: bool = False,
+    execution: Mapping[str, object] | None = None,
+) -> None:
     payload: dict[str, object] = {
         "problem": "Demo",
         "sets": {"A": ["a1", "a2"]},
         "params": {},
     }
-    if with_execution:
+    if execution is not None:
+        payload["execution"] = dict(execution)
+    elif with_execution:
         payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -168,6 +176,36 @@ def test_targets_check_errors_when_target_selection_missing(tmp_path: Path) -> N
 
     assert result.exit_code == 1
     assert "error[QSOL4006]" in result.stdout
+
+
+def test_targets_check_errors_when_execution_plugins_is_invalid(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    instance = tmp_path / "demo.instance.json"
+    _write_instance(
+        instance,
+        execution={
+            "runtime": "local-dimod",
+            "backend": "dimod-cqm-v1",
+            "plugins": "broken",
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "targets",
+            "chk",
+            str(model),
+            "-i",
+            str(instance),
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "error[QSOL4009]" in result.stdout
 
 
 def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:

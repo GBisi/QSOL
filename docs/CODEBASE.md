@@ -101,6 +101,8 @@ Reference built-ins:
 - Backend: `dimod-cqm-v1`
 - Runtime: `local-dimod`
 
+See also: `docs/PLUGINS.md` for authoring and loading workflows.
+
 ## 7. Diagnostics Model
 
 Families:

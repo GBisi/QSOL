@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -37,24 +38,38 @@ problem Multi {
     )
 
 
-def _write_simple_instance(instance_path: Path, *, with_execution: bool = False) -> None:
+def _write_simple_instance(
+    instance_path: Path,
+    *,
+    with_execution: bool = False,
+    execution: Mapping[str, object] | None = None,
+) -> None:
     payload: dict[str, object] = {
         "problem": "Simple",
         "sets": {"A": ["a1", "a2"]},
         "params": {},
     }
-    if with_execution:
+    if execution is not None:
+        payload["execution"] = dict(execution)
+    elif with_execution:
         payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
     instance_path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _write_multi_solution_instance(instance_path: Path, *, with_execution: bool = False) -> None:
+def _write_multi_solution_instance(
+    instance_path: Path,
+    *,
+    with_execution: bool = False,
+    execution: Mapping[str, object] | None = None,
+) -> None:
     payload: dict[str, object] = {
         "problem": "Multi",
         "sets": {"A": ["a1", "a2"]},
         "params": {},
     }
-    if with_execution:
+    if execution is not None:
+        payload["execution"] = dict(execution)
+    elif with_execution:
         payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
     instance_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -193,6 +208,85 @@ def test_solve_errors_when_target_selection_missing(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "error[QSOL4006]" in result.stdout
+
+
+def test_solve_uses_plugins_declared_in_instance_execution(tmp_path: Path, monkeypatch) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    instance_path = tmp_path / "instance.json"
+    outdir = tmp_path / "out-instance-plugin"
+    plugin_path = tmp_path / "instance_runtime_plugin.py"
+    plugin_path.write_text(
+        """
+from dataclasses import dataclass
+
+from qsol.targeting.interfaces import PluginBundle
+from qsol.targeting.types import StandardRunResult
+
+
+@dataclass(slots=True)
+class InstanceRuntime:
+    plugin_id: str = "instance-runtime"
+    display_name: str = "Runtime Loaded From Instance"
+
+    def capability_catalog(self):
+        return {"model.kind.cqm.v1": "full"}
+
+    def compatible_backend_ids(self):
+        return {"dimod-cqm-v1"}
+
+    def check_support(self, _compiled_model, *, selection):
+        _ = selection
+        return []
+
+    def run_model(self, _compiled_model, *, selection, run_options):
+        _ = run_options
+        return StandardRunResult(
+            schema_version="1.0",
+            runtime=selection.runtime_id,
+            backend=selection.backend_id,
+            status="ok",
+            energy=0.0,
+            reads=1,
+            best_sample={},
+            selected_assignments=[],
+            timing_ms=0.0,
+            capability_report_path="",
+            extensions={"sampler": "instance-runtime"},
+        )
+
+
+plugin_bundle = PluginBundle(runtimes=(InstanceRuntime(),))
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _write_simple_instance(
+        instance_path,
+        execution={
+            "runtime": "instance-runtime",
+            "backend": "dimod-cqm-v1",
+            "plugins": ["instance_runtime_plugin:plugin_bundle"],
+        },
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--instance",
+            str(instance_path),
+            "--out",
+            str(outdir),
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["runtime"] == "instance-runtime"
 
 
 def test_solve_errors_when_inferred_instance_is_missing(tmp_path: Path) -> None:

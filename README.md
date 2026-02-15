@@ -161,6 +161,15 @@ Runtime/backend selection precedence:
 
 If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4006`.
 
+Plugin bundle loading precedence for `targets check`/`build`/`solve`:
+
+1. Built-in plugins
+2. Installed entry-point plugins (`qsol.backends`, `qsol.runtimes`)
+3. Instance defaults in `execution.plugins` (array of `module:attribute`)
+4. CLI `--plugin module:attribute` values
+
+Instance + CLI plugin specs are merged with stable ordering and exact-string deduplication.
+
 ## Documentation Reading Path (Humans and Agents)
 
 1. `README.md` (Both): project overview and getting started.
@@ -168,12 +177,13 @@ If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4
 3. `docs/tutorials/01-first-program.md` (Human-first): first end-to-end workflow.
 4. `docs/tutorials/02-writing-your-own-model.md` (Human-first): build your own model.
 5. `docs/tutorials/03-compiling-running-and-reading-results.md` (Both): artifacts and troubleshooting.
-6. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
-7. `QSOL_reference.md` (Both): detailed language/reference guide.
-8. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
-9. `docs/README.md` (Both): documentation index.
-10. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
-11. `AGENTS.md` (Agent-first): repository execution/completion policy.
+6. `docs/PLUGINS.md` (Both): plugin architecture, authoring, and loading methods.
+7. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
+8. `QSOL_reference.md` (Both): detailed language/reference guide (includes instance JSON contract).
+9. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
+10. `docs/README.md` (Both): documentation index.
+11. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
+12. `AGENTS.md` (Agent-first): repository execution/completion policy.
 
 ## Roadmap
 
