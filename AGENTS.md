@@ -55,15 +55,19 @@ Before claiming task completion, contributors/agents `MUST` run:
 ```bash
 uv run pre-commit run --all-files
 uv run pytest
+uv run python examples/run_equivalence_suite.py
 ```
 
 Coverage policy:
 - `uv run pytest` `MUST` pass including coverage requirements defined in repository configuration.
 - Coverage threshold values are inherited from `qsol/pyproject.toml` and `MUST NOT` be duplicated as hardcoded policy here.
 
+Examples equivalence suite policy:
+- `uv run python examples/run_equivalence_suite.py` `MUST` exit 0 (all example equivalence scripts pass by their own criteria).
+
 Docs-only changes:
 - Docs-only edits are not exempt.
-- Both mandatory gates still `MUST` pass.
+- All mandatory gates still `MUST` pass.
 
 ## Required Change Matrix
 
@@ -92,6 +96,7 @@ DoD Checklist
 - Grammar/semantic regression check: <pass/fail/N.A.> - <scope and summary>
 - Gate: uv run pre-commit run --all-files -> <pass/fail>
 - Gate: uv run pytest -> <pass/fail>
+- Gate: uv run python examples/run_equivalence_suite.py -> <pass/fail>
 ```
 
 Contributors/agents `MUST NOT` claim completion without this checklist.

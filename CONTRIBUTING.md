@@ -36,11 +36,12 @@ git checkout -b codex/<short-topic>
 
 ## Mandatory Quality Gates
 
-Run both commands before claiming completion:
+Run these commands before claiming completion:
 
 ```bash
 uv run pre-commit run --all-files
 uv run pytest
+uv run python examples/run_equivalence_suite.py
 ```
 
 Docs-only changes are not exempt.
