@@ -1189,4 +1189,6 @@ def test_solve_rejects_backend_options(tmp_path: Path) -> None:
         ],
     )
     assert short_result.exit_code != 0
-    assert "No such option: -b" in short_result.output
+    plain_short_output = _strip_ansi(short_result.output)
+    assert "No such option" in plain_short_output
+    assert "-b" in plain_short_output

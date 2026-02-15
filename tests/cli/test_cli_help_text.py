@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -7,6 +8,10 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from qsol.cli import app
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def test_qsol_root_help_includes_command_descriptions() -> None:
@@ -46,20 +51,21 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
 
     solve_help = runner.invoke(app, ["solve", "-h"], env=env)
     assert solve_help.exit_code == 0
-    assert "Path to the QSOL model source file." in solve_help.stdout
-    assert "--backend" not in solve_help.stdout
-    assert "--solutions" in solve_help.stdout
-    assert "Number of best unique" in solve_help.stdout
-    assert "solutions to return" in solve_help.stdout
-    assert "--config" in solve_help.stdout
-    assert "--scenario" in solve_help.stdout
-    assert "--all-scenarios" in solve_help.stdout
-    assert "--combine-mode" in solve_help.stdout
-    assert "--failure-policy" in solve_help.stdout
-    assert "--energy-min" in solve_help.stdout
-    assert "Inclusive minimum" in solve_help.stdout
-    assert "--energy-max" in solve_help.stdout
-    assert "Inclusive maximum" in solve_help.stdout
+    plain_solve_help = _strip_ansi(solve_help.stdout)
+    assert "Path to the QSOL model source file." in plain_solve_help
+    assert "--backend" not in plain_solve_help
+    assert re.search(r"--sol\S*", plain_solve_help)
+    assert "Number of best unique" in plain_solve_help
+    assert "solutions to return" in plain_solve_help
+    assert "--config" in plain_solve_help
+    assert "--scenario" in plain_solve_help
+    assert "--all-scenarios" in plain_solve_help
+    assert "--combine-mode" in plain_solve_help
+    assert "--failure-policy" in plain_solve_help
+    assert "--energy-min" in plain_solve_help
+    assert "Inclusive minimum" in plain_solve_help
+    assert "--energy-max" in plain_solve_help
+    assert "Inclusive maximum" in plain_solve_help
 
     build_help = runner.invoke(app, ["build", "-h"], env=env)
     assert build_help.exit_code == 0
