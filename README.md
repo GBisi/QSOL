@@ -4,7 +4,7 @@
 
 QSOL is a declarative language, compiler and runtime for combinatorial optimization problems.
 
-You model sets, params, unknowns, constraints, and objectives; QSOL compiles model + instance data into inspectable dimod artifacts and can run a selected runtime target.
+You model sets, params, unknowns, constraints, and objectives; QSOL compiles model + scenario data (from config TOML) into inspectable dimod artifacts and can run a selected runtime target.
 
 ## Idea, Vision, and Why
 
@@ -20,7 +20,7 @@ Project purpose, principles, and coherence rubric are in `VISION.md`.
 
 QSOL is staged and target-aware:
 
-`parse -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
+`parse -> module load (use) -> unknown elaboration -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
 
 Reference targets:
 - Runtime: `local-dimod`
@@ -28,6 +28,28 @@ Reference targets:
 
 Additional built-in runtime:
 - Runtime: `qiskit` (QAOA/NumPy on fake IBM backends, OpenQASM3 export for QAOA)
+
+## Module Imports and Stdlib
+
+QSOL uses one import form for both packaged stdlib modules and user libraries:
+
+```qsol
+use stdlib.permutation;
+use mylib.graph.unknowns;
+```
+
+Import rules:
+- `stdlib.*` is reserved and always resolved from packaged modules under `src/qsol/stdlib/`.
+- Non-stdlib modules resolve as user libraries from:
+1. the importing file directory
+2. the process current working directory
+- Module path `a.b.c` maps to `a/b/c.qsol`.
+- Quoted file imports (`use "x.qsol";`) are not supported.
+
+Custom unknowns from imported modules are elaborated in the frontend into primitive `Subset`/`Mapping` finds plus generated constraints, so backend v1 remains primitive-focused.
+
+Stdlib module catalog and usage details:
+- `src/qsol/stdlib/README.md`
 
 Module map:
 - `/Users/gbisi/Documents/code/qsol/src/qsol/parse/`
@@ -67,7 +89,7 @@ uv sync --extra dev --extra qiskit
 
 Use tutorial files:
 - `examples/tutorials/first_program.qsol`
-- `examples/tutorials/first_program.instance.json`
+- `examples/tutorials/first_program.qsol.toml`
 
 Inspect frontend stages:
 
@@ -90,12 +112,12 @@ uv run qsol targets capabilities --runtime local-dimod
 uv run qsol targets capabilities --runtime qiskit
 ```
 
-Check model+instance support:
+Check model+scenario support:
 
 ```bash
 uv run qsol targets check \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod
 ```
 
@@ -104,7 +126,7 @@ Build artifacts:
 ```bash
 uv run qsol build \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --format qubo
@@ -115,7 +137,7 @@ Solve:
 ```bash
 uv run qsol solve \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --runtime-option sampler=exact \
@@ -128,7 +150,7 @@ Solve with Qiskit QAOA on a fake IBM backend and emit OpenQASM 3:
 ```bash
 uv run qsol solve \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime qiskit \
   --out outdir/first_program_qiskit \
   --runtime-option algorithm=qaoa \
@@ -148,14 +170,14 @@ uv run qsol inspect lower <model.qsol> [--json]
 
 uv run qsol targets list [--plugin module:attr]
 uv run qsol targets capabilities --runtime <id> [--plugin module:attr]
-uv run qsol targets check <model.qsol> -i <instance.json> [--runtime <id>] [--plugin module:attr]
+uv run qsol targets check <model.qsol> -c <config.qsol.toml> [--runtime <id>] [--scenario <name>] [--all-scenarios] [--failure-policy <policy>] [--plugin module:attr]
 
-uv run qsol build <model.qsol> -i <instance.json> [--runtime <id>] -o <outdir>
-uv run qsol solve <model.qsol> -i <instance.json> [--runtime <id>] -o <outdir> [-x key=value] [-X runtime_options.json] [--solutions <n>] [--energy-min <value>] [--energy-max <value>]
+uv run qsol build <model.qsol> -c <config.qsol.toml> [--runtime <id>] [--scenario <name>] [--all-scenarios] [--failure-policy <policy>] -o <outdir>
+uv run qsol solve <model.qsol> -c <config.qsol.toml> [--runtime <id>] [--scenario <name>] [--all-scenarios] [--combine-mode intersection|union] [--failure-policy <policy>] -o <outdir> [-x key=value] [-X runtime_options.json] [--solutions <n>] [--energy-min <value>] [--energy-max <value>]
 ```
 
 Defaults:
-- instance path: `<model>.instance.json` if present
+- config discovery: `*.qsol.toml` in model directory; if multiple, `<model>.qsol.toml` is required
 - outdir: `<cwd>/outdir/<model_stem>`
 - solve runtime options default to `sampler=simulated-annealing` and `num_reads=100`
 - solve returns the best solution by default (`--solutions 1`)
@@ -185,7 +207,7 @@ Short command aliases:
 Runtime selection precedence:
 
 1. CLI `--runtime`
-2. Instance default `execution.runtime`
+2. Scenario/default config `execution.runtime`
 
 If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4006`.
 Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
@@ -194,10 +216,20 @@ Plugin bundle loading precedence for `targets check`/`build`/`solve`:
 
 1. Built-in plugins
 2. Installed entry-point plugins (`qsol.backends`, `qsol.runtimes`)
-3. Instance defaults in `execution.plugins` (array of `module:attribute`)
+3. Config defaults/scenario values in `execution.plugins` (array of `module:attribute`)
 4. CLI `--plugin module:attribute` values
 
-Instance + CLI plugin specs are merged with stable ordering and exact-string deduplication.
+Config + CLI plugin specs are merged with stable ordering and exact-string deduplication.
+
+## Continuous Integration
+
+GitHub Actions runs the mandatory quality gates on every push and pull request to `main`.
+
+The CI workflow (`.github/workflows/ci.yml`) executes:
+
+1. **Lint & Format** — `uv run pre-commit run --all-files`
+2. **Tests & Coverage** — `uv run pytest` (90% coverage threshold)
+3. **Examples Equivalence Suite** — `uv run python examples/run_equivalence_suite.py`
 
 ## Documentation Reading Path (Humans and Agents)
 
@@ -208,11 +240,12 @@ Instance + CLI plugin specs are merged with stable ordering and exact-string ded
 5. `docs/tutorials/03-compiling-running-and-reading-results.md` (Both): artifacts and troubleshooting.
 6. `docs/PLUGINS.md` (Both): plugin architecture, authoring, and loading methods.
 7. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
-8. `QSOL_reference.md` (Both): detailed language/reference guide (includes instance JSON contract).
+8. `QSOL_reference.md` (Both): detailed language/reference guide (includes config TOML + scenario contract).
 9. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
-10. `docs/README.md` (Both): documentation index.
-11. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
-12. `AGENTS.md` (Agent-first): repository execution/completion policy.
+10. `src/qsol/stdlib/README.md` (Both): packaged stdlib modules and contracts.
+11. `docs/README.md` (Both): documentation index.
+12. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
+13. `AGENTS.md` (Agent-first): repository execution/completion policy.
 
 ## Roadmap
 

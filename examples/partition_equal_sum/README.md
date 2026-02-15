@@ -5,7 +5,7 @@ This example models number partitioning: choose subset `R` of `Items` such that 
 ## Files
 
 - `partition_equal_sum.qsol`: QSOL model
-- `partition_equal_sum.instance.json`: sample partition instance
+- `partition_equal_sum.qsol.toml`: sample partition scenario config
 - `test_equivalence.py`: custom-vs-compiled BQM equivalence check
 
 ## Run
@@ -15,14 +15,14 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 ```bash
 uv run qsol targets check \
   examples/partition_equal_sum/partition_equal_sum.qsol \
-  --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
+  --config examples/partition_equal_sum/partition_equal_sum.qsol.toml \
   --runtime local-dimod
 ```
 
 ```bash
 uv run qsol build \
   examples/partition_equal_sum/partition_equal_sum.qsol \
-  --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
+  --config examples/partition_equal_sum/partition_equal_sum.qsol.toml \
   --runtime local-dimod \
   --out outdir/partition_equal_sum \
   --format qubo
@@ -31,7 +31,7 @@ uv run qsol build \
 ```bash
 uv run qsol solve \
   examples/partition_equal_sum/partition_equal_sum.qsol \
-  --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
+  --config examples/partition_equal_sum/partition_equal_sum.qsol.toml \
   --runtime local-dimod \
   --out outdir/partition_equal_sum \
   --runtime-option sampler=exact
@@ -50,10 +50,10 @@ uv run python examples/partition_equal_sum/test_equivalence.py --simulated-annea
 - `test_equivalence.py` exits with status `0`.
 - Structural equivalence and runtime equivalence are both expected to pass for this example.
 
-## Instance Knobs
+## Scenario Knobs
 
-- `sets.Items`: item identifiers
-- `params.Value[item]`: positive numeric weight for each item
+- `scenarios.baseline.sets.Items`: item identifiers
+- `scenarios.baseline.params.Value[item]`: positive numeric weight for each item
 
 ## Related
 

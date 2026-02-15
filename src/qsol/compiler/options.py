@@ -7,6 +7,7 @@ from dataclasses import dataclass
 class CompileOptions:
     filename: str = "<input>"
     instance_path: str | None = None
+    instance_payload: dict[str, object] | None = None
     outdir: str | None = None
     output_format: str = "qubo"
     verbose: bool = False

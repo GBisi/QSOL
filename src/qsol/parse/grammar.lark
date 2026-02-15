@@ -22,7 +22,11 @@ program: sep* (item sep*)*
 sep: END
 
 item: problem
+    | use_stmt
     | unknown_def
+
+use_stmt: "use" module_path
+module_path: NAME ("." NAME)*
 
 // -----------------------
 // Top-level blocks

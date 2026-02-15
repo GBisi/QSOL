@@ -6,11 +6,12 @@ Goal: build a model from scratch and run it through the target-aware workflow.
 
 Use this sequence:
 
-1. Declare sets.
-2. Declare params.
-3. Declare unknowns with `find`.
-4. Add hard feasibility with `must`.
-5. Add objective with `minimize`/`maximize`.
+1. Import reusable unknown modules with `use` when needed.
+2. Declare sets.
+3. Declare params.
+4. Declare unknowns with `find`.
+5. Add hard feasibility with `must`.
+6. Add objective with `minimize`/`maximize`.
 
 ## 2. Example Problem
 
@@ -40,28 +41,37 @@ problem WorkerAssignment {
 }
 ```
 
-## 3. Instance
+Reusable unknown imports use the same module form for stdlib and user libraries:
 
-`examples/tutorials/assignment_balance.instance.json`:
+```qsol
+use stdlib.permutation;
+use mylib.constraints.injective;
+```
 
-```json
-{
-  "problem": "WorkerAssignment",
-  "sets": {
-    "Workers": ["w1", "w2", "w3"],
-    "Tasks": ["t1", "t2", "t3", "t4"]
-  },
-  "params": {
-    "Cost": {
-      "w1": {"t1": 2, "t2": 8, "t3": 4, "t4": 6},
-      "w2": {"t1": 5, "t2": 3, "t3": 7, "t4": 2},
-      "w3": {"t1": 6, "t2": 4, "t3": 2, "t4": 5}
-    }
-  },
-  "execution": {
-    "runtime": "local-dimod"
-  }
-}
+## 3. Config
+
+`examples/tutorials/assignment_balance.qsol.toml`:
+
+```toml
+schema_version = "1"
+
+[selection]
+default_scenario = "baseline"
+
+[defaults.execution]
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "WorkerAssignment"
+
+[scenarios.baseline.sets]
+Workers = ["w1", "w2", "w3"]
+Tasks = ["t1", "t2", "t3", "t4"]
+
+[scenarios.baseline.params.Cost]
+w1 = { t1 = 2, t2 = 8, t3 = 4, t4 = 6 }
+w2 = { t1 = 5, t2 = 3, t3 = 7, t4 = 2 }
+w3 = { t1 = 6, t2 = 4, t3 = 2, t4 = 5 }
 ```
 
 ## 4. Run Workflow
@@ -71,32 +81,32 @@ uv run qsol inspect check examples/tutorials/assignment_balance.qsol
 
 uv run qsol targets check \
   examples/tutorials/assignment_balance.qsol \
-  --instance examples/tutorials/assignment_balance.instance.json
+  --config examples/tutorials/assignment_balance.qsol.toml
 
 uv run qsol build \
   examples/tutorials/assignment_balance.qsol \
-  --instance examples/tutorials/assignment_balance.instance.json \
+  --config examples/tutorials/assignment_balance.qsol.toml \
   --out outdir/assignment_balance \
   --format qubo
 
 uv run qsol solve \
   examples/tutorials/assignment_balance.qsol \
-  --instance examples/tutorials/assignment_balance.instance.json \
+  --config examples/tutorials/assignment_balance.qsol.toml \
   --out outdir/assignment_balance \
   --runtime-option sampler=exact
 ```
 
-The second command uses `execution.runtime` from the instance. Add CLI `--runtime` to override.
+The second command uses `execution.runtime` from config. Add CLI `--runtime` to override.
 
 ## 5. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:
 
-- Prefer `Subset` and `Mapping` in `find`.
+- Prefer primitive-friendly formulations and keep custom unknown definitions simple (`rep` + `laws` + `view`).
 - Keep hard constraints to supported numeric comparisons and atom-like predicates.
 - Use `sum` + arithmetic in objectives.
-- Validate early with `targets check` on concrete instances.
-- Treat user-defined unknown instantiation in `find` as unsupported on `dimod-cqm-v1`.
+- Validate early with `targets check` on concrete scenarios.
+- Custom unknowns in `find` are supported through frontend elaboration into primitive finds and generated constraints.
 
 ## 6. Incremental Extensions
 

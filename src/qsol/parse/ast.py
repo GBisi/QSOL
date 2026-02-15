@@ -32,6 +32,11 @@ class TopItem(Node):
 
 
 @dataclass(frozen=True, slots=True)
+class UseStmt(TopItem):
+    module: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProblemDef(TopItem):
     name: str
     stmts: list[ProblemStmt]

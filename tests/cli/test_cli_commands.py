@@ -24,22 +24,47 @@ problem Demo {
     )
 
 
-def _write_instance(
+def _toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, list):
+        rendered = ", ".join(_toml_value(item) for item in value)
+        return f"[{rendered}]"
+    raise TypeError(f"unsupported TOML literal: {type(value)!r}")
+
+
+def _write_config(
     path: Path,
     *,
     with_execution: bool = False,
     execution: Mapping[str, object] | None = None,
 ) -> None:
-    payload: dict[str, object] = {
-        "problem": "Demo",
-        "sets": {"A": ["a1", "a2"]},
-        "params": {},
-    }
-    if execution is not None:
-        payload["execution"] = dict(execution)
-    elif with_execution:
-        payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    lines = [
+        'schema_version = "1"',
+        "",
+        "[scenarios.base]",
+        'problem = "Demo"',
+        "",
+        "[scenarios.base.sets]",
+        'A = ["a1", "a2"]',
+        "",
+    ]
+
+    execution_payload: Mapping[str, object] | None = execution
+    if execution_payload is None and with_execution:
+        execution_payload = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
+
+    if execution_payload is not None:
+        lines.extend(["[scenarios.base.execution]"])
+        for key, value in execution_payload.items():
+            lines.append(f"{key} = {_toml_value(value)}")
+        lines.append("")
+
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def test_inspect_parse_check_lower_commands(tmp_path: Path) -> None:
@@ -99,8 +124,8 @@ def test_targets_list_and_capabilities_commands() -> None:
 def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config)
     outdir = tmp_path / "target-check"
 
     runner = CliRunner()
@@ -110,8 +135,8 @@ def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
             "tg",
             "chk",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-u",
             "local-dimod",
             "-o",
@@ -129,11 +154,11 @@ def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
     assert report["selection"]["backend"] == "dimod-cqm-v1"
 
 
-def test_targets_check_uses_instance_execution_defaults(tmp_path: Path) -> None:
+def test_targets_check_uses_config_execution_defaults(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance, with_execution=True)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config, with_execution=True)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -142,8 +167,8 @@ def test_targets_check_uses_instance_execution_defaults(tmp_path: Path) -> None:
             "tg",
             "chk",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-n",
         ],
     )
@@ -155,8 +180,8 @@ def test_targets_check_uses_instance_execution_defaults(tmp_path: Path) -> None:
 def test_targets_check_errors_when_target_selection_missing(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance, with_execution=False)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config, with_execution=False)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -165,8 +190,8 @@ def test_targets_check_errors_when_target_selection_missing(tmp_path: Path) -> N
             "targets",
             "chk",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-n",
         ],
     )
@@ -175,12 +200,12 @@ def test_targets_check_errors_when_target_selection_missing(tmp_path: Path) -> N
     assert "error[QSOL4006]" in result.stdout
 
 
-def test_targets_check_errors_when_execution_plugins_is_invalid(tmp_path: Path) -> None:
+def test_targets_check_errors_when_config_plugins_is_invalid(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(
-        instance,
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(
+        config,
         execution={
             "runtime": "local-dimod",
             "backend": "dimod-cqm-v1",
@@ -195,21 +220,21 @@ def test_targets_check_errors_when_execution_plugins_is_invalid(tmp_path: Path) 
             "targets",
             "chk",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-n",
         ],
     )
 
     assert result.exit_code == 1
-    assert "error[QSOL4009]" in result.stdout
+    assert "error[QSOL4004]" in result.stdout
 
 
 def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config)
     outdir = tmp_path / "out"
 
     runner = CliRunner()
@@ -218,8 +243,8 @@ def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
         [
             "b",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-u",
             "local-dimod",
             "-o",
@@ -257,18 +282,18 @@ def test_targets_capabilities_unknown_id_error() -> None:
 def test_targets_and_build_reject_backend_option(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
-    instance = tmp_path / "demo.instance.json"
-    _write_instance(instance)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config)
 
     runner = CliRunner()
     invocations = [
         ["targets", "caps", "-u", "local-dimod", "--backend", "dimod-cqm-v1"],
-        ["targets", "chk", str(model), "-i", str(instance), "--backend", "dimod-cqm-v1"],
+        ["targets", "chk", str(model), "-c", str(config), "--backend", "dimod-cqm-v1"],
         [
             "build",
             str(model),
-            "-i",
-            str(instance),
+            "-c",
+            str(config),
             "-u",
             "local-dimod",
             "--backend",

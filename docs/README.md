@@ -3,6 +3,7 @@
 - Getting started and project overview: `../README.md`
 - Vision and design principles: `../VISION.md`
 - Language reference: `../QSOL_reference.md`
+- Stdlib modules: `../src/qsol/stdlib/README.md`
 - Syntax guide: `QSOL_SYNTAX.md`
 - Plugin guide: `PLUGINS.md`
 - Codebase architecture: `CODEBASE.md`

@@ -18,7 +18,20 @@ For full semantics and backend caveats, see `QSOL_reference.md`.
 
 ## 2. Top-Level Constructs
 
-A file may contain one or more `problem` blocks and optional `unknown` blocks.
+A file may contain top-level `use`, `unknown`, and `problem` blocks.
+
+Module-style imports:
+
+```qsol
+use stdlib.permutation;
+use mylib.graph.unknowns;
+```
+
+Import rules:
+- `stdlib.*` is a reserved namespace for packaged stdlib modules.
+- Non-stdlib modules resolve from importer directory, then process CWD.
+- Dotted module path `a.b.c` maps to `a/b/c.qsol`.
+- Quoted imports like `use "x.qsol";` are not supported.
 
 ```qsol
 problem Demo {
@@ -73,7 +86,11 @@ Usage notes:
 ```qsol
 find Pick : Subset(Workers);
 find Assign : Mapping(Workers -> Tasks);
+find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 ```
+
+`find` supports primitive unknowns (`Subset`, `Mapping`) and user-defined unknowns.
+Custom unknown finds are elaborated in frontend into primitive finds plus generated constraints.
 
 ## 4. Constraints and Objectives
 

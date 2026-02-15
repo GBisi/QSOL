@@ -42,6 +42,45 @@ def missing_instance_file(inferred_path: Path, *, model_path: Path) -> Diagnosti
     )
 
 
+def missing_config_file(
+    inferred_path: Path,
+    *,
+    model_path: Path,
+) -> Diagnostic:
+    return Diagnostic(
+        severity=Severity.ERROR,
+        code="QSOL4002",
+        message=f"config file not provided and default config was not found: {inferred_path}",
+        span=_span_for_file(model_path),
+        help=[
+            f"Create `{inferred_path.name}` next to the model, or pass `--config <path>`.",
+            "Config files must use TOML and include a `scenarios` table.",
+        ],
+    )
+
+
+def ambiguous_config_file(
+    *,
+    model_path: Path,
+    expected_path: Path,
+    candidates: list[Path],
+) -> Diagnostic:
+    listed = ", ".join(path.name for path in candidates)
+    return Diagnostic(
+        severity=Severity.ERROR,
+        code="QSOL4002",
+        message="config file not provided and default config is ambiguous",
+        span=_span_for_file(model_path),
+        notes=[
+            f"found candidates: {listed}",
+            f"expected same-name config: {expected_path.name}",
+        ],
+        help=[
+            "Pass `--config <path>` explicitly, or keep a single `*.qsol.toml` file.",
+        ],
+    )
+
+
 def file_read_error(path: Path, exc: OSError) -> Diagnostic:
     return Diagnostic(
         severity=Severity.ERROR,
@@ -50,6 +89,17 @@ def file_read_error(path: Path, exc: OSError) -> Diagnostic:
         span=_span_for_file(path),
         notes=[str(exc)],
         help=["Verify the file path exists and is readable."],
+    )
+
+
+def config_load_error(path: Path, exc: Exception) -> Diagnostic:
+    return Diagnostic(
+        severity=Severity.ERROR,
+        code="QSOL4004",
+        message=f"failed to load config TOML: {path}",
+        span=_span_for_file(path),
+        notes=[str(exc)],
+        help=["Ensure the config payload is valid TOML and matches the expected schema."],
     )
 
 

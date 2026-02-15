@@ -104,6 +104,7 @@ def _syntax_hints(source: str, line: int, col: int, expected: list[str]) -> list
             and (
                 cur.startswith(
                     (
+                        "use ",
                         "set ",
                         "find ",
                         "param ",

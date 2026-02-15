@@ -16,11 +16,13 @@ from qsol.lower.desugar import desugar_program
 from qsol.lower.ir import BackendArtifacts, GroundIR, KernelIR
 from qsol.lower.lower import lower_symbolic as lower_symbolic_pass
 from qsol.parse.ast import Program, TypedProgram
+from qsol.parse.module_loader import resolve_use_modules
 from qsol.parse.parser import ParseFailure, parse_to_ast
 from qsol.parse.parser import parse_program as parse_program_pass
 from qsol.sema.resolver import Resolver
 from qsol.sema.symbols import SymbolTable
 from qsol.sema.typecheck import TypeChecker
+from qsol.sema.unknown_elaboration import elaborate_unknowns
 from qsol.sema.validate import validate_program
 from qsol.targeting import (
     CompiledModel,
@@ -81,13 +83,25 @@ def _diag(filename: str, *, code: str, message: str, notes: list[str] | None = N
 
 def _apply_frontend_stages(text: str, *, options: CompileOptions, unit: CompilationUnit) -> None:
     try:
-        program = parse_to_ast(text, filename=options.filename)
+        raw_program = parse_to_ast(text, filename=options.filename)
     except ParseFailure as exc:
         LOGGER.error("Parse failure for %s", options.filename)
         unit.diagnostics.append(exc.diagnostic)
         return
 
-    unit.ast = program
+    unit.ast = raw_program
+
+    module_result = resolve_use_modules(raw_program, root_filename=options.filename)
+    unit.diagnostics.extend(module_result.diagnostics)
+    if any(diag.is_error for diag in unit.diagnostics):
+        return
+
+    elaboration = elaborate_unknowns(module_result.program)
+    unit.diagnostics.extend(elaboration.diagnostics)
+    if any(diag.is_error for diag in unit.diagnostics):
+        return
+
+    program = elaboration.program
 
     resolver = Resolver()
     res = resolver.resolve(program)
@@ -104,14 +118,21 @@ def _apply_frontend_stages(text: str, *, options: CompileOptions, unit: Compilat
     desugared = desugar_program(program)
     unit.lowered_ir_symbolic = lower_symbolic_pass(desugared)
 
-    if options.instance_path is None or unit.lowered_ir_symbolic is None:
+    if unit.lowered_ir_symbolic is None:
         return
 
-    LOGGER.debug("Loading instance from %s", options.instance_path)
-    try:
-        instance = load_instance(options.instance_path)
-    except Exception as exc:  # pragma: no cover - defensive guard for runtime IO/JSON failures
-        unit.diagnostics.append(instance_load_error(Path(options.instance_path), exc))
+    instance: dict[str, object] | None = None
+    if options.instance_payload is not None:
+        LOGGER.debug("Using in-memory instance payload for %s", options.filename)
+        instance = dict(options.instance_payload)
+    elif options.instance_path is not None:
+        LOGGER.debug("Loading instance from %s", options.instance_path)
+        try:
+            instance = load_instance(options.instance_path)
+        except Exception as exc:  # pragma: no cover - defensive guard for runtime IO/JSON failures
+            unit.diagnostics.append(instance_load_error(Path(options.instance_path), exc))
+            return
+    else:
         return
 
     unit.instance_payload = instance
@@ -159,7 +180,10 @@ def check_target_support(text: str, *, options: CompileOptions) -> CompilationUn
             _diag(
                 options.filename,
                 code="QSOL4006",
-                message="target support checks require instance grounding; provide `--instance <path>`",
+                message=(
+                    "target support checks require instance grounding; "
+                    "provide config-resolved scenario data"
+                ),
             )
         )
         return unit
@@ -341,7 +365,8 @@ def run_for_target(
 def compile_source(text: str, *, options: CompileOptions) -> CompilationUnit:
     # Backward-compatible wrapper used by legacy Python helpers/tests.
     # For full build requests, default to the built-in local target pair.
-    if options.instance_path is not None and options.outdir is not None:
+    has_instance = options.instance_path is not None or options.instance_payload is not None
+    if has_instance and options.outdir is not None:
         target_options = options
         if target_options.runtime_id is None or target_options.backend_id is None:
             target_options = replace(

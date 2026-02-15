@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, Mapping, cast
 
 import dimod
 import typer
@@ -22,7 +22,23 @@ from qsol.compiler.pipeline import (
     compile_frontend,
     run_for_target,
 )
-from qsol.diag.cli_diagnostics import file_read_error, missing_instance_file
+from qsol.config import (
+    CombineMode,
+    FailurePolicy,
+    QsolConfig,
+    load_config,
+    materialize_instance_payload,
+    resolve_combine_mode,
+    resolve_failure_policy,
+    resolve_selected_scenarios,
+    resolve_solve_settings,
+)
+from qsol.diag.cli_diagnostics import (
+    ambiguous_config_file,
+    config_load_error,
+    file_read_error,
+    missing_config_file,
+)
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.reporter import DiagnosticReporter
 from qsol.diag.source import SourceText, Span
@@ -87,15 +103,15 @@ def root_callback(ctx: typer.Context) -> None:
     )
     quickstart.add_row(
         "Check target compatibility",
-        ("qsol targets check model.qsol -i model.instance.json --runtime local-dimod"),
+        ("qsol targets check model.qsol -c model.qsol.toml --runtime local-dimod"),
     )
     quickstart.add_row(
         "Build artifacts",
-        ("qsol build model.qsol -i model.instance.json --runtime local-dimod -o outdir/model"),
+        ("qsol build model.qsol -c model.qsol.toml --runtime local-dimod -o outdir/model"),
     )
     quickstart.add_row(
         "Solve",
-        ("qsol solve model.qsol -i model.instance.json --runtime local-dimod"),
+        ("qsol solve model.qsol -c model.qsol.toml --runtime local-dimod"),
     )
     console.print(quickstart)
     console.print("[dim]Use `qsol -h` for full command help.[/dim]")
@@ -149,17 +165,23 @@ def _print_diags(
     return any(d.is_error for d in diagnostics)
 
 
-def _resolve_instance_path(
-    file: Path, instance: Path | None
-) -> tuple[Path | None, Diagnostic | None]:
-    if instance is not None:
-        return instance, None
+def _resolve_config_path(file: Path, config: Path | None) -> tuple[Path | None, Diagnostic | None]:
+    if config is not None:
+        return config, None
 
-    inferred_instance = file.with_suffix(".instance.json")
-    if inferred_instance.exists():
-        LOGGER.info("Inferred instance file: %s", inferred_instance)
-        return inferred_instance, None
-    return None, missing_instance_file(inferred_instance, model_path=file)
+    inferred_config = file.with_suffix(".qsol.toml")
+    candidates = sorted(file.parent.glob("*.qsol.toml"))
+    if not candidates:
+        return None, missing_config_file(inferred_config, model_path=file)
+    if len(candidates) == 1:
+        LOGGER.info("Inferred config file: %s", candidates[0])
+        return candidates[0], None
+    if inferred_config in candidates:
+        LOGGER.info("Inferred same-name config file: %s", inferred_config)
+        return inferred_config, None
+    return None, ambiguous_config_file(
+        model_path=file, expected_path=inferred_config, candidates=candidates
+    )
 
 
 def _resolve_outdir(file: Path, outdir: Path | None) -> Path:
@@ -529,34 +551,313 @@ def targets_capabilities(
     console.print(pair_table)
 
 
-def _read_model_and_instance(
+def _read_model_and_config(
     *,
     file: Path,
-    instance: Path | None,
+    config: Path | None,
     console: Console,
-) -> tuple[str | None, Path | None]:
+) -> tuple[str | None, Path | None, QsolConfig | None]:
     try:
         text = _read_file(file)
     except OSError as exc:
         _print_diags(console, None, [file_read_error(file, exc)])
-        return None, None
+        return None, None, None
 
-    resolved_instance, instance_diag = _resolve_instance_path(file, instance)
-    if instance_diag is not None:
-        _print_diags(console, None, [instance_diag])
-        return None, None
+    resolved_config, config_diag = _resolve_config_path(file, config)
+    if config_diag is not None or resolved_config is None:
+        _print_diags(
+            console, None, [config_diag or _diag(file, code="QSOL4002", message="missing config")]
+        )
+        return None, None, None
 
-    return text, resolved_instance
+    try:
+        parsed_config = load_config(resolved_config)
+    except Exception as exc:
+        _print_diags(console, None, [config_load_error(resolved_config, exc)])
+        return None, None, None
+
+    return text, resolved_config, parsed_config
 
 
-@targets_app.command("check", help="Check model+instance support for a selected target pair.")
+def _scenario_outdir(*, outdir: Path, scenario_name: str, multi_scenario: bool) -> Path:
+    if not multi_scenario:
+        return outdir
+    return outdir / "scenarios" / scenario_name
+
+
+def _write_json_file(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+@dataclass(slots=True)
+class _ScenarioOutcome:
+    scenario: str
+    success: bool
+    status: str
+    runtime: str | None = None
+    backend: str | None = None
+    report_path: Path | None = None
+    run_path: Path | None = None
+    run_result: StandardRunResult | None = None
+    requested_solutions: int = 1
+
+
+def _command_success(
+    *,
+    failure_policy: FailurePolicy,
+    successes: int,
+    failures: int,
+) -> bool:
+    if failure_policy is FailurePolicy.best_effort:
+        return successes > 0
+    return failures == 0
+
+
+def _merge_multi_scenario_solutions(
+    *,
+    successful_outcomes: list[_ScenarioOutcome],
+    combine_mode: CombineMode,
+    requested_solutions: int,
+) -> list[dict[str, object]]:
+    per_scenario: dict[str, dict[tuple[tuple[str, int], ...], Mapping[str, object]]] = {}
+
+    for outcome in successful_outcomes:
+        assert outcome.run_result is not None
+        raw_solutions = outcome.run_result.extensions.get("solutions")
+        if not isinstance(raw_solutions, list):
+            raise ValueError(
+                f"scenario `{outcome.scenario}` did not return `extensions.solutions` payload"
+            )
+
+        scenario_map: dict[tuple[tuple[str, int], ...], Mapping[str, object]] = {}
+        for solution_raw in raw_solutions:
+            if not isinstance(solution_raw, Mapping):
+                raise ValueError(f"scenario `{outcome.scenario}` returned malformed solution entry")
+            signature, normalized_sample = _solution_signature(
+                solution_raw, scenario_name=outcome.scenario
+            )
+            normalized_solution = dict(solution_raw)
+            normalized_solution["sample"] = normalized_sample
+            scenario_map[signature] = normalized_solution
+
+        per_scenario[outcome.scenario] = scenario_map
+
+    if not per_scenario:
+        return []
+
+    signature_sets = [set(values.keys()) for values in per_scenario.values()]
+    if combine_mode is CombineMode.intersection:
+        signatures = set.intersection(*signature_sets)
+    else:
+        signatures = set.union(*signature_sets)
+
+    rows: list[
+        tuple[
+            float,
+            tuple[tuple[str, int], ...],
+            dict[str, int],
+            list[dict[str, object]],
+            dict[str, float],
+        ]
+    ] = []
+    for signature in signatures:
+        scenario_energies: dict[str, float] = {}
+        selected_assignments: list[dict[str, object]] = []
+        for scenario_name, solution_map in per_scenario.items():
+            solution = solution_map.get(signature)
+            if solution is None:
+                continue
+
+            energy_raw = solution.get("energy")
+            if isinstance(energy_raw, bool) or not isinstance(energy_raw, (int, float)):
+                raise ValueError(f"scenario `{scenario_name}` has non-numeric solution energy")
+            scenario_energies[scenario_name] = float(energy_raw)
+            if not selected_assignments:
+                selected_raw = solution.get("selected_assignments", [])
+                if isinstance(selected_raw, list):
+                    selected_assignments = list(cast(list[dict[str, object]], selected_raw))
+
+        if not scenario_energies:
+            continue
+
+        worst_case = max(scenario_energies.values())
+        rows.append(
+            (
+                worst_case,
+                signature,
+                {name: value for name, value in signature},
+                selected_assignments,
+                scenario_energies,
+            )
+        )
+
+    rows.sort(key=lambda row: (row[0], row[1]))
+    merged: list[dict[str, object]] = []
+    for rank, (energy, _signature, sample, selected_assignments, scenario_energies) in enumerate(
+        rows, start=1
+    ):
+        merged.append(
+            {
+                "rank": rank,
+                "energy": energy,
+                "sample": sample,
+                "selected_assignments": selected_assignments,
+                "scenario_energies": scenario_energies,
+                "scenario_count": len(scenario_energies),
+            }
+        )
+        if len(merged) >= requested_solutions:
+            break
+    return merged
+
+
+def _solution_signature(
+    solution: Mapping[str, object],
+    *,
+    scenario_name: str,
+) -> tuple[tuple[tuple[str, int], ...], dict[str, int]]:
+    sample_raw = solution.get("sample")
+    if not isinstance(sample_raw, Mapping):
+        raise ValueError(f"scenario `{scenario_name}` solution is missing mapping `sample` field")
+
+    normalized_sample: dict[str, int] = {}
+    for key, value in sample_raw.items():
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"scenario `{scenario_name}` solution contains non-integer sample value"
+            )
+        normalized_sample[str(key)] = int(value)
+    signature = tuple(sorted(normalized_sample.items(), key=lambda item: item[0]))
+    return signature, normalized_sample
+
+
+def _build_multi_scenario_run_result(
+    *,
+    outcomes: list[_ScenarioOutcome],
+    selected_scenarios: list[str],
+    combine_mode: CombineMode,
+    failure_policy: FailurePolicy,
+    command_ok: bool,
+) -> StandardRunResult:
+    successful = [
+        outcome for outcome in outcomes if outcome.success and outcome.run_result is not None
+    ]
+    if not successful:
+        return StandardRunResult(
+            schema_version="1.0",
+            runtime="<unresolved>",
+            backend="<unresolved>",
+            status="ok" if command_ok else "scenario_failed",
+            energy=None,
+            reads=0,
+            best_sample={},
+            selected_assignments=[],
+            timing_ms=0.0,
+            capability_report_path="",
+            extensions={
+                "selected_scenarios": selected_scenarios,
+                "combine_mode": combine_mode.value,
+                "failure_policy": failure_policy.value,
+                "requested_solutions": 0,
+                "returned_solutions": 0,
+                "solutions": [],
+                "scenario_results": {
+                    outcome.scenario: {
+                        "status": outcome.status,
+                        "runtime": outcome.runtime,
+                        "backend": outcome.backend,
+                        "run_path": str(outcome.run_path) if outcome.run_path else None,
+                        "energy": outcome.run_result.energy if outcome.run_result else None,
+                    }
+                    for outcome in outcomes
+                },
+            },
+        )
+
+    runtime = cast(StandardRunResult, successful[0].run_result).runtime
+    backend = cast(StandardRunResult, successful[0].run_result).backend
+    requested_solutions = max(outcome.requested_solutions for outcome in successful)
+    merged_solutions = _merge_multi_scenario_solutions(
+        successful_outcomes=successful,
+        combine_mode=combine_mode,
+        requested_solutions=requested_solutions,
+    )
+
+    first = merged_solutions[0] if merged_solutions else None
+    energy = None if first is None else cast(float, first.get("energy"))
+    best_sample: dict[str, int] = {}
+    selected_assignments: list[dict[str, object]] = []
+    if first is not None:
+        sample_raw = first.get("sample")
+        if isinstance(sample_raw, Mapping):
+            best_sample = {str(k): int(v) for k, v in sample_raw.items() if isinstance(v, int)}
+        selected_raw = first.get("selected_assignments")
+        if isinstance(selected_raw, list):
+            selected_assignments = list(cast(list[dict[str, object]], selected_raw))
+
+    total_reads = 0
+    total_timing_ms = 0.0
+    for outcome in successful:
+        assert outcome.run_result is not None
+        total_reads += outcome.run_result.reads
+        total_timing_ms += outcome.run_result.timing_ms
+
+    return StandardRunResult(
+        schema_version="1.0",
+        runtime=runtime,
+        backend=backend,
+        status="ok" if command_ok else "scenario_failed",
+        energy=energy,
+        reads=total_reads,
+        best_sample=best_sample,
+        selected_assignments=selected_assignments,
+        timing_ms=total_timing_ms,
+        capability_report_path="",
+        extensions={
+            "selected_scenarios": selected_scenarios,
+            "combine_mode": combine_mode.value,
+            "failure_policy": failure_policy.value,
+            "requested_solutions": requested_solutions,
+            "returned_solutions": len(merged_solutions),
+            "solutions": merged_solutions,
+            "scenario_results": {
+                outcome.scenario: {
+                    "status": outcome.status,
+                    "runtime": outcome.runtime,
+                    "backend": outcome.backend,
+                    "run_path": str(outcome.run_path) if outcome.run_path else None,
+                    "energy": outcome.run_result.energy if outcome.run_result else None,
+                }
+                for outcome in outcomes
+            },
+        },
+    )
+
+
+@targets_app.command("check", help="Check model+scenario support for a selected target pair.")
 def targets_check(
     file: Path = typer.Argument(..., help="Path to the QSOL model source file."),
-    instance: Path | None = typer.Option(
+    config: Path | None = typer.Option(
         None,
-        "--instance",
-        "-i",
-        help="Path to instance JSON. Defaults to <model>.instance.json when available.",
+        "--config",
+        "-c",
+        help="Path to config TOML. Defaults to discovered <model>.qsol.toml when available.",
+    ),
+    scenario: list[str] = typer.Option(
+        [],
+        "--scenario",
+        help="Scenario name to execute (repeatable).",
+    ),
+    all_scenarios: bool = typer.Option(
+        False,
+        "--all-scenarios",
+        help="Execute all scenarios declared in the config.",
+    ),
+    failure_policy: FailurePolicy | None = typer.Option(
+        None,
+        "--failure-policy",
+        help="Scenario failure policy: run-all-fail, fail-fast, or best-effort.",
     ),
     out: Path | None = typer.Option(
         None,
@@ -583,61 +884,173 @@ def targets_check(
     resolved_outdir = _resolve_outdir(file, out)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
 
-    text, resolved_instance = _read_model_and_instance(
-        file=file, instance=instance, console=console
+    text, _resolved_config_path, parsed_config = _read_model_and_config(
+        file=file, config=config, console=console
     )
-    if text is None or resolved_instance is None:
+    if text is None or parsed_config is None:
         raise typer.Exit(code=1)
 
-    unit = check_target_support(
-        text,
-        options=CompileOptions(
-            filename=str(file),
-            instance_path=str(resolved_instance),
-            runtime_id=runtime,
-            plugin_specs=tuple(plugin),
-        ),
-    )
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
+    try:
+        selected_scenarios = resolve_selected_scenarios(
+            config=parsed_config,
+            cli_scenarios=scenario,
+            cli_all_scenarios=all_scenarios,
+        )
+        resolved_failure_policy = resolve_failure_policy(
+            config=parsed_config, cli_policy=failure_policy
+        )
+    except ValueError as exc:
+        _print_diags(
+            console,
+            None,
+            [_diag(file, code="QSOL4001", message="invalid scenario selection", notes=[str(exc)])],
+        )
+        raise typer.Exit(code=1) from None
 
-    report_path: Path | None = None
-    if unit.support_report is not None:
-        report_path = _write_capability_report(
-            resolved_outdir, support_report_to_dict(unit.support_report)
+    source = SourceText(text, str(file))
+    multi_scenario = len(selected_scenarios) > 1
+    outcomes: list[_ScenarioOutcome] = []
+    for scenario_name in selected_scenarios:
+        scenario_outdir = _scenario_outdir(
+            outdir=resolved_outdir,
+            scenario_name=scenario_name,
+            multi_scenario=multi_scenario,
+        )
+        instance_payload = materialize_instance_payload(
+            config=parsed_config, scenario_name=scenario_name
+        )
+        unit = check_target_support(
+            text,
+            options=CompileOptions(
+                filename=str(file),
+                instance_payload=instance_payload,
+                runtime_id=runtime,
+                plugin_specs=tuple(plugin),
+            ),
+        )
+        has_errors = _print_diags(console, source, unit.diagnostics)
+        report_path: Path | None = None
+        if unit.support_report is not None:
+            report_path = _write_capability_report(
+                scenario_outdir, support_report_to_dict(unit.support_report)
+            )
+
+        success = not has_errors and bool(unit.support_report and unit.support_report.supported)
+        outcomes.append(
+            _ScenarioOutcome(
+                scenario=scenario_name,
+                success=success,
+                status="ok" if success else "failed",
+                runtime=(
+                    unit.target_selection.runtime_id
+                    if unit.target_selection is not None
+                    else runtime or "<unresolved>"
+                ),
+                backend=(
+                    unit.target_selection.backend_id
+                    if unit.target_selection is not None
+                    else DEFAULT_BACKEND_ID
+                ),
+                report_path=report_path,
+            )
         )
 
-    summary = Table(title="Target Support")
-    summary.add_column("Key")
-    summary.add_column("Value")
-    summary.add_row(
-        "Supported", "yes" if unit.support_report and unit.support_report.supported else "no"
-    )
-    summary.add_row(
-        "Runtime",
-        unit.target_selection.runtime_id if unit.target_selection else runtime or "<unresolved>",
-    )
-    summary.add_row(
-        "Backend",
-        unit.target_selection.backend_id if unit.target_selection else DEFAULT_BACKEND_ID,
-    )
-    summary.add_row(
-        "Capability Report", str(report_path) if report_path is not None else "<not-written>"
-    )
-    console.print(summary)
+        if multi_scenario:
+            scenario_summary = Table(title=f"Target Support ({scenario_name})")
+            scenario_summary.add_column("Key")
+            scenario_summary.add_column("Value")
+            scenario_summary.add_row("Supported", "yes" if success else "no")
+            scenario_summary.add_row("Runtime", outcomes[-1].runtime or "")
+            scenario_summary.add_row("Backend", outcomes[-1].backend or "")
+            scenario_summary.add_row(
+                "Capability Report",
+                str(report_path) if report_path is not None else "<not-written>",
+            )
+            console.print(scenario_summary)
 
-    if has_errors or unit.support_report is None or not unit.support_report.supported:
+        if not success and resolved_failure_policy is FailurePolicy.fail_fast:
+            break
+
+    successes = sum(1 for outcome in outcomes if outcome.success)
+    failures = len(outcomes) - successes
+    command_ok = _command_success(
+        failure_policy=resolved_failure_policy,
+        successes=successes,
+        failures=failures,
+    )
+
+    if multi_scenario:
+        aggregate_payload: dict[str, object] = {
+            "schema_version": "1",
+            "mode": "multi-scenario",
+            "selected_scenarios": selected_scenarios,
+            "failure_policy": resolved_failure_policy.value,
+            "supported": command_ok,
+            "scenarios": {
+                outcome.scenario: {
+                    "supported": outcome.success,
+                    "runtime": outcome.runtime,
+                    "backend": outcome.backend,
+                    "report_path": str(outcome.report_path) if outcome.report_path else None,
+                }
+                for outcome in outcomes
+            },
+        }
+        _write_json_file(resolved_outdir / "capability_report.json", aggregate_payload)
+
+        summary = Table(title="Target Support (Scenarios)")
+        summary.add_column("Key")
+        summary.add_column("Value")
+        summary.add_row("Failure Policy", resolved_failure_policy.value)
+        summary.add_row("Scenarios Requested", str(len(selected_scenarios)))
+        summary.add_row("Scenarios Executed", str(len(outcomes)))
+        summary.add_row("Scenarios Succeeded", str(successes))
+        summary.add_row("Scenarios Failed", str(failures))
+        summary.add_row("Aggregate Supported", "yes" if command_ok else "no")
+        summary.add_row("Capability Report", str(resolved_outdir / "capability_report.json"))
+        console.print(summary)
+    else:
+        outcome = outcomes[0]
+        summary = Table(title="Target Support")
+        summary.add_column("Key")
+        summary.add_column("Value")
+        summary.add_row("Scenario", outcome.scenario)
+        summary.add_row("Supported", "yes" if outcome.success else "no")
+        summary.add_row("Runtime", outcome.runtime or "")
+        summary.add_row("Backend", outcome.backend or "")
+        summary.add_row(
+            "Capability Report",
+            str(outcome.report_path) if outcome.report_path is not None else "<not-written>",
+        )
+        console.print(summary)
+
+    if not command_ok:
         raise typer.Exit(code=1)
 
 
-@app.command("build", help="Compile model+instance and export backend artifacts.")
+@app.command("build", help="Compile model+scenario and export backend artifacts.")
 def build_cmd(
     file: Path = typer.Argument(..., help="Path to the QSOL model source file."),
-    instance: Path | None = typer.Option(
+    config: Path | None = typer.Option(
         None,
-        "--instance",
-        "-i",
-        help="Path to instance JSON. Defaults to <model>.instance.json when available.",
+        "--config",
+        "-c",
+        help="Path to config TOML. Defaults to discovered <model>.qsol.toml when available.",
+    ),
+    scenario: list[str] = typer.Option(
+        [],
+        "--scenario",
+        help="Scenario name to execute (repeatable).",
+    ),
+    all_scenarios: bool = typer.Option(
+        False,
+        "--all-scenarios",
+        help="Execute all scenarios declared in the config.",
+    ),
+    failure_policy: FailurePolicy | None = typer.Option(
+        None,
+        "--failure-policy",
+        help="Scenario failure policy: run-all-fail, fail-fast, or best-effort.",
     ),
     out: Path | None = typer.Option(
         None,
@@ -670,59 +1083,199 @@ def build_cmd(
     resolved_outdir = _resolve_outdir(file, out)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
 
-    text, resolved_instance = _read_model_and_instance(
-        file=file, instance=instance, console=console
+    text, _resolved_config_path, parsed_config = _read_model_and_config(
+        file=file, config=config, console=console
     )
-    if text is None or resolved_instance is None:
+    if text is None or parsed_config is None:
         raise typer.Exit(code=1)
 
-    unit = build_for_target(
-        text,
-        options=CompileOptions(
-            filename=str(file),
-            instance_path=str(resolved_instance),
-            outdir=str(resolved_outdir),
-            output_format=output_format,
-            runtime_id=runtime,
-            plugin_specs=tuple(plugin),
-        ),
-    )
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
-
-    report_path: Path | None = None
-    if unit.support_report is not None:
-        report_path = _write_capability_report(
-            resolved_outdir, support_report_to_dict(unit.support_report)
+    try:
+        selected_scenarios = resolve_selected_scenarios(
+            config=parsed_config,
+            cli_scenarios=scenario,
+            cli_all_scenarios=all_scenarios,
         )
+        resolved_failure_policy = resolve_failure_policy(
+            config=parsed_config, cli_policy=failure_policy
+        )
+    except ValueError as exc:
+        _print_diags(
+            console,
+            None,
+            [_diag(file, code="QSOL4001", message="invalid scenario selection", notes=[str(exc)])],
+        )
+        raise typer.Exit(code=1) from None
 
-    if has_errors or unit.artifacts is None:
+    source = SourceText(text, str(file))
+    multi_scenario = len(selected_scenarios) > 1
+    outcomes: list[_ScenarioOutcome] = []
+    artifact_summaries: dict[str, dict[str, object]] = {}
+
+    for scenario_name in selected_scenarios:
+        scenario_outdir = _scenario_outdir(
+            outdir=resolved_outdir,
+            scenario_name=scenario_name,
+            multi_scenario=multi_scenario,
+        )
+        instance_payload = materialize_instance_payload(
+            config=parsed_config, scenario_name=scenario_name
+        )
+        unit = build_for_target(
+            text,
+            options=CompileOptions(
+                filename=str(file),
+                instance_payload=instance_payload,
+                outdir=str(scenario_outdir),
+                output_format=output_format,
+                runtime_id=runtime,
+                plugin_specs=tuple(plugin),
+            ),
+        )
+        has_errors = _print_diags(console, source, unit.diagnostics)
+
+        report_path: Path | None = None
+        if unit.support_report is not None:
+            report_path = _write_capability_report(
+                scenario_outdir, support_report_to_dict(unit.support_report)
+            )
+
+        success = not has_errors and unit.artifacts is not None
+        outcomes.append(
+            _ScenarioOutcome(
+                scenario=scenario_name,
+                success=success,
+                status="ok" if success else "failed",
+                runtime=unit.target_selection.runtime_id if unit.target_selection else None,
+                backend=unit.target_selection.backend_id if unit.target_selection else None,
+                report_path=report_path,
+            )
+        )
+        if unit.artifacts is not None:
+            artifact_summaries[scenario_name] = {
+                "cqm": unit.artifacts.cqm_path,
+                "bqm": unit.artifacts.bqm_path,
+                "format": unit.artifacts.format_path,
+                "varmap": unit.artifacts.varmap_path,
+                "explain": unit.artifacts.explain_path,
+                "stats": dict(unit.artifacts.stats),
+            }
+
+        if multi_scenario:
+            scenario_table = Table(title=f"Build Artifacts ({scenario_name})")
+            scenario_table.add_column("Key")
+            scenario_table.add_column("Value")
+            scenario_table.add_row("Status", "ok" if success else "failed")
+            scenario_table.add_row("Runtime", outcomes[-1].runtime or "")
+            scenario_table.add_row("Backend", outcomes[-1].backend or "")
+            if unit.artifacts is not None:
+                scenario_table.add_row("CQM", unit.artifacts.cqm_path or "")
+                scenario_table.add_row("BQM", unit.artifacts.bqm_path or "")
+                scenario_table.add_row("Format", unit.artifacts.format_path or "")
+                scenario_table.add_row("VarMap", unit.artifacts.varmap_path or "")
+                scenario_table.add_row("Explain", unit.artifacts.explain_path or "")
+            scenario_table.add_row(
+                "Capability Report",
+                str(report_path) if report_path is not None else "<not-written>",
+            )
+            console.print(scenario_table)
+
+        if not success and resolved_failure_policy is FailurePolicy.fail_fast:
+            break
+
+    successes = sum(1 for outcome in outcomes if outcome.success)
+    failures = len(outcomes) - successes
+    command_ok = _command_success(
+        failure_policy=resolved_failure_policy,
+        successes=successes,
+        failures=failures,
+    )
+
+    if multi_scenario:
+        aggregate_path = resolved_outdir / "build_summary.json"
+        aggregate_payload: dict[str, object] = {
+            "schema_version": "1",
+            "mode": "multi-scenario",
+            "selected_scenarios": selected_scenarios,
+            "failure_policy": resolved_failure_policy.value,
+            "status": "ok" if command_ok else "failed",
+            "scenarios": {
+                outcome.scenario: {
+                    "status": outcome.status,
+                    "runtime": outcome.runtime,
+                    "backend": outcome.backend,
+                    "report_path": str(outcome.report_path) if outcome.report_path else None,
+                    "artifacts": artifact_summaries.get(outcome.scenario),
+                }
+                for outcome in outcomes
+            },
+        }
+        _write_json_file(aggregate_path, aggregate_payload)
+
+        summary = Table(title="Build Summary (Scenarios)")
+        summary.add_column("Key")
+        summary.add_column("Value")
+        summary.add_row("Failure Policy", resolved_failure_policy.value)
+        summary.add_row("Scenarios Requested", str(len(selected_scenarios)))
+        summary.add_row("Scenarios Executed", str(len(outcomes)))
+        summary.add_row("Scenarios Succeeded", str(successes))
+        summary.add_row("Scenarios Failed", str(failures))
+        summary.add_row("Summary File", str(aggregate_path))
+        console.print(summary)
+    else:
+        outcome = outcomes[0]
+        if outcome.scenario in artifact_summaries:
+            artifacts = artifact_summaries[outcome.scenario]
+            table = Table(title="Build Artifacts")
+            table.add_column("Key")
+            table.add_column("Value")
+            table.add_row("Scenario", outcome.scenario)
+            table.add_row("Runtime", outcome.runtime or "")
+            table.add_row("Backend", outcome.backend or "")
+            table.add_row("CQM", str(artifacts.get("cqm") or ""))
+            table.add_row("BQM", str(artifacts.get("bqm") or ""))
+            table.add_row("Format", str(artifacts.get("format") or ""))
+            table.add_row("VarMap", str(artifacts.get("varmap") or ""))
+            table.add_row("Explain", str(artifacts.get("explain") or ""))
+            table.add_row(
+                "Capability Report",
+                str(outcome.report_path) if outcome.report_path is not None else "",
+            )
+            for key, value in sorted(cast(dict[str, object], artifacts.get("stats", {})).items()):
+                table.add_row(key, str(value))
+            console.print(table)
+
+    if not command_ok:
         raise typer.Exit(code=1)
 
-    table = Table(title="Build Artifacts")
-    table.add_column("Key")
-    table.add_column("Value")
-    table.add_row("Runtime", unit.target_selection.runtime_id if unit.target_selection else "")
-    table.add_row("Backend", unit.target_selection.backend_id if unit.target_selection else "")
-    table.add_row("CQM", unit.artifacts.cqm_path or "")
-    table.add_row("BQM", unit.artifacts.bqm_path or "")
-    table.add_row("Format", unit.artifacts.format_path or "")
-    table.add_row("VarMap", unit.artifacts.varmap_path or "")
-    table.add_row("Explain", unit.artifacts.explain_path or "")
-    table.add_row("Capability Report", str(report_path) if report_path is not None else "")
-    for key, value in sorted(unit.artifacts.stats.items()):
-        table.add_row(key, str(value))
-    console.print(table)
 
-
-@app.command("solve", help="Compile, run, and export solve results for model+instance.")
+@app.command("solve", help="Compile, run, and export solve results for model+scenario.")
 def solve_cmd(
     file: Path = typer.Argument(..., help="Path to the QSOL model source file."),
-    instance: Path | None = typer.Option(
+    config: Path | None = typer.Option(
         None,
-        "--instance",
-        "-i",
-        help="Path to instance JSON. Defaults to <model>.instance.json when available.",
+        "--config",
+        "-c",
+        help="Path to config TOML. Defaults to discovered <model>.qsol.toml when available.",
+    ),
+    scenario: list[str] = typer.Option(
+        [],
+        "--scenario",
+        help="Scenario name to execute (repeatable).",
+    ),
+    all_scenarios: bool = typer.Option(
+        False,
+        "--all-scenarios",
+        help="Execute all scenarios declared in the config.",
+    ),
+    combine_mode: CombineMode | None = typer.Option(
+        None,
+        "--combine-mode",
+        help="Merge mode for multi-scenario solve: intersection or union.",
+    ),
+    failure_policy: FailurePolicy | None = typer.Option(
+        None,
+        "--failure-policy",
+        help="Scenario failure policy: run-all-fail, fail-fast, or best-effort.",
     ),
     out: Path | None = typer.Option(
         None,
@@ -755,10 +1308,10 @@ def solve_cmd(
         "-X",
         help="JSON object file containing runtime options.",
     ),
-    solutions: int = typer.Option(
-        1,
+    solutions: int | None = typer.Option(
+        None,
         "--solutions",
-        help="Number of best unique solutions to return (default: 1).",
+        help="Number of best unique solutions to return (defaults to config, then 1).",
     ),
     energy_min: float | None = typer.Option(
         None,
@@ -782,17 +1335,17 @@ def solve_cmd(
     resolved_outdir = _resolve_outdir(file, out)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
 
-    text, resolved_instance = _read_model_and_instance(
-        file=file, instance=instance, console=console
+    text, _resolved_config_path, parsed_config = _read_model_and_config(
+        file=file, config=config, console=console
     )
-    if text is None or resolved_instance is None:
+    if text is None or parsed_config is None:
         raise typer.Exit(code=1) from None
 
-    runtime_params, runtime_options_error = _parse_runtime_options(
+    runtime_params_base, runtime_options_error = _parse_runtime_options(
         runtime_option_args=runtime_option,
         runtime_options_file=runtime_options_file,
     )
-    if runtime_options_error is not None or runtime_params is None:
+    if runtime_options_error is not None or runtime_params_base is None:
         _print_diags(
             console,
             None,
@@ -807,7 +1360,7 @@ def solve_cmd(
         )
         raise typer.Exit(code=1) from None
 
-    if solutions < 1:
+    if solutions is not None and solutions < 1:
         _print_diags(
             console,
             None,
@@ -837,67 +1390,273 @@ def solve_cmd(
         )
         raise typer.Exit(code=1) from None
 
-    runtime_params["solutions"] = solutions
-    if energy_min is not None:
-        runtime_params["energy_min"] = energy_min
-    if energy_max is not None:
-        runtime_params["energy_max"] = energy_max
-
-    unit, run_result = run_for_target(
-        text,
-        options=CompileOptions(
-            filename=str(file),
-            instance_path=str(resolved_instance),
-            outdir=str(resolved_outdir),
-            output_format=output_format,
-            runtime_id=runtime,
-            plugin_specs=tuple(plugin),
-        ),
-        run_options=RuntimeRunOptions(params=runtime_params, outdir=str(resolved_outdir)),
-    )
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
-
-    report_path: Path | None = None
-    if unit.support_report is not None:
-        report_path = _write_capability_report(
-            resolved_outdir, support_report_to_dict(unit.support_report)
+    try:
+        selected_scenarios = resolve_selected_scenarios(
+            config=parsed_config,
+            cli_scenarios=scenario,
+            cli_all_scenarios=all_scenarios,
         )
-
-    if has_errors or run_result is None:
-        raise typer.Exit(code=1)
-
-    if report_path is not None:
-        run_result.capability_report_path = str(report_path)
-
-    run_path = _write_run_output(outdir=resolved_outdir, run_result=run_result)
-    feature_requested = solutions > 1 or energy_min is not None or energy_max is not None
-    solutions_payload = run_result.extensions.get("solutions")
-    if feature_requested and not isinstance(solutions_payload, list):
+        resolved_combine_mode = resolve_combine_mode(config=parsed_config, cli_mode=combine_mode)
+        resolved_failure_policy = resolve_failure_policy(
+            config=parsed_config, cli_policy=failure_policy
+        )
+    except ValueError as exc:
         _print_diags(
             console,
             None,
-            [
-                _diag(
-                    file,
-                    code="QSOL5002",
-                    message="runtime did not return required multi-solution payload",
-                    notes=[
-                        "requested solve features require `extensions.solutions` in run output",
-                        f"run output was written to: {run_path}",
+            [_diag(file, code="QSOL4001", message="invalid scenario selection", notes=[str(exc)])],
+        )
+        raise typer.Exit(code=1) from None
+
+    source = SourceText(text, str(file))
+    multi_scenario = len(selected_scenarios) > 1
+    expected_pair: tuple[str, str] | None = None
+    outcomes: list[_ScenarioOutcome] = []
+
+    for scenario_name in selected_scenarios:
+        scenario_outdir = _scenario_outdir(
+            outdir=resolved_outdir,
+            scenario_name=scenario_name,
+            multi_scenario=multi_scenario,
+        )
+        try:
+            solve_settings = resolve_solve_settings(
+                config=parsed_config,
+                scenario_name=scenario_name,
+                cli_solutions=solutions,
+                cli_energy_min=energy_min,
+                cli_energy_max=energy_max,
+            )
+        except ValueError as exc:
+            _print_diags(
+                console,
+                None,
+                [
+                    _diag(
+                        file,
+                        code="QSOL4001",
+                        message="invalid solve options",
+                        notes=[f"scenario `{scenario_name}`: {exc}"],
+                    )
+                ],
+            )
+            outcomes.append(
+                _ScenarioOutcome(
+                    scenario=scenario_name,
+                    success=False,
+                    status="failed",
+                )
+            )
+            if resolved_failure_policy is FailurePolicy.fail_fast:
+                break
+            continue
+
+        runtime_params = dict(runtime_params_base)
+        runtime_params["solutions"] = solve_settings.solutions
+        if solve_settings.energy_min is None:
+            runtime_params.pop("energy_min", None)
+        else:
+            runtime_params["energy_min"] = solve_settings.energy_min
+        if solve_settings.energy_max is None:
+            runtime_params.pop("energy_max", None)
+        else:
+            runtime_params["energy_max"] = solve_settings.energy_max
+
+        instance_payload = materialize_instance_payload(
+            config=parsed_config, scenario_name=scenario_name
+        )
+        unit, run_result = run_for_target(
+            text,
+            options=CompileOptions(
+                filename=str(file),
+                instance_payload=instance_payload,
+                outdir=str(scenario_outdir),
+                output_format=output_format,
+                runtime_id=runtime,
+                plugin_specs=tuple(plugin),
+            ),
+            run_options=RuntimeRunOptions(params=runtime_params, outdir=str(scenario_outdir)),
+        )
+        has_errors = _print_diags(console, source, unit.diagnostics)
+
+        report_path: Path | None = None
+        if unit.support_report is not None:
+            report_path = _write_capability_report(
+                scenario_outdir, support_report_to_dict(unit.support_report)
+            )
+
+        scenario_success = not has_errors and run_result is not None
+        scenario_run_path: Path | None = None
+        status = "failed"
+        runtime_id = None
+        backend_id = None
+        if run_result is not None:
+            runtime_id = run_result.runtime
+            backend_id = run_result.backend
+            if report_path is not None:
+                run_result.capability_report_path = str(report_path)
+            scenario_run_path = _write_run_output(outdir=scenario_outdir, run_result=run_result)
+
+            feature_requested = (
+                solve_settings.solutions > 1
+                or solve_settings.energy_min is not None
+                or solve_settings.energy_max is not None
+                or multi_scenario
+            )
+            solutions_payload = run_result.extensions.get("solutions")
+            if feature_requested and not isinstance(solutions_payload, list):
+                _print_diags(
+                    console,
+                    None,
+                    [
+                        _diag(
+                            file,
+                            code="QSOL5002",
+                            message="runtime did not return required multi-solution payload",
+                            notes=[
+                                f"scenario `{scenario_name}`",
+                                "requested solve features require `extensions.solutions` in run output",
+                                f"run output was written to: {scenario_run_path}",
+                            ],
+                        )
                     ],
                 )
-            ],
-        )
-        raise typer.Exit(code=1)
+                scenario_success = False
+            if run_result.status != "ok":
+                _print_diags(
+                    console,
+                    None,
+                    [
+                        _diag(
+                            file,
+                            code="QSOL5002",
+                            message="runtime policy rejected solve output",
+                            notes=[
+                                f"scenario `{scenario_name}`",
+                                f"status={run_result.status}",
+                                f"run output: {scenario_run_path}",
+                            ],
+                        )
+                    ],
+                )
+                scenario_success = False
+            status = run_result.status
 
-    requested_solutions = run_result.extensions.get("requested_solutions", solutions)
-    returned_solutions = run_result.extensions.get("returned_solutions", 1)
-    threshold_payload = run_result.extensions.get("energy_threshold")
+        if scenario_success and multi_scenario and run_result is not None:
+            pair = (run_result.runtime, run_result.backend)
+            if expected_pair is None:
+                expected_pair = pair
+            elif pair != expected_pair:
+                _print_diags(
+                    console,
+                    None,
+                    [
+                        _diag(
+                            file,
+                            code="QSOL4001",
+                            message="multi-scenario solve requires the same runtime/backend pair",
+                            notes=[
+                                f"scenario `{scenario_name}` resolved `{pair[0]}/{pair[1]}`",
+                                f"expected `{expected_pair[0]}/{expected_pair[1]}`",
+                            ],
+                        )
+                    ],
+                )
+                scenario_success = False
+                status = "failed"
+
+        outcomes.append(
+            _ScenarioOutcome(
+                scenario=scenario_name,
+                success=scenario_success,
+                status="ok" if scenario_success else status,
+                runtime=runtime_id,
+                backend=backend_id,
+                report_path=report_path,
+                run_path=scenario_run_path,
+                run_result=run_result,
+                requested_solutions=solve_settings.solutions,
+            )
+        )
+
+        if multi_scenario:
+            scenario_summary = Table(title=f"Run Summary ({scenario_name})")
+            scenario_summary.add_column("Key")
+            scenario_summary.add_column("Value")
+            scenario_summary.add_row("Status", "ok" if scenario_success else status)
+            scenario_summary.add_row("Runtime", runtime_id or "")
+            scenario_summary.add_row("Backend", backend_id or "")
+            scenario_summary.add_row(
+                "Run Output", str(scenario_run_path) if scenario_run_path else ""
+            )
+            scenario_summary.add_row(
+                "Capability Report", str(report_path) if report_path is not None else ""
+            )
+            console.print(scenario_summary)
+
+        if not scenario_success and resolved_failure_policy is FailurePolicy.fail_fast:
+            break
+
+    successes = sum(1 for outcome in outcomes if outcome.success)
+    failures = len(outcomes) - successes
+    command_ok = _command_success(
+        failure_policy=resolved_failure_policy,
+        successes=successes,
+        failures=failures,
+    )
+
+    final_run_result: StandardRunResult
+    final_run_path: Path
+    final_report_path: Path | None
+    if multi_scenario:
+        final_run_result = _build_multi_scenario_run_result(
+            outcomes=outcomes,
+            selected_scenarios=selected_scenarios,
+            combine_mode=resolved_combine_mode,
+            failure_policy=resolved_failure_policy,
+            command_ok=command_ok,
+        )
+        final_report_path = resolved_outdir / "capability_report.json"
+        aggregate_report_payload: dict[str, object] = {
+            "schema_version": "1",
+            "mode": "multi-scenario",
+            "selected_scenarios": selected_scenarios,
+            "failure_policy": resolved_failure_policy.value,
+            "status": "ok" if command_ok else "failed",
+            "scenarios": {
+                outcome.scenario: {
+                    "status": outcome.status,
+                    "runtime": outcome.runtime,
+                    "backend": outcome.backend,
+                    "report_path": str(outcome.report_path) if outcome.report_path else None,
+                    "run_path": str(outcome.run_path) if outcome.run_path else None,
+                }
+                for outcome in outcomes
+            },
+        }
+        _write_json_file(
+            final_report_path,
+            aggregate_report_payload,
+        )
+        final_run_result.capability_report_path = str(final_report_path)
+        final_run_path = _write_run_output(outdir=resolved_outdir, run_result=final_run_result)
+    else:
+        outcome = outcomes[0]
+        if outcome.run_result is None:
+            raise typer.Exit(code=1)
+        final_run_result = outcome.run_result
+        final_report_path = outcome.report_path
+        final_run_path = outcome.run_path or _write_run_output(
+            outdir=resolved_outdir, run_result=final_run_result
+        )
+
+    requested_solutions = final_run_result.extensions.get("requested_solutions", solutions or 1)
+    returned_solutions = final_run_result.extensions.get("returned_solutions", 1)
+    threshold_payload = final_run_result.extensions.get("energy_threshold")
     threshold_min = ""
     threshold_max = ""
     threshold_passed = ""
-    if isinstance(threshold_payload, dict):
+    if isinstance(threshold_payload, Mapping):
         threshold_min = str(threshold_payload.get("min", ""))
         threshold_max = str(threshold_payload.get("max", ""))
         threshold_passed = str(threshold_payload.get("passed", ""))
@@ -905,48 +1664,43 @@ def solve_cmd(
     summary = Table(title="Run Summary")
     summary.add_column("Key")
     summary.add_column("Value")
-    summary.add_row("Status", run_result.status)
-    summary.add_row("Runtime", run_result.runtime)
-    summary.add_row("Backend", run_result.backend)
-    summary.add_row("Sampler", str(run_result.extensions.get("sampler", "")))
-    summary.add_row("Energy", str(run_result.energy))
-    summary.add_row("Reads", str(run_result.reads))
+    summary.add_row("Status", final_run_result.status)
+    summary.add_row("Runtime", final_run_result.runtime)
+    summary.add_row("Backend", final_run_result.backend)
+    summary.add_row("Sampler", str(final_run_result.extensions.get("sampler", "")))
+    summary.add_row("Energy", str(final_run_result.energy))
+    summary.add_row("Reads", str(final_run_result.reads))
     summary.add_row("Solutions Requested", str(requested_solutions))
     summary.add_row("Solutions Returned", str(returned_solutions))
     summary.add_row("Energy Min", threshold_min)
     summary.add_row("Energy Max", threshold_max)
     summary.add_row("Energy Threshold Passed", threshold_passed)
-    summary.add_row("Timing (ms)", f"{run_result.timing_ms:.3f}")
-    summary.add_row("Run Output", str(run_path))
-    summary.add_row("Capability Report", str(report_path) if report_path is not None else "")
+    if multi_scenario:
+        summary.add_row("Combine Mode", resolved_combine_mode.value)
+        summary.add_row("Failure Policy", resolved_failure_policy.value)
+        summary.add_row("Scenarios Requested", str(len(selected_scenarios)))
+        summary.add_row("Scenarios Executed", str(len(outcomes)))
+        summary.add_row("Scenarios Succeeded", str(successes))
+        summary.add_row("Scenarios Failed", str(failures))
+    summary.add_row("Timing (ms)", f"{final_run_result.timing_ms:.3f}")
+    summary.add_row("Run Output", str(final_run_path))
+    summary.add_row("Capability Report", str(final_report_path) if final_report_path else "")
     console.print(summary)
 
-    selected = Table(title="Selected Assignments")
-    selected.add_column("Variable")
-    selected.add_column("Meaning")
-    if run_result.selected_assignments:
-        for row in run_result.selected_assignments:
-            selected.add_row(
+    selected_table = Table(title="Selected Assignments")
+    selected_table.add_column("Variable")
+    selected_table.add_column("Meaning")
+    if final_run_result.selected_assignments:
+        for row in final_run_result.selected_assignments:
+            selected_table.add_row(
                 escape(str(row.get("variable", ""))),
                 escape(str(row.get("meaning", ""))),
             )
     else:
-        selected.add_row("-", "No (non-aux) binary variable set to 1 in the best sample")
-    console.print(selected)
+        selected_table.add_row("-", "No (non-aux) binary variable set to 1 in the best sample")
+    console.print(selected_table)
 
-    if run_result.status != "ok":
-        _print_diags(
-            console,
-            None,
-            [
-                _diag(
-                    file,
-                    code="QSOL5002",
-                    message="runtime policy rejected solve output",
-                    notes=[f"status={run_result.status}", f"run output: {run_path}"],
-                )
-            ],
-        )
+    if not command_ok:
         raise typer.Exit(code=1)
 
 

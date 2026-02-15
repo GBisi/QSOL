@@ -174,6 +174,18 @@
           }
         },
         {
+          "name": "meta.declaration.use.qsol",
+          "match": "\\b(use)\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.declaration.qsol"
+            },
+            "2": {
+              "name": "entity.name.namespace.qsol"
+            }
+          }
+        },
+        {
           "name": "meta.binding.iteration.qsol",
           "match": "\\b(forall|exists|for)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
@@ -189,7 +201,7 @@
     },
     "keywords": {
       "name": "keyword.control.qsol",
-      "match": "\\b(problem|unknown|rep|laws|view|predicate|must|should|nice|minimize|maximize|if|then|else|where|forall|exists|for|in|and|or|not)\\b"
+      "match": "\\b(use|problem|unknown|rep|laws|view|predicate|must|should|nice|minimize|maximize|if|then|else|where|forall|exists|for|in|and|or|not)\\b"
     },
     "aggregates": {
       "name": "support.function.builtin.qsol",

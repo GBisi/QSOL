@@ -1,0 +1,10 @@
+use stdlib.bijective_mapping;
+
+unknown Permutation(A) {
+  rep {
+    bij : BijectiveMapping(A, A);
+  }
+  view {
+    predicate is(a in A, b in A) = bij.is(a, b);
+  }
+}

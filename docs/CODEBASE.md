@@ -7,26 +7,30 @@ This guide explains QSOL's staged compiler + pluggable targeting architecture.
 Pipeline from source to runtime result:
 
 1. Parse source text into AST (`qsol.parse`)
-2. Resolve symbols (`qsol.sema.resolver`)
-3. Typecheck (`qsol.sema.typecheck`)
-4. Validate structural rules (`qsol.sema.validate`)
-5. Desugar syntax sugar (`qsol.lower.desugar`)
-6. Lower to symbolic kernel IR (`qsol.lower.lower`)
-7. Ground IR from instance JSON (`qsol.backend.instance`)
-8. Resolve runtime/backend selection (`qsol.targeting.resolution`)
-9. Check pair support and capability requirements (`qsol.targeting.compatibility`)
-10. Compile/export with selected backend plugin (`qsol.targeting.plugins`, backend export)
-11. Run with selected runtime plugin (`qsol.targeting.plugins`)
+2. Resolve `use` imports into merged top-level unknown definitions (`qsol.parse.module_loader`)
+3. Elaborate custom unknown finds into primitive finds + generated constraints (`qsol.sema.unknown_elaboration`)
+4. Resolve symbols (`qsol.sema.resolver`)
+5. Typecheck (`qsol.sema.typecheck`)
+6. Validate structural rules (`qsol.sema.validate`)
+7. Desugar syntax sugar (`qsol.lower.desugar`)
+8. Lower to symbolic kernel IR (`qsol.lower.lower`)
+9. Ground IR from scenario-materialized instance payload (`qsol.backend.instance`, `qsol.config`)
+10. Resolve runtime/backend selection (`qsol.targeting.resolution`)
+11. Check pair support and capability requirements (`qsol.targeting.compatibility`)
+12. Compile/export with selected backend plugin (`qsol.targeting.plugins`, backend export)
+13. Run with selected runtime plugin (`qsol.targeting.plugins`)
 
 ## 2. Directory Map
 
 - `src/qsol/cli.py`: Typer CLI (`inspect`, `targets`, `build`, `solve`)
 - `src/qsol/compiler/`: frontend + targeting pipeline orchestration
 - `src/qsol/targeting/`: plugin interfaces, registry, selection, compatibility
-- `src/qsol/parse/`: grammar, parser, AST, AST builder
-- `src/qsol/sema/`: symbol resolution, type checking, static validation
+- `src/qsol/parse/`: grammar, parser, AST, AST builder, module loader
+- `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, static validation
 - `src/qsol/lower/`: desugaring + kernel IR lowering
 - `src/qsol/backend/`: instance grounding + dimod codegen/export primitives
+- `src/qsol/config/`: config TOML parsing, scenario selection, and instance materialization
+- `src/qsol/stdlib/`: packaged unknown modules (`stdlib.*`)
 - `src/qsol/diag/`: diagnostics, spans, reporter
 - `src/qsol/util/`: utility helpers
 - `tests/`: parser, sema, lowering, backend, targeting, CLI tests
@@ -74,7 +78,7 @@ Pipeline from source to runtime result:
 
 - `targets list`: discover runtime/backend plugins
 - `targets capabilities`: inspect capability catalogs and pair compatibility
-- `targets check`: evaluate specific model+instance against selected pair
+- `targets check`: evaluate specific model+scenario against selected pair
 
 ### 5.3 Build and Solve
 
@@ -83,7 +87,7 @@ Pipeline from source to runtime result:
 
 Selection precedence:
 1. CLI `--runtime`
-2. Instance `execution.runtime`
+2. Scenario execution default `execution.runtime` (from config)
 3. Default backend `dimod-cqm-v1`
 
 ## 6. Plugin Model

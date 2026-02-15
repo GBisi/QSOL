@@ -5,9 +5,9 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 ## Files
 
 - `first_program.qsol`
-- `first_program.instance.json`
+- `first_program.qsol.toml`
 - `assignment_balance.qsol`
-- `assignment_balance.instance.json`
+- `assignment_balance.qsol.toml`
 
 ## Run
 
@@ -16,13 +16,13 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 ```bash
 uv run qsol targets check \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json
+  --config examples/tutorials/first_program.qsol.toml
 ```
 
 ```bash
 uv run qsol build \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --format qubo
@@ -31,7 +31,7 @@ uv run qsol build \
 ```bash
 uv run qsol solve \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --runtime-option sampler=exact
@@ -40,7 +40,7 @@ uv run qsol solve \
 ```bash
 uv run qsol solve \
   examples/tutorials/assignment_balance.qsol \
-  --instance examples/tutorials/assignment_balance.instance.json \
+  --config examples/tutorials/assignment_balance.qsol.toml \
   --runtime local-dimod \
   --out outdir/assignment_balance \
   --runtime-option sampler=exact
@@ -56,16 +56,16 @@ Commands succeed and write artifacts under `outdir/*`, including:
 - `capability_report.json`
 - `run.json` (for `solve`)
 
-## Instance Knobs
+## Scenario Knobs
 
-- `first_program.instance.json`
-  - `sets.Items`
-  - `params.Value[item]`
-- `assignment_balance.instance.json`
-  - `sets.Tasks`
-  - `sets.Workers`
-  - `params.Cost[worker][task]`
-  - optional `execution.runtime` default
+- `first_program.qsol.toml`
+  - `scenarios.baseline.sets.Items`
+  - `scenarios.baseline.params.Value[item]`
+- `assignment_balance.qsol.toml`
+  - `scenarios.baseline.sets.Tasks`
+  - `scenarios.baseline.sets.Workers`
+  - `scenarios.baseline.params.Cost[worker][task]`
+  - optional `defaults.execution.runtime`
 
 ## Related
 

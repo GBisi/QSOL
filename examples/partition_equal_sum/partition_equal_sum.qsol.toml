@@ -1,0 +1,16 @@
+schema_version = "1"
+
+[selection]
+default_scenario = "baseline"
+
+[scenarios.baseline]
+problem = "PartitionEqualSum"
+
+[scenarios.baseline.sets]
+Items = ["i1", "i2", "i3", "i4"]
+
+[scenarios.baseline.params.Value]
+i1 = 3
+i2 = 1
+i3 = 2
+i4 = 4

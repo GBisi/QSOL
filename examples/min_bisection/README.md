@@ -5,7 +5,7 @@ This example models equal-size graph partitioning: split vertices `V` into two b
 ## Files
 
 - `min_bisection.qsol`: QSOL model
-- `min_bisection.instance.json`: sample graph instance
+- `min_bisection.qsol.toml`: sample graph scenario config
 - `test_equivalence.py`: custom-vs-compiled BQM equivalence check
 
 ## Run
@@ -15,14 +15,14 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 ```bash
 uv run qsol targets check \
   examples/min_bisection/min_bisection.qsol \
-  --instance examples/min_bisection/min_bisection.instance.json \
+  --config examples/min_bisection/min_bisection.qsol.toml \
   --runtime local-dimod
 ```
 
 ```bash
 uv run qsol build \
   examples/min_bisection/min_bisection.qsol \
-  --instance examples/min_bisection/min_bisection.instance.json \
+  --config examples/min_bisection/min_bisection.qsol.toml \
   --runtime local-dimod \
   --out outdir/min_bisection \
   --format qubo
@@ -31,7 +31,7 @@ uv run qsol build \
 ```bash
 uv run qsol solve \
   examples/min_bisection/min_bisection.qsol \
-  --instance examples/min_bisection/min_bisection.instance.json \
+  --config examples/min_bisection/min_bisection.qsol.toml \
   --runtime local-dimod \
   --out outdir/min_bisection \
   --runtime-option sampler=exact
@@ -41,7 +41,7 @@ uv run qsol solve \
 uv sync --extra qiskit
 uv run qsol solve \
   examples/min_bisection/min_bisection.qsol \
-  --instance examples/min_bisection/min_bisection.instance.json \
+  --config examples/min_bisection/min_bisection.qsol.toml \
   --runtime qiskit \
   --out outdir/min_bisection_qiskit \
   --runtime-option algorithm=qaoa \
@@ -65,13 +65,13 @@ uv run python examples/min_bisection/test_equivalence.py --simulated-annealing -
 - Structural mismatch is informational-only for this example; structural equivalence may still pass for the provided instance.
 - Qiskit QAOA runs produce `outdir/min_bisection_qiskit/qaoa.qasm`.
 
-## Instance Knobs
+## Scenario Knobs
 
-- `sets.V`: vertex identifiers
-- `sets.E`: edge identifiers
-- `params.U[e]`, `params.W[e]`: edge endpoints in `V`
-- `params.PenaltyA`: balance-constraint penalty weight
-- `params.WeightB`: edge-cut weight (optional, defaults to `1.0`)
+- `scenarios.baseline.sets.V`: vertex identifiers
+- `scenarios.baseline.sets.E`: edge identifiers
+- `scenarios.baseline.params.U[e]`, `scenarios.baseline.params.W[e]`: edge endpoints in `V`
+- `scenarios.baseline.params.PenaltyA`: balance-constraint penalty weight
+- `scenarios.baseline.params.WeightB`: edge-cut weight (optional, defaults to `1.0`)
 
 ## Related
 

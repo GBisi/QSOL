@@ -11,7 +11,7 @@ These tutorials walk from first model to target-aware build/solve workflows.
 
 2. `02-writing-your-own-model.md`
    - Build a custom optimization model from scratch
-   - Use `Subset`, `Mapping`, constraints, and objectives
+   - Use `Subset`, `Mapping`, custom unknowns, constraints, and objectives
    - Validate with `targets check` and run with `solve`
 
 3. `03-compiling-running-and-reading-results.md`

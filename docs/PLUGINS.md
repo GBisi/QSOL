@@ -148,24 +148,24 @@ Load a plugin bundle explicitly from a module attribute:
 
 ```bash
 uv run qsol targets list --plugin my_qsol_plugins:plugin_bundle
-uv run qsol build model.qsol -i model.instance.json --plugin my_qsol_plugins:plugin_bundle
-uv run qsol solve model.qsol -i model.instance.json --plugin my_qsol_plugins:plugin_bundle
+uv run qsol build model.qsol -c model.qsol.toml --plugin my_qsol_plugins:plugin_bundle
+uv run qsol solve model.qsol -c model.qsol.toml --plugin my_qsol_plugins:plugin_bundle
 ```
 
-### 6.3 Instance JSON `execution.plugins`
+### 6.3 Config TOML `execution.plugins`
 
-Declare plugin bundles in the instance file:
+Declare plugin bundles in the config file (defaults or per-scenario):
 
-```json
-{
-  "execution": {
-    "runtime": "demo-runtime",
-    "plugins": ["my_qsol_plugins:plugin_bundle"]
-  }
-}
+```toml
+schema_version = "1"
+
+[defaults.execution]
+runtime = "demo-runtime"
+plugins = ["my_qsol_plugins:plugin_bundle"]
 ```
 
 `execution.plugins` must be an array of non-empty `module:attribute` strings.
+For scenario-specific plugins, use `[scenarios.<name>.execution]`.
 
 ## 7. Effective Loading Order
 
@@ -173,7 +173,7 @@ For `targets check`, `build`, and `solve`, plugin specs are resolved in this ord
 
 1. Built-in plugins
 2. Installed entry-point plugins
-3. Instance `execution.plugins`
+3. Scenario/default config `execution.plugins`
 4. CLI `--plugin`
 
 Instance and CLI plugin specs are merged with stable order and exact-string deduplication.

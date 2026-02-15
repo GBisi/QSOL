@@ -492,3 +492,101 @@ problem InfeasibleHardNotEqual {
 
     assert any(diag.is_error for diag in unit.diagnostics)
     assert any(diag.message == "infeasible constant constraint `=`" for diag in unit.diagnostics)
+
+
+def test_compile_supports_user_module_imported_unknowns(tmp_path: Path) -> None:
+    module_path = tmp_path / "mylib" / "unknowns.qsol"
+    module_path.parent.mkdir(parents=True, exist_ok=True)
+    module_path.write_text(
+        """
+unknown AssignLike(A, B) {
+  rep {
+    m : Mapping(A -> B);
+  }
+  view {
+    predicate is(a in A, b in B) = m.is(a, b);
+  }
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    source = """
+use mylib.unknowns;
+
+problem ImportedUnknown {
+  set A;
+  set B;
+  find X : AssignLike(A, B);
+  must true;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "problem": "ImportedUnknown",
+                "sets": {"A": ["a1", "a2"], "B": ["b1", "b2"]},
+                "params": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename=str(tmp_path / "model.qsol"),
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_stdlib_permutation_unknown(tmp_path: Path) -> None:
+    source = """
+use stdlib.permutation;
+
+problem StdlibPermutation {
+  set V;
+  find P : Permutation(V);
+  must true;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "problem": "StdlibPermutation",
+                "sets": {"V": ["v1", "v2"]},
+                "params": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="stdlib_perm.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()

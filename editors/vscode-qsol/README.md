@@ -7,6 +7,8 @@ This folder contains a TextMate-based VS Code language extension for `.qsol` fil
 - TextMate grammar: `syntaxes/qsol.tmLanguage.json`
 - Language config (comments, brackets, folding): `language-configuration.json`
 - Extension manifest: `package.json`
+- Keyword and declaration highlighting for dotted module imports (`use stdlib.module;`, `use user.module;`)
+- Quoted-path imports are not part of the language (`use "x.qsol";` is invalid)
 
 ## Run in development
 

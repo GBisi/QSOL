@@ -74,6 +74,15 @@ def test_ast_builder_dispatch_branches() -> None:
     assert builder._from_tree(Tree("start", [Token("NAME", "x")])) is not None
     assert builder._from_tree(Tree("sep", [])) is None
     assert builder._from_tree(Tree("item", [Token("NAME", "x")])) is not None
+    use_stmt = _with_meta(
+        Tree(
+            "use_stmt",
+            [Tree("module_path", [Token("NAME", "stdlib"), Token("NAME", "permutation")])],
+        )
+    )
+    use_node = builder._from_tree(use_stmt)
+    assert isinstance(use_node, ast.UseStmt)
+    assert use_node.module == "stdlib.permutation"
     assert builder._from_tree(
         Tree("param_indexing", [Tree("name_list", [Token("NAME", "A")])])
     ) == ["A"]

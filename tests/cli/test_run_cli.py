@@ -38,40 +38,215 @@ problem Multi {
     )
 
 
-def _write_simple_instance(
-    instance_path: Path,
+def _toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    raise TypeError(f"unsupported TOML value: {type(value)!r}")
+
+
+def _write_simple_config(
+    config_path: Path,
     *,
     with_execution: bool = False,
     execution: Mapping[str, object] | None = None,
 ) -> None:
-    payload: dict[str, object] = {
-        "problem": "Simple",
-        "sets": {"A": ["a1", "a2"]},
-        "params": {},
-    }
-    if execution is not None:
-        payload["execution"] = dict(execution)
-    elif with_execution:
-        payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
-    instance_path.write_text(json.dumps(payload), encoding="utf-8")
+    lines = [
+        'schema_version = "1"',
+        "",
+        "[scenarios.base]",
+        'problem = "Simple"',
+        "",
+        "[scenarios.base.sets]",
+        'A = ["a1", "a2"]',
+        "",
+    ]
+    execution_payload = execution
+    if execution_payload is None and with_execution:
+        execution_payload = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
+    if execution_payload is not None:
+        lines.append("[scenarios.base.execution]")
+        for key, value in execution_payload.items():
+            lines.append(f"{key} = {_toml_value(value)}")
+        lines.append("")
+    config_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _write_multi_solution_instance(
-    instance_path: Path,
+def _write_multi_solution_config(
+    config_path: Path,
     *,
     with_execution: bool = False,
     execution: Mapping[str, object] | None = None,
 ) -> None:
-    payload: dict[str, object] = {
-        "problem": "Multi",
-        "sets": {"A": ["a1", "a2"]},
-        "params": {},
-    }
-    if execution is not None:
-        payload["execution"] = dict(execution)
-    elif with_execution:
-        payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
-    instance_path.write_text(json.dumps(payload), encoding="utf-8")
+    lines = [
+        'schema_version = "1"',
+        "",
+        "[scenarios.base]",
+        'problem = "Multi"',
+        "",
+        "[scenarios.base.sets]",
+        'A = ["a1", "a2"]',
+        "",
+    ]
+    execution_payload = execution
+    if execution_payload is None and with_execution:
+        execution_payload = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
+    if execution_payload is not None:
+        lines.append("[scenarios.base.execution]")
+        for key, value in execution_payload.items():
+            lines.append(f"{key} = {_toml_value(value)}")
+        lines.append("")
+    config_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_multi_scenario_config(config_path: Path) -> None:
+    config_path.write_text(
+        """
+schema_version = "1"
+
+[selection]
+mode = "subset"
+subset = ["s1", "s2"]
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[defaults.solve]
+solutions = 3
+
+[scenarios.s1]
+problem = "Multi"
+[scenarios.s1.sets]
+A = ["a1", "a2"]
+
+[scenarios.s2]
+problem = "Multi"
+[scenarios.s2.sets]
+A = ["a1", "a2", "a3"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_weighted_problem(source_path: Path) -> None:
+    source_path.write_text(
+        """
+problem Weighted {
+  set A;
+  param W[A] : Real;
+  find S : Subset(A);
+  minimize sum(if S.has(x) then W[x] else 0 for x in A);
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_weighted_multi_scenario_config(config_path: Path) -> None:
+    config_path.write_text(
+        """
+schema_version = "1"
+
+[selection]
+mode = "subset"
+subset = ["s1", "s2"]
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[defaults.solve]
+solutions = 4
+
+[scenarios.s1]
+problem = "Weighted"
+[scenarios.s1.sets]
+A = ["a1", "a2"]
+[scenarios.s1.params.W]
+a1 = 1
+a2 = 2
+
+[scenarios.s2]
+problem = "Weighted"
+[scenarios.s2.sets]
+A = ["a1", "a2"]
+[scenarios.s2.params.W]
+a1 = 3
+a2 = 1
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_failure_policy_config(config_path: Path) -> None:
+    config_path.write_text(
+        """
+schema_version = "1"
+
+[selection]
+mode = "subset"
+subset = ["ok", "bad"]
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[scenarios.ok]
+problem = "Multi"
+[scenarios.ok.sets]
+A = ["a1", "a2"]
+
+[scenarios.bad]
+problem = "Multi"
+[scenarios.bad.sets]
+A = ["a1", "a2"]
+[scenarios.bad.execution]
+runtime = "missing-runtime"
+backend = "dimod-cqm-v1"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_failure_policy_fail_first_config(config_path: Path) -> None:
+    config_path.write_text(
+        """
+schema_version = "1"
+
+[selection]
+mode = "subset"
+subset = ["bad", "ok"]
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[scenarios.ok]
+problem = "Multi"
+[scenarios.ok.sets]
+A = ["a1", "a2"]
+
+[scenarios.bad]
+problem = "Multi"
+[scenarios.bad.sets]
+A = ["a1", "a2"]
+[scenarios.bad.execution]
+runtime = "missing-runtime"
+backend = "dimod-cqm-v1"
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_root_command_shows_welcome_message() -> None:
@@ -85,8 +260,8 @@ def test_root_command_shows_welcome_message() -> None:
 def test_solve_command_executes_runtime_and_exports_artifacts(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
     outdir = tmp_path / "out"
 
     runner = CliRunner()
@@ -95,8 +270,8 @@ def test_solve_command_executes_runtime_and_exports_artifacts(tmp_path: Path) ->
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--out",
             str(outdir),
             "--runtime",
@@ -128,8 +303,8 @@ def test_solve_command_executes_runtime_and_exports_artifacts(tmp_path: Path) ->
 def test_solve_command_accepts_short_options(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
     outdir = tmp_path / "out-short"
 
     runner = CliRunner()
@@ -138,8 +313,8 @@ def test_solve_command_accepts_short_options(tmp_path: Path) -> None:
         [
             "s",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-o",
             str(outdir),
             "-u",
@@ -157,12 +332,12 @@ def test_solve_command_accepts_short_options(tmp_path: Path) -> None:
     assert (outdir / "run.json").exists()
 
 
-def test_solve_infers_instance_and_outdir_from_defaults(tmp_path: Path, monkeypatch) -> None:
+def test_solve_infers_config_and_outdir_from_defaults(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    inferred_instance = tmp_path / "simple.instance.json"
-    _write_simple_instance(inferred_instance, with_execution=True)
+    inferred_config = tmp_path / "simple.qsol.toml"
+    _write_simple_config(inferred_config, with_execution=True)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -186,8 +361,8 @@ def test_solve_infers_instance_and_outdir_from_defaults(tmp_path: Path, monkeypa
 def test_solve_errors_when_target_selection_missing(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "simple.instance.json"
-    _write_simple_instance(instance_path, with_execution=False)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path, with_execution=False)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -195,8 +370,8 @@ def test_solve_errors_when_target_selection_missing(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--runtime-option",
             "sampler=exact",
         ],
@@ -206,10 +381,10 @@ def test_solve_errors_when_target_selection_missing(tmp_path: Path) -> None:
     assert "error[QSOL4006]" in result.stdout
 
 
-def test_solve_uses_plugins_declared_in_instance_execution(tmp_path: Path, monkeypatch) -> None:
+def test_solve_uses_plugins_declared_in_scenario_execution(tmp_path: Path, monkeypatch) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
+    config_path = tmp_path / "simple.qsol.toml"
     outdir = tmp_path / "out-instance-plugin"
     plugin_path = tmp_path / "instance_runtime_plugin.py"
     plugin_path.write_text(
@@ -257,8 +432,8 @@ plugin_bundle = PluginBundle(runtimes=(InstanceRuntime(),))
         encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(tmp_path))
-    _write_simple_instance(
-        instance_path,
+    _write_simple_config(
+        config_path,
         execution={
             "runtime": "instance-runtime",
             "backend": "dimod-cqm-v1",
@@ -272,8 +447,8 @@ plugin_bundle = PluginBundle(runtimes=(InstanceRuntime(),))
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--out",
             str(outdir),
             "--no-color",
@@ -285,7 +460,7 @@ plugin_bundle = PluginBundle(runtimes=(InstanceRuntime(),))
     assert run_payload["runtime"] == "instance-runtime"
 
 
-def test_solve_errors_when_inferred_instance_is_missing(tmp_path: Path) -> None:
+def test_solve_errors_when_inferred_config_is_missing(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
 
@@ -294,14 +469,14 @@ def test_solve_errors_when_inferred_instance_is_missing(tmp_path: Path) -> None:
 
     assert result.exit_code != 0
     assert "error[QSOL4002]" in result.stdout
-    assert "default instance was not found" in result.stdout
+    assert "default config was not found" in result.stdout
 
 
 def test_solve_runtime_options_file(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
     outdir = tmp_path / "out-file"
     options_path = tmp_path / "runtime_options.json"
     options_path.write_text(json.dumps({"sampler": "exact", "num_reads": 5}), encoding="utf-8")
@@ -312,8 +487,8 @@ def test_solve_runtime_options_file(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-o",
             str(outdir),
             "-u",
@@ -332,8 +507,8 @@ def test_solve_runtime_options_file(tmp_path: Path) -> None:
 def test_solve_invalid_runtime_option_format_reports_error(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -341,8 +516,8 @@ def test_solve_invalid_runtime_option_format_reports_error(tmp_path: Path) -> No
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-u",
             "local-dimod",
             "-x",
@@ -358,8 +533,8 @@ def test_solve_invalid_runtime_option_format_reports_error(tmp_path: Path) -> No
 def test_solve_returns_top_n_unique_solutions(tmp_path: Path) -> None:
     source_path = tmp_path / "multi.qsol"
     _write_multi_solution_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_multi_solution_instance(instance_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_multi_solution_config(config_path)
     outdir = tmp_path / "out-multi"
 
     runner = CliRunner()
@@ -368,8 +543,8 @@ def test_solve_returns_top_n_unique_solutions(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-o",
             str(outdir),
             "-u",
@@ -399,8 +574,8 @@ def test_solve_returns_top_n_unique_solutions(tmp_path: Path) -> None:
 def test_solve_threshold_failure_writes_run_and_exits_nonzero(tmp_path: Path) -> None:
     source_path = tmp_path / "multi.qsol"
     _write_multi_solution_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_multi_solution_instance(instance_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_multi_solution_config(config_path)
     outdir = tmp_path / "out-threshold-fail"
 
     runner = CliRunner()
@@ -409,8 +584,8 @@ def test_solve_threshold_failure_writes_run_and_exits_nonzero(tmp_path: Path) ->
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-o",
             str(outdir),
             "-u",
@@ -434,11 +609,12 @@ def test_solve_threshold_failure_writes_run_and_exits_nonzero(tmp_path: Path) ->
     assert "error[QSOL5002]" in result.stdout
 
 
-def test_solve_rejects_invalid_solutions_count(tmp_path: Path) -> None:
-    source_path = tmp_path / "simple.qsol"
-    _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+def test_solve_multi_scenario_default_intersection_writes_aggregate_run(tmp_path: Path) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_multi_scenario_config(config_path)
+    outdir = tmp_path / "out-multi-scenarios"
 
     runner = CliRunner()
     result = runner.invoke(
@@ -446,8 +622,303 @@ def test_solve_rejects_invalid_solutions_count(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "-x",
+            "sampler=exact",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (outdir / "scenarios" / "s1" / "run.json").exists()
+    assert (outdir / "scenarios" / "s2" / "run.json").exists()
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["extensions"]["combine_mode"] == "intersection"
+    assert run_payload["extensions"]["returned_solutions"] == 0
+
+
+def test_solve_multi_scenario_union_override_returns_union(tmp_path: Path) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_multi_scenario_config(config_path)
+    outdir = tmp_path / "out-multi-scenarios-union"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "-x",
+            "sampler=exact",
+            "--combine-mode",
+            "union",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["extensions"]["combine_mode"] == "union"
+    assert run_payload["extensions"]["returned_solutions"] > 0
+    assert run_payload["extensions"]["solutions"]
+
+
+def test_solve_multi_scenario_worst_case_energy_ranking(tmp_path: Path) -> None:
+    source_path = tmp_path / "weighted.qsol"
+    _write_weighted_problem(source_path)
+    config_path = tmp_path / "weighted.qsol.toml"
+    _write_weighted_multi_scenario_config(config_path)
+    outdir = tmp_path / "out-weighted-multi"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "-x",
+            "sampler=exact",
+            "--combine-mode",
+            "intersection",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    solutions = run_payload["extensions"]["solutions"]
+    assert solutions
+    energies = [entry["energy"] for entry in solutions]
+    assert energies == sorted(energies)
+    for entry in solutions:
+        scenario_energies = entry["scenario_energies"]
+        assert entry["energy"] == max(scenario_energies.values())
+
+
+def test_solve_multi_scenario_runtime_pair_mismatch_errors(tmp_path: Path, monkeypatch) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    outdir = tmp_path / "out-runtime-mismatch"
+    config_path = tmp_path / "multi.qsol.toml"
+    plugin_path = tmp_path / "custom_runtime_mismatch_plugin.py"
+    plugin_path.write_text(
+        """
+from dataclasses import dataclass
+
+from qsol.targeting.interfaces import PluginBundle
+from qsol.targeting.types import StandardRunResult
+
+
+@dataclass(slots=True)
+class CustomRuntime:
+    plugin_id: str = "custom-runtime"
+    display_name: str = "Custom Runtime"
+
+    def capability_catalog(self):
+        return {"model.kind.cqm.v1": "full"}
+
+    def compatible_backend_ids(self):
+        return {"dimod-cqm-v1"}
+
+    def check_support(self, _compiled_model, *, selection):
+        _ = selection
+        return []
+
+    def run_model(self, _compiled_model, *, selection, run_options):
+        _ = run_options
+        return StandardRunResult(
+            schema_version="1.0",
+            runtime=selection.runtime_id,
+            backend=selection.backend_id,
+            status="ok",
+            energy=0.0,
+            reads=1,
+            best_sample={},
+            selected_assignments=[],
+            timing_ms=0.0,
+            capability_report_path="",
+            extensions={
+                "requested_solutions": 1,
+                "returned_solutions": 1,
+                "solutions": [
+                    {
+                        "rank": 1,
+                        "energy": 0.0,
+                        "sample": {},
+                        "selected_assignments": [],
+                    }
+                ],
+            },
+        )
+
+
+plugin_bundle = PluginBundle(runtimes=(CustomRuntime(),))
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    config_path.write_text(
+        """
+schema_version = "1"
+
+[selection]
+mode = "subset"
+subset = ["s1", "s2"]
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[scenarios.s1]
+problem = "Multi"
+[scenarios.s1.sets]
+A = ["a1", "a2"]
+
+[scenarios.s2]
+problem = "Multi"
+[scenarios.s2.sets]
+A = ["a1", "a2"]
+[scenarios.s2.execution]
+runtime = "custom-runtime"
+plugins = ["custom_runtime_mismatch_plugin:plugin_bundle"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "-x",
+            "sampler=exact",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "error[QSOL4001]" in result.stdout
+    assert (outdir / "run.json").exists()
+
+
+def test_solve_multi_scenario_failure_policy_best_effort(tmp_path: Path) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_failure_policy_config(config_path)
+    outdir = tmp_path / "out-best-effort"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "--failure-policy",
+            "best-effort",
+            "-x",
+            "sampler=exact",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["status"] == "ok"
+
+
+def test_solve_multi_scenario_failure_policy_run_all_fail_default(tmp_path: Path) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_failure_policy_config(config_path)
+    outdir = tmp_path / "out-run-all-fail"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "-x",
+            "sampler=exact",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+
+
+def test_solve_multi_scenario_failure_policy_fail_fast_stops_early(tmp_path: Path) -> None:
+    source_path = tmp_path / "multi.qsol"
+    _write_multi_solution_problem(source_path)
+    config_path = tmp_path / "multi.qsol.toml"
+    _write_failure_policy_fail_first_config(config_path)
+    outdir = tmp_path / "out-fail-fast"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
+            "-o",
+            str(outdir),
+            "--failure-policy",
+            "fail-fast",
+            "-x",
+            "sampler=exact",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert not (outdir / "scenarios" / "ok").exists()
+
+
+def test_solve_rejects_invalid_solutions_count(tmp_path: Path) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "-c",
+            str(config_path),
             "-u",
             "local-dimod",
             "--solutions",
@@ -463,8 +934,8 @@ def test_solve_rejects_invalid_solutions_count(tmp_path: Path) -> None:
 def test_solve_rejects_invalid_energy_range(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -472,8 +943,8 @@ def test_solve_rejects_invalid_energy_range(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-u",
             "local-dimod",
             "--energy-min",
@@ -491,10 +962,10 @@ def test_solve_rejects_invalid_energy_range(tmp_path: Path) -> None:
 def test_solve_feature_contract_failure_for_custom_runtime(tmp_path: Path, monkeypatch) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
     outdir = tmp_path / "out-feature-contract"
-    plugin_path = tmp_path / "custom_runtime_plugin.py"
+    plugin_path = tmp_path / "custom_runtime_no_solutions_plugin.py"
     plugin_path.write_text(
         """
 from dataclasses import dataclass
@@ -547,14 +1018,14 @@ plugin_bundle = PluginBundle(runtimes=(RuntimeWithoutSolutions(),))
         [
             "solve",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-o",
             str(outdir),
             "-u",
             "custom-runtime",
             "-p",
-            "custom_runtime_plugin:plugin_bundle",
+            "custom_runtime_no_solutions_plugin:plugin_bundle",
             "--solutions",
             "2",
             "-n",
@@ -569,8 +1040,8 @@ plugin_bundle = PluginBundle(runtimes=(RuntimeWithoutSolutions(),))
 def test_solve_qiskit_runtime_writes_openqasm_artifact(tmp_path: Path, monkeypatch) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
     outdir = tmp_path / "out-qiskit"
 
     monkeypatch.setattr(
@@ -615,8 +1086,8 @@ def test_solve_qiskit_runtime_writes_openqasm_artifact(tmp_path: Path, monkeypat
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--out",
             str(outdir),
             "--runtime",
@@ -645,8 +1116,8 @@ def test_solve_qiskit_runtime_missing_optional_dependencies_reports_error(
 ) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
 
     monkeypatch.setattr(
         "qsol.targeting.plugins._probe_qiskit_core_dependencies",
@@ -659,8 +1130,8 @@ def test_solve_qiskit_runtime_missing_optional_dependencies_reports_error(
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--runtime",
             "qiskit",
             "--runtime-option",
@@ -677,8 +1148,8 @@ def test_solve_qiskit_runtime_missing_optional_dependencies_reports_error(
 def test_solve_rejects_backend_options(tmp_path: Path) -> None:
     source_path = tmp_path / "simple.qsol"
     _write_simple_problem(source_path)
-    instance_path = tmp_path / "instance.json"
-    _write_simple_instance(instance_path)
+    config_path = tmp_path / "simple.qsol.toml"
+    _write_simple_config(config_path)
 
     runner = CliRunner()
     long_result = runner.invoke(
@@ -686,8 +1157,8 @@ def test_solve_rejects_backend_options(tmp_path: Path) -> None:
         [
             "solve",
             str(source_path),
-            "--instance",
-            str(instance_path),
+            "--config",
+            str(config_path),
             "--runtime",
             "local-dimod",
             "--backend",
@@ -702,8 +1173,8 @@ def test_solve_rejects_backend_options(tmp_path: Path) -> None:
         [
             "s",
             str(source_path),
-            "-i",
-            str(instance_path),
+            "-c",
+            str(config_path),
             "-u",
             "local-dimod",
             "-b",

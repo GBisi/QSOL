@@ -15,6 +15,26 @@ problem P {
     assert len(program.items) == 1
 
 
+def test_parse_use_module_statements() -> None:
+    text = """
+use stdlib.permutation;
+use mylib.graph.unknowns;
+
+problem P {
+  set A;
+  find S : Subset(A);
+  must true;
+}
+"""
+    program = parse_to_ast(text, filename="use_modules.qsol")
+    assert len(program.items) == 3
+    assert isinstance(program.items[0], ast.UseStmt)
+    assert isinstance(program.items[1], ast.UseStmt)
+    assert isinstance(program.items[2], ast.ProblemDef)
+    assert program.items[0].module == "stdlib.permutation"
+    assert program.items[1].module == "mylib.graph.unknowns"
+
+
 def test_parse_invalid_missing_separator() -> None:
     text = "problem P { set A find S : Subset(A); }"
     try:
@@ -139,6 +159,24 @@ problem P {
     except ParseFailure as exc:
         assert exc.diagnostic.code == "QSOL1001"
         assert any("trailing `;`" in item for item in exc.diagnostic.help)
+    else:
+        raise AssertionError("expected parse failure")
+
+
+def test_parse_rejects_quoted_use_paths() -> None:
+    text = """
+use "mylib/unknowns.qsol";
+
+problem P {
+  set A;
+  find S : Subset(A);
+  must true;
+}
+"""
+    try:
+        parse_to_ast(text, filename="quoted_use_bad.qsol")
+    except ParseFailure as exc:
+        assert exc.diagnostic.code == "QSOL1001"
     else:
         raise AssertionError("expected parse failure")
 

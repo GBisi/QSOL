@@ -46,6 +46,8 @@ uv run python examples/run_equivalence_suite.py
 
 Docs-only changes are not exempt.
 
+These same gates run automatically in CI via GitHub Actions on every push and pull request to `main`. See `.github/workflows/ci.yml`.
+
 ## Behavior-Change Docs/Test Matrix (Summary)
 
 | Change type | Required docs updates | Required tests updates |

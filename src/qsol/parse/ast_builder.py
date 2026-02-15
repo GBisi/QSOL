@@ -59,6 +59,14 @@ class ASTBuilder:
         if data == "item":
             return self._from_tree(c[0])
 
+        if data == "use_stmt":
+            module = cast(str, self._from_tree(c[0]))
+            return ast.UseStmt(span=self._span(node), module=module)
+        if data == "module_path":
+            if not c:
+                raise ValueError("module path is empty")
+            return ".".join(self._name(ch) for ch in c)
+
         if data == "problem":
             name = self._name(c[0])
             problem_stmts = cast(list[ast.ProblemStmt], self._from_tree(c[1]))

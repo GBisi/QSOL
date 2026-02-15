@@ -21,32 +21,34 @@ problem FirstProgram {
 Ready-to-run copy:
 - `examples/tutorials/first_program.qsol`
 
-## 2. Instance Data
+## 2. Config + Scenario Data
 
-Create `first_program.instance.json`:
+Create `first_program.qsol.toml`:
 
-```json
-{
-  "problem": "FirstProgram",
-  "sets": {
-    "Items": ["i1", "i2", "i3", "i4"]
-  },
-  "params": {
-    "Value": {
-      "i1": 3,
-      "i2": 8,
-      "i3": 5,
-      "i4": 2
-    }
-  },
-  "execution": {
-    "runtime": "local-dimod"
-  }
-}
+```toml
+schema_version = "1"
+
+[selection]
+default_scenario = "baseline"
+
+[defaults.execution]
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "FirstProgram"
+
+[scenarios.baseline.sets]
+Items = ["i1", "i2", "i3", "i4"]
+
+[scenarios.baseline.params.Value]
+i1 = 3
+i2 = 8
+i3 = 5
+i4 = 2
 ```
 
 Ready-to-run copy:
-- `examples/tutorials/first_program.instance.json`
+- `examples/tutorials/first_program.qsol.toml`
 
 `execution` is optional. CLI flags can override it.
 
@@ -75,7 +77,7 @@ uv run qsol inspect lower examples/tutorials/first_program.qsol --json
 ```bash
 uv run qsol targets check \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod
 ```
 
@@ -86,7 +88,7 @@ This writes `capability_report.json` and hard-fails if unsupported.
 ```bash
 uv run qsol build \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --format qubo
@@ -106,7 +108,7 @@ Artifacts in `outdir/first_program`:
 ```bash
 uv run qsol solve \
   examples/tutorials/first_program.qsol \
-  --instance examples/tutorials/first_program.instance.json \
+  --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
   --out outdir/first_program \
   --runtime-option sampler=exact
@@ -118,9 +120,9 @@ This also writes `run.json`.
 
 - `QSOL1001`: syntax issue (often missing semicolon).
 - `QSOL2101`: type issue (method call target/arity mismatch).
-- `QSOL2201`: instance shape mismatch.
+- `QSOL2201`: scenario payload shape mismatch.
 - `QSOL3001`: backend-lowering limitation for valid language shape.
-- `QSOL4006`: runtime not resolved from CLI or `execution` defaults.
+- `QSOL4006`: runtime not resolved from CLI or config `execution` defaults.
 - `QSOL4007`: unknown runtime/backend id.
 - `QSOL4008`: incompatible runtime/backend pair.
 - `QSOL4009`: plugin loading/config issue.

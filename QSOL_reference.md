@@ -13,7 +13,7 @@ This document calls out both layers explicitly so you can write models that are 
 
 ## 2. Program Structure
 
-A QSOL file contains top-level `problem` and/or `unknown` definitions.
+A QSOL file may contain top-level `use`, `unknown`, and `problem` definitions.
 
 ```qsol
 problem Name {
@@ -38,6 +38,26 @@ problem Name {
 /* block comment */
 ```
 
+### 2.3 Imports (`use`)
+
+QSOL uses one module-style import form for both stdlib and user libraries:
+
+```qsol
+use stdlib.permutation;
+use mylib.graph.unknowns;
+```
+
+Rules:
+- Module grammar: `NAME ("." NAME)*`
+- Path mapping: `a.b.c -> a/b/c.qsol`
+- `stdlib.*` is reserved and always resolves to packaged modules under `src/qsol/stdlib/`
+- Non-stdlib modules resolve in order:
+1. importing file directory
+2. process current working directory
+- Quoted file imports (for example `use "x.qsol";`) are not supported
+- Import loading is recursive with stable de-duplication and cycle detection
+- Imported modules may contain only `use` and `unknown` top-level items (`problem` blocks are rejected in imported modules)
+
 ## 3. Declarations
 
 ### 3.1 Sets
@@ -47,7 +67,7 @@ set Workers;
 set Tasks;
 ```
 
-Sets are finite domains whose concrete elements are provided by the instance JSON.
+Sets are finite domains whose concrete elements are provided by the selected config scenario.
 
 ### 3.2 Parameters
 
@@ -70,7 +90,7 @@ Indexing:
 
 Default values:
 - Scalar defaults are allowed for all scalar types.
-- Indexed params may also have scalar defaults; instance expansion uses declared set elements.
+- Indexed params may also have scalar defaults; scenario expansion uses declared set elements.
 - `Elem(SetName)` params do not support defaults.
 
 Reading params in expressions:
@@ -78,7 +98,7 @@ Reading params in expressions:
 - Set-valued params can be used as set elements (for example `Pick.has(StartNode[t])`).
 - Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
 - Scalar call/index forms such as `C[]` and `Flag()` are rejected with `QSOL2101`.
-- `size(SetName)` returns set cardinality and is constant-folded after instance loading.
+- `size(SetName)` returns set cardinality and is constant-folded after scenario loading.
 
 ### 3.3 Unknowns
 
@@ -112,7 +132,8 @@ unknown MyType(A) {
 
 Current status:
 - Parse/typecheck: supported.
-- Backend compilation to dimod: **not yet supported** for custom unknown instantiation in `find`.
+- Frontend compilation for custom unknown instantiation in `find`: supported.
+- Backend remains primitive-focused (`Subset`/`Mapping`); custom unknowns are elaborated in frontend into primitive finds plus generated constraints before resolver/typecheck/lower/backend stages.
 
 ## 4. Expressions
 
@@ -263,54 +284,96 @@ Desugaring is applied before lowering/codegen.
 
 - `if c then a else b` is lowered as indicator arithmetic (`c*a + (1-c)*b`) in backend numeric encoding.
 
-## 8. Instance JSON
+## 8. Config TOML and Scenarios
 
-Required shape:
+CLI `targets check`, `build`, and `solve` consume a TOML config file (`*.qsol.toml`) with one or more named scenarios.
 
-```json
-{
-  "problem": "ProblemName",
-  "sets": {
-    "A": ["a1", "a2"],
-    "B": ["b1"]
-  },
-  "params": {
-    "K": 3,
-    "Cost": {
-      "a1": {"b1": 5.0},
-      "a2": {"b1": 7.0}
-    }
-  },
-  "execution": {
-    "runtime": "local-dimod",
-    "plugins": []
-  }
-}
+Required root shape:
+
+```toml
+schema_version = "1"
+
+[selection]
+mode = "default" # default|all|subset
+default_scenario = "baseline"
+subset = ["baseline", "stress"]
+combine_mode = "intersection" # intersection|union
+failure_policy = "run-all-fail" # run-all-fail|fail-fast|best-effort
+
+[defaults.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+plugins = []
+
+[defaults.solve]
+solutions = 3
+energy_min = -10
+energy_max = 0
+
+[scenarios.baseline]
+problem = "ProblemName"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+B = ["b1"]
+
+[scenarios.baseline.params]
+K = 3
+
+[scenarios.baseline.params.Cost]
+a1 = { b1 = 5.0 }
+a2 = { b1 = 7.0 }
+
+[scenarios.baseline.execution]
+runtime = "local-dimod"
+plugins = ["my_pkg.plugins:plugin_bundle"]
+
+[scenarios.baseline.solve]
+solutions = 5
+energy_max = 1
 ```
 
 Notes:
-- `problem` selects a compiled problem by name. If omitted, all compiled problems are considered.
-- All declared sets must appear in `sets` and be arrays.
-- Missing params without defaults produce errors.
-- Indexed params must match declared dimension keys.
-- For `Elem(SetName)` params, every leaf value is normalized to string and must be present in `sets.SetName`.
-- `execution` is optional and provides default target selection:
-  - `execution.runtime`
+- `schema_version` must currently be `"1"`.
+- `scenarios` must declare at least one scenario.
+- Each scenario materializes to the historical instance payload shape (`problem`, `sets`, `params`, optional `execution`) before grounding.
+- Scenario `execution` values override `defaults.execution` values field-by-field.
+- Scenario `solve` values override `defaults.solve`, and CLI solve flags override both.
 - CLI backend defaults to `dimod-cqm-v1`.
 - built-in runtime ids:
   - `local-dimod`
   - `qiskit`
 - built-in backend ids:
   - `dimod-cqm-v1`
-- `execution.plugins` is optional and, when present, must be an array of non-empty
-  plugin specs (`module:attribute`).
-- CLI `--runtime` overrides `execution.runtime`.
-- Plugin loading order for `targets check`/`build`/`solve`:
-  1. built-ins
-  2. installed entry points (`qsol.backends`, `qsol.runtimes`)
-  3. `execution.plugins`
-  4. CLI `--plugin`
-- Instance/CLI plugin specs are merged in order and deduplicated by exact string.
+
+Config auto-discovery when `--config` is omitted:
+- Search only `*.qsol.toml` in the model directory.
+- If one config exists, use it.
+- If multiple configs exist, use `<model>.qsol.toml` when present.
+- Otherwise fail with `QSOL4002`.
+
+Scenario selection precedence:
+1. CLI `--all-scenarios`
+2. CLI `--scenario <name>` (repeatable)
+3. Config `selection.mode`
+4. Config `selection.default_scenario`
+5. If exactly one scenario exists, use it
+
+If unresolved, fail with `QSOL4001`.
+
+Runtime selection precedence:
+1. CLI `--runtime`
+2. Scenario/default `execution.runtime`
+
+If unresolved, fail with `QSOL4006`.
+
+Plugin loading order for `targets check`/`build`/`solve`:
+1. built-ins
+2. installed entry points (`qsol.backends`, `qsol.runtimes`)
+3. config `execution.plugins`
+4. CLI `--plugin`
+
+Config and CLI plugin specs are merged in order and deduplicated by exact string.
 
 ### 8.1 Qiskit Runtime Options
 
@@ -333,7 +396,7 @@ The language accepted by parser/typechecker is broader than backend v1 codegen.
 
 ### 9.1 Fully supported (safe patterns)
 
-- `find` with `Subset` and `Mapping`
+- `find` with `Subset`, `Mapping`, and user-defined unknown kinds that elaborate to primitive finds
 - hard numeric comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`) where both sides lower to numeric backend expressions
 - boolean-context comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`) are supported in objectives/soft expressions via indicator encoding
 - hard constraints as conjunctions of supported atoms/comparisons
@@ -345,7 +408,6 @@ The language accepted by parser/typechecker is broader than backend v1 codegen.
 
 ### 9.2 Known unsupported/partial areas
 
-- custom unknown kinds in `find` (user-defined unknown instantiation)
 - many template-style function calls (for example `exactly_one(...)`) are not backend primitives in v1
 - some boolean expression shapes may parse/typecheck but fail backend lowering with `QSOL3001`
 - backend quantifier handling is expansion-based; use quantified forms carefully and verify generated behavior on your problem
@@ -367,11 +429,11 @@ Common diagnostic codes:
 - `QSOL2001`: unknown identifier/set/unknown type reference
 - `QSOL2002`: duplicate declaration in scope
 - `QSOL2101`: type rule violation
-- `QSOL2201`: instance data or indexing/shape issue
+- `QSOL2201`: scenario data or indexing/shape issue
 - `QSOL3001`: unsupported backend shape or validation/backend limitation
-- `QSOL4002`: missing inferred instance file
+- `QSOL4002`: missing/ambiguous inferred config file
 - `QSOL4003`: model or payload file read failure
-- `QSOL4004`: instance JSON load/validation failure before compilation
+- `QSOL4004`: config TOML load/validation failure before compilation
 - `QSOL4005`: missing expected artifacts or target outputs
 - `QSOL4006`: runtime selection unresolved
 - `QSOL4007`: unknown runtime/backend id
@@ -393,7 +455,7 @@ Use CLI commands progressively:
 - `inspect parse` to validate syntax
 - `inspect check` to validate semantics/types
 - `inspect lower` to inspect normalized IR
-- `targets check` to validate concrete target support on model+instance
+- `targets check` to validate concrete target support on model+scenario
 - `build` to export artifacts for selected runtime (backend is implicit)
 - `solve` to execute selected runtime (backend is implicit)
 
@@ -413,36 +475,38 @@ problem FirstProgram {
 }
 ```
 
-Instance:
+Config:
 
-```json
-{
-  "problem": "FirstProgram",
-  "sets": {
-    "Items": ["i1", "i2", "i3", "i4"]
-  },
-  "params": {
-    "Value": {
-      "i1": 3,
-      "i2": 8,
-      "i3": 5,
-      "i4": 2
-    }
-  },
-  "execution": {
-    "runtime": "local-dimod",
-    "plugins": []
-  }
-}
+```toml
+schema_version = "1"
+
+[selection]
+default_scenario = "baseline"
+
+[defaults.execution]
+runtime = "local-dimod"
+plugins = []
+
+[scenarios.baseline]
+problem = "FirstProgram"
+
+[scenarios.baseline.sets]
+Items = ["i1", "i2", "i3", "i4"]
+
+[scenarios.baseline.params.Value]
+i1 = 3
+i2 = 8
+i3 = 5
+i4 = 2
 ```
 
 Inspect, check support, build, and solve:
 
 ```bash
 uv run qsol inspect check examples/tutorials/first_program.qsol
-uv run qsol targets check examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod
-uv run qsol build examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --out outdir/first_program --format qubo
-uv run qsol solve examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --out outdir/first_program --runtime-option sampler=exact
+uv run qsol targets check examples/tutorials/first_program.qsol --config examples/tutorials/first_program.qsol.toml --runtime local-dimod
+uv run qsol build examples/tutorials/first_program.qsol --config examples/tutorials/first_program.qsol.toml --runtime local-dimod --out outdir/first_program --format qubo
+uv run qsol solve examples/tutorials/first_program.qsol --config examples/tutorials/first_program.qsol.toml --runtime local-dimod --out outdir/first_program --runtime-option sampler=exact
 ```
 
 ## 12. Related Docs
@@ -450,3 +514,4 @@ uv run qsol solve examples/tutorials/first_program.qsol --instance examples/tuto
 - Syntax-oriented quick guide: `docs/QSOL_SYNTAX.md`
 - Tutorials: `docs/tutorials/README.md`
 - Code architecture: `docs/CODEBASE.md`
+- Stdlib modules and contracts: `src/qsol/stdlib/README.md`
