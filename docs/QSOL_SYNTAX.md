@@ -18,12 +18,13 @@ For full semantics and backend caveats, see `QSOL_reference.md`.
 
 ## 2. Top-Level Constructs
 
-A file may contain top-level `use`, `unknown`, and `problem` blocks.
+A file may contain top-level `use`, `unknown`, `predicate`, `function`, and `problem` blocks.
 
 Module-style imports:
 
 ```qsol
 use stdlib.permutation;
+use stdlib.logic;
 use mylib.graph.unknowns;
 ```
 
@@ -51,9 +52,17 @@ unknown U(A) {
     must true;
   }
   view {
-    predicate has(x in A) = inner.has(x);
+    predicate has(x in A): Bool = inner.has(x);
+    function indicator(x in A): Real = if inner.has(x) then 1 else 0;
   }
 }
+```
+
+Top-level reusable macros use the same typed declaration syntax:
+
+```qsol
+predicate iff(a, b): Bool = a and b or not a and not b;
+function indicator(b): Real = if b then 1 else 0;
 ```
 
 ## 3. Declarations Inside `problem`
@@ -76,6 +85,7 @@ param StartNode[Tasks] : Elem(Workers);
 
 Usage notes:
 - Indexed params can be referenced as `Cost[w, t]`.
+- Indexed params must use brackets; `Cost(w, t)` is rejected with `QSOL2101`.
 - `Elem(SetName)` params return set elements and can be passed to methods like `Subset.has(...)`.
 - `Elem(SetName)` params do not allow defaults.
 - Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
@@ -161,6 +171,7 @@ size(V)
 ```qsol
 S.has(x)
 Assign.is(w, t)
+exactly(1, sum(indicator(S.has(x)) for x in X))
 
 Cost[w, t]
 C

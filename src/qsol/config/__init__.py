@@ -4,11 +4,14 @@ from qsol.config.loader import (
     materialize_instance_payload,
     resolve_combine_mode,
     resolve_failure_policy,
+    resolve_output_format,
+    resolve_runtime_options,
     resolve_selected_scenarios,
     resolve_solve_settings,
 )
 from qsol.config.types import (
     CombineMode,
+    EntryPointConfig,
     FailurePolicy,
     QsolConfig,
     SelectionMode,
@@ -17,6 +20,7 @@ from qsol.config.types import (
 
 __all__ = [
     "CombineMode",
+    "EntryPointConfig",
     "FailurePolicy",
     "QsolConfig",
     "SelectionMode",
@@ -26,6 +30,8 @@ __all__ = [
     "materialize_instance_payload",
     "resolve_combine_mode",
     "resolve_failure_policy",
+    "resolve_output_format",
+    "resolve_runtime_options",
     "resolve_selected_scenarios",
     "resolve_solve_settings",
 ]

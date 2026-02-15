@@ -1,9 +1,7 @@
 schema_version = "1"
 
-[selection]
-default_scenario = "baseline"
-
-[defaults.execution]
+[entrypoint]
+scenario = "baseline"
 runtime = "local-dimod"
 
 [scenarios.baseline]

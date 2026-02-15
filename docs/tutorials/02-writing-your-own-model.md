@@ -6,7 +6,7 @@ Goal: build a model from scratch and run it through the target-aware workflow.
 
 Use this sequence:
 
-1. Import reusable unknown modules with `use` when needed.
+1. Import reusable modules (`unknown` and/or macro libraries) with `use` when needed.
 2. Declare sets.
 3. Declare params.
 4. Declare unknowns with `find`.
@@ -45,6 +45,7 @@ Reusable unknown imports use the same module form for stdlib and user libraries:
 
 ```qsol
 use stdlib.permutation;
+use stdlib.logic;
 use mylib.constraints.injective;
 ```
 
@@ -55,10 +56,8 @@ use mylib.constraints.injective;
 ```toml
 schema_version = "1"
 
-[selection]
-default_scenario = "baseline"
-
-[defaults.execution]
+[entrypoint]
+scenario = "baseline"
 runtime = "local-dimod"
 
 [scenarios.baseline]
@@ -96,7 +95,7 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
-The second command uses `execution.runtime` from config. Add CLI `--runtime` to override.
+The second command uses `entrypoint.runtime` from config. Add CLI `--runtime` to override.
 
 ## 5. Backend-v1 Safety Checklist
 

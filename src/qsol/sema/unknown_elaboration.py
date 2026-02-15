@@ -32,14 +32,48 @@ class _Expansion:
 class UnknownElaborator:
     _diagnostics: list[Diagnostic] = field(default_factory=list)
     _unknown_defs: dict[str, ast.UnknownDef] = field(default_factory=dict)
+    _global_predicates: dict[str, ast.PredicateDef] = field(default_factory=dict)
+    _global_functions: dict[str, ast.FunctionDef] = field(default_factory=dict)
     _custom_instances: dict[str, _InstanceContext] = field(default_factory=dict)
     _used_find_names: set[str] = field(default_factory=set)
 
     def elaborate(self, program: ast.Program) -> UnknownElaborationResult:
         self._unknown_defs = {}
+        self._global_predicates = {}
+        self._global_functions = {}
         for item in program.items:
             if isinstance(item, ast.UnknownDef) and item.name not in self._unknown_defs:
                 self._unknown_defs[item.name] = item
+            elif isinstance(item, ast.PredicateDef):
+                if item.name in self._global_predicates or item.name in self._global_functions:
+                    self._diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2101",
+                            message=f"redefinition of macro `{item.name}`",
+                            span=item.span,
+                            help=[
+                                "Use unique names across top-level `predicate` and `function` declarations."
+                            ],
+                        )
+                    )
+                    continue
+                self._global_predicates[item.name] = item
+            elif isinstance(item, ast.FunctionDef):
+                if item.name in self._global_predicates or item.name in self._global_functions:
+                    self._diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2101",
+                            message=f"redefinition of macro `{item.name}`",
+                            span=item.span,
+                            help=[
+                                "Use unique names across top-level `predicate` and `function` declarations."
+                            ],
+                        )
+                    )
+                    continue
+                self._global_functions[item.name] = item
 
         items: list[ast.TopItem] = []
         for item in program.items:
@@ -356,16 +390,48 @@ class UnknownElaborator:
                 for arg in expr.args
             ]
             call = replace(expr, args=rewritten_args)
+            if expr.call_style == "bracket" or expr.name == "size":
+                return call
+
             if current_instance is not None:
-                predicate = self._view_predicate(current_instance.unknown_def, expr.name)
-                if predicate is not None:
-                    return self._inline_predicate_call(
+                view_member = self._view_member(current_instance.unknown_def, expr.name)
+                if isinstance(view_member, ast.PredicateDef):
+                    return self._inline_view_predicate_call(
                         instance=current_instance,
-                        predicate=predicate,
+                        predicate=view_member,
                         call_args=rewritten_args,
                         call_span=expr.span,
                         call_stack=call_stack,
                     )
+                if isinstance(view_member, ast.FunctionDef):
+                    return self._inline_view_function_call(
+                        instance=current_instance,
+                        function=view_member,
+                        call_args=rewritten_args,
+                        call_span=expr.span,
+                        call_stack=call_stack,
+                    )
+
+            global_predicate = self._global_predicates.get(expr.name)
+            if global_predicate is not None:
+                return self._inline_global_predicate_call(
+                    predicate=global_predicate,
+                    call_args=rewritten_args,
+                    call_span=expr.span,
+                    current_instance=current_instance,
+                    set_subst=set_subst,
+                    call_stack=call_stack,
+                )
+            global_function = self._global_functions.get(expr.name)
+            if global_function is not None:
+                return self._inline_global_function_call(
+                    function=global_function,
+                    call_args=rewritten_args,
+                    call_span=expr.span,
+                    current_instance=current_instance,
+                    set_subst=set_subst,
+                    call_stack=call_stack,
+                )
             return call
         if isinstance(expr, ast.MethodCall):
             rewritten_target = self._rewrite_expr(
@@ -394,8 +460,8 @@ class UnknownElaborator:
                 target_name = rewritten_target.name
                 instance = self._custom_instances.get(target_name)
                 if instance is not None:
-                    predicate = self._view_predicate(instance.unknown_def, expr.name)
-                    if predicate is None:
+                    view_member = self._view_member(instance.unknown_def, expr.name)
+                    if view_member is None:
                         self._diagnostics.append(
                             Diagnostic(
                                 severity=Severity.ERROR,
@@ -403,14 +469,22 @@ class UnknownElaborator:
                                 message=f"unknown method `{expr.name}` for unknown `{instance.unknown_def.name}`",
                                 span=expr.span,
                                 help=[
-                                    "Declare a matching predicate in the unknown `view` block.",
+                                    "Declare a matching predicate/function in the unknown `view` block.",
                                 ],
                             )
                         )
                         return ast.BoolLit(span=expr.span, value=False)
-                    return self._inline_predicate_call(
+                    if isinstance(view_member, ast.PredicateDef):
+                        return self._inline_view_predicate_call(
+                            instance=instance,
+                            predicate=view_member,
+                            call_args=rewritten_args,
+                            call_span=expr.span,
+                            call_stack=call_stack,
+                        )
+                    return self._inline_view_function_call(
                         instance=instance,
-                        predicate=predicate,
+                        function=view_member,
                         call_args=rewritten_args,
                         call_span=expr.span,
                         call_stack=call_stack,
@@ -621,7 +695,7 @@ class UnknownElaborator:
 
         return expr
 
-    def _inline_predicate_call(
+    def _inline_view_predicate_call(
         self,
         *,
         instance: _InstanceContext,
@@ -630,52 +704,160 @@ class UnknownElaborator:
         call_span: Span,
         call_stack: tuple[tuple[str, str], ...],
     ) -> ast.BoolExpr:
-        if len(call_args) != len(predicate.formals):
+        rewritten = self._inline_macro_call(
+            member=predicate,
+            scope_key=instance.alias,
+            scope_label=f"{instance.alias}.{predicate.name}",
+            recursive_help="Break recursive predicate/function dependencies in unknown `view` blocks.",
+            call_descriptor=f"method `{predicate.name}`",
+            call_args=call_args,
+            call_span=call_span,
+            current_instance=instance,
+            set_subst=instance.type_arg_map,
+            call_stack=call_stack,
+        )
+        return cast(ast.BoolExpr, rewritten)
+
+    def _inline_view_function_call(
+        self,
+        *,
+        instance: _InstanceContext,
+        function: ast.FunctionDef,
+        call_args: list[ast.Expr],
+        call_span: Span,
+        call_stack: tuple[tuple[str, str], ...],
+    ) -> ast.NumExpr:
+        rewritten = self._inline_macro_call(
+            member=function,
+            scope_key=instance.alias,
+            scope_label=f"{instance.alias}.{function.name}",
+            recursive_help="Break recursive predicate/function dependencies in unknown `view` blocks.",
+            call_descriptor=f"method `{function.name}`",
+            call_args=call_args,
+            call_span=call_span,
+            current_instance=instance,
+            set_subst=instance.type_arg_map,
+            call_stack=call_stack,
+        )
+        return cast(ast.NumExpr, rewritten)
+
+    def _inline_global_predicate_call(
+        self,
+        *,
+        predicate: ast.PredicateDef,
+        call_args: list[ast.Expr],
+        call_span: Span,
+        current_instance: _InstanceContext | None,
+        set_subst: dict[str, str],
+        call_stack: tuple[tuple[str, str], ...],
+    ) -> ast.BoolExpr:
+        rewritten = self._inline_macro_call(
+            member=predicate,
+            scope_key="__global__",
+            scope_label=predicate.name,
+            recursive_help="Break recursive dependencies among top-level predicates/functions.",
+            call_descriptor=f"`{predicate.name}`",
+            call_args=call_args,
+            call_span=call_span,
+            current_instance=current_instance,
+            set_subst=set_subst,
+            call_stack=call_stack,
+        )
+        return cast(ast.BoolExpr, rewritten)
+
+    def _inline_global_function_call(
+        self,
+        *,
+        function: ast.FunctionDef,
+        call_args: list[ast.Expr],
+        call_span: Span,
+        current_instance: _InstanceContext | None,
+        set_subst: dict[str, str],
+        call_stack: tuple[tuple[str, str], ...],
+    ) -> ast.NumExpr:
+        rewritten = self._inline_macro_call(
+            member=function,
+            scope_key="__global__",
+            scope_label=function.name,
+            recursive_help="Break recursive dependencies among top-level predicates/functions.",
+            call_descriptor=f"`{function.name}`",
+            call_args=call_args,
+            call_span=call_span,
+            current_instance=current_instance,
+            set_subst=set_subst,
+            call_stack=call_stack,
+        )
+        return cast(ast.NumExpr, rewritten)
+
+    def _inline_macro_call(
+        self,
+        *,
+        member: ast.PredicateDef | ast.FunctionDef,
+        scope_key: str,
+        scope_label: str,
+        recursive_help: str,
+        call_descriptor: str,
+        call_args: list[ast.Expr],
+        call_span: Span,
+        current_instance: _InstanceContext | None,
+        set_subst: dict[str, str],
+        call_stack: tuple[tuple[str, str], ...],
+    ) -> ast.Expr:
+        if len(call_args) != len(member.formals):
             self._diagnostics.append(
                 Diagnostic(
                     severity=Severity.ERROR,
                     code="QSOL2101",
                     message=(
-                        f"method `{predicate.name}` expects {len(predicate.formals)} argument(s), "
+                        f"{call_descriptor} expects {len(member.formals)} argument(s), "
                         f"got {len(call_args)}"
                     ),
                     span=call_span,
                 )
             )
+            if isinstance(member, ast.FunctionDef):
+                return ast.NumLit(span=call_span, value=0.0)
             return ast.BoolLit(span=call_span, value=False)
 
-        call_key = (instance.alias, predicate.name)
+        kind_key = "predicate" if isinstance(member, ast.PredicateDef) else "function"
+        call_key = (scope_key, f"{kind_key}:{member.name}")
         if call_key in call_stack:
+            message = f"recursive macro expansion detected for `{scope_label}`"
+            if scope_key != "__global__" and isinstance(member, ast.PredicateDef):
+                message = f"recursive view predicate expansion detected for `{scope_label}`"
             self._diagnostics.append(
                 Diagnostic(
                     severity=Severity.ERROR,
                     code="QSOL2101",
-                    message=(
-                        f"recursive view predicate expansion detected for `{instance.alias}.{predicate.name}`"
-                    ),
+                    message=message,
                     span=call_span,
-                    help=["Break recursive predicate dependencies in unknown `view` blocks."],
+                    help=[recursive_help],
                 )
             )
+            if isinstance(member, ast.FunctionDef):
+                return ast.NumLit(span=call_span, value=0.0)
             return ast.BoolLit(span=call_span, value=False)
 
         value_subst: dict[str, ast.Expr] = {}
-        for formal, arg in zip(predicate.formals, call_args, strict=False):
+        for formal, arg in zip(member.formals, call_args, strict=False):
             value_subst[formal.name] = arg
 
+        body = member.expr
         rewritten = self._rewrite_expr(
-            predicate.expr,
-            current_instance=instance,
+            body,
+            current_instance=current_instance,
             value_subst=value_subst,
-            set_subst=instance.type_arg_map,
+            set_subst=set_subst,
             call_stack=(*call_stack, call_key),
         )
-        return cast(ast.BoolExpr, rewritten)
+        return rewritten
 
-    def _view_predicate(self, unknown_def: ast.UnknownDef, name: str) -> ast.PredicateDef | None:
-        for pred in unknown_def.view_block:
-            if pred.name == name:
-                return pred
+    def _view_member(
+        self, unknown_def: ast.UnknownDef, name: str
+    ) -> ast.PredicateDef | ast.FunctionDef | None:
+        for member in unknown_def.view_block:
+            if member.name == name:
+                return member
         return None
 
 

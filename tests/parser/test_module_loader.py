@@ -36,7 +36,7 @@ problem P {
 unknown FromImporter(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 """,
     )
@@ -46,7 +46,7 @@ unknown FromImporter(A) {
 unknown FromCwd(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 """,
     )
@@ -83,7 +83,7 @@ problem P {
 unknown Base(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 """,
     )
@@ -117,6 +117,41 @@ problem P {
     ]
     assert "Permutation" in imported_unknown_names
     assert "BijectiveMapping" in imported_unknown_names
+
+
+def test_module_loader_imports_top_level_predicates_and_functions(tmp_path: Path) -> None:
+    root_model = tmp_path / "root.qsol"
+    _write(
+        root_model,
+        """
+use mylib.logic;
+
+problem P {
+  param Flag : Bool;
+  must iff(Flag, true);
+  minimize indicator(Flag);
+}
+""",
+    )
+    _write(
+        tmp_path / "mylib" / "logic.qsol",
+        """
+predicate iff(a, b): Bool = a and b or not a and not b;
+function indicator(b): Real = if b then 1 else 0;
+""",
+    )
+
+    program = parse_to_ast(root_model.read_text(encoding="utf-8"), filename=str(root_model))
+    result = ModuleLoader(cwd=tmp_path).resolve(program, root_filename=str(root_model))
+
+    assert not any(diag.is_error for diag in result.diagnostics)
+    assert any(
+        isinstance(item, ast.PredicateDef) and item.name == "iff" for item in result.program.items
+    )
+    assert any(
+        isinstance(item, ast.FunctionDef) and item.name == "indicator"
+        for item in result.program.items
+    )
 
 
 def test_module_loader_reports_missing_module(tmp_path: Path) -> None:
@@ -157,7 +192,7 @@ use mylib.b;
 unknown AType(X) {
   rep { s : Subset(X); }
   laws { must true; }
-  view { predicate has(x in X) = s.has(x); }
+  view { predicate has(x in X): Bool = s.has(x); }
 }
 """,
     )
@@ -168,7 +203,7 @@ use mylib.a;
 unknown BType(X) {
   rep { s : Subset(X); }
   laws { must true; }
-  view { predicate has(x in X) = s.has(x); }
+  view { predicate has(x in X): Bool = s.has(x); }
 }
 """,
     )
@@ -227,7 +262,7 @@ problem P {
 unknown Shared(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 """,
     )
@@ -258,7 +293,7 @@ problem P {
 unknown Broken(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 """,
     )

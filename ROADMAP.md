@@ -16,6 +16,12 @@ Each item includes an acceptance note to make progress measurable.
 
 - [ ] Broaden backend-supported expression patterns while preserving semantics.
   Acceptance: newly supported constructs are covered by parser/sema/lower/backend tests and documented with examples.
+- [ ] Expand user-defined `function` return types beyond `Real`.
+  Acceptance: `Bool`, bounded `Int[...]`, and `Elem(Set)` return annotations are supported end-to-end (grammar, sema, lowering, diagnostics, docs, and tests).
+- [ ] Add variadic formal parameters/call-site support for macros.
+  Acceptance: syntax and expansion support `...` signatures/calls (for example `exactly(k, ...)`) with arity/type diagnostics and full regression coverage.
+- [ ] Define migration/compatibility policy for future macro typing extensions.
+  Acceptance: docs specify versioned compatibility guarantees and migration notes for macro syntax/typing changes.
 - [ ] Increase diagnostics depth and fix guidance.
   Acceptance: new failure modes include stable codes, spans, and concrete `help` text.
 - [ ] Expand end-to-end examples for realistic optimization tasks.

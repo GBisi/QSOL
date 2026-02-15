@@ -4,15 +4,19 @@ schema_version = "1"
 scenario = "baseline"
 runtime = "local-dimod"
 runtime_options = { sampler = "exact" }
+# runtime = "qiskit"
+# runtime_options = { fake_backend = "FakeFez" }
 
 [scenarios.baseline]
-problem = "PartitionEqualSum"
+problem = "SimpleSubset"
 
 [scenarios.baseline.sets]
-Items = ["i1", "i2", "i3", "i4"]
+Elements = ["e1", "e2", "e3", "e4", "e5", "e6"]
 
 [scenarios.baseline.params.Value]
-i1 = 3
-i2 = 1
-i3 = 2
-i4 = 4
+e1 = 1
+e2 = 1
+e3 = 1
+e4 = 1
+e5 = 1
+e6 = 1

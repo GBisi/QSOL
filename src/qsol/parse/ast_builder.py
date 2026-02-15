@@ -10,7 +10,7 @@ from qsol.diag.source import Span
 from qsol.parse import ast
 
 ParseNode = Tree[object] | Token | str
-UnknownSections = tuple[list[ast.RepDecl], list[ast.Constraint], list[ast.PredicateDef]]
+UnknownSections = tuple[list[ast.RepDecl], list[ast.Constraint], list[ast.ViewMember]]
 
 
 @dataclass(slots=True)
@@ -107,7 +107,7 @@ class ASTBuilder:
         if data == "block_unknown":
             rep_entries: list[ast.RepDecl] = []
             law_entries: list[ast.Constraint] = []
-            view_entries: list[ast.PredicateDef] = []
+            view_entries: list[ast.ViewMember] = []
             for ch in c:
                 value = self._from_tree(ch)
                 entries = value if isinstance(value, list) else [value]
@@ -119,7 +119,7 @@ class ASTBuilder:
                         elif tag == "laws":
                             law_entries = cast(list[ast.Constraint], payload)
                         elif tag == "view":
-                            view_entries = cast(list[ast.PredicateDef], payload)
+                            view_entries = cast(list[ast.ViewMember], payload)
             return rep_entries, law_entries, view_entries
         if data == "unknown_stmt_list":
             entries = [x for x in (self._from_tree(ch) for ch in c) if x is not None]
@@ -169,19 +169,23 @@ class ASTBuilder:
         if data == "laws_stmt":
             return self._from_tree(c[0])
         if data == "view_block":
-            return "view", cast(list[ast.PredicateDef], self._from_tree(c[0]))
+            return "view", cast(list[ast.ViewMember], self._from_tree(c[0]))
         if data == "block_view":
-            view_values: list[ast.PredicateDef] = []
+            view_values: list[ast.ViewMember] = []
             for ch in c:
                 value = self._from_tree(ch)
                 if isinstance(value, list):
-                    view_values.extend(v for v in value if isinstance(v, ast.PredicateDef))
-                elif isinstance(value, ast.PredicateDef):
+                    view_values.extend(
+                        v for v in value if isinstance(v, (ast.PredicateDef, ast.FunctionDef))
+                    )
+                elif isinstance(value, (ast.PredicateDef, ast.FunctionDef)):
                     view_values.append(value)
             return view_values
         if data == "view_stmt_list":
             view_stmt_values = [
-                x for x in (self._from_tree(ch) for ch in c) if isinstance(x, ast.PredicateDef)
+                x
+                for x in (self._from_tree(ch) for ch in c)
+                if isinstance(x, (ast.PredicateDef, ast.FunctionDef))
             ]
             return view_stmt_values
         if data == "view_stmt":
@@ -194,12 +198,21 @@ class ASTBuilder:
 
         if data == "predicate_def":
             name = self._name(c[0])
-            expr = cast(ast.BoolExpr, self._from_tree(c[-1]))
+            pred_expr = cast(ast.BoolExpr, self._from_tree(c[-1]))
             predicate_formals: list[ast.PredicateFormal] = []
             if len(c) == 3:
                 predicate_formals = cast(list[ast.PredicateFormal], self._from_tree(c[1]))
             return ast.PredicateDef(
-                span=self._span(node), name=name, formals=predicate_formals, expr=expr
+                span=self._span(node), name=name, formals=predicate_formals, expr=pred_expr
+            )
+        if data == "function_def":
+            name = self._name(c[0])
+            func_expr = cast(ast.NumExpr, self._from_tree(c[-1]))
+            function_formals: list[ast.PredicateFormal] = []
+            if len(c) == 3:
+                function_formals = cast(list[ast.PredicateFormal], self._from_tree(c[1]))
+            return ast.FunctionDef(
+                span=self._span(node), name=name, formals=function_formals, expr=func_expr
             )
 
         if data == "pred_formals":
@@ -493,17 +506,32 @@ class ASTBuilder:
         if data in {"comp_op", "eq_op"}:
             return self._slice(node).strip()
 
-        if data == "func_call":
+        if data == "paren_call":
             func_args: list[ast.Expr] = []
             if len(c) == 2:
                 func_args = cast(list[ast.Expr], self._from_tree(c[1]))
-            return ast.FuncCall(span=self._span(node), name=self._name(c[0]), args=func_args)
+            return ast.FuncCall(
+                span=self._span(node), name=self._name(c[0]), args=func_args, call_style="paren"
+            )
+
+        if data == "indexed_call":
+            indexed_args: list[ast.Expr] = []
+            if len(c) == 2:
+                indexed_args = cast(list[ast.Expr], self._from_tree(c[1]))
+            return ast.FuncCall(
+                span=self._span(node),
+                name=self._name(c[0]),
+                args=indexed_args,
+                call_style="bracket",
+            )
 
         if data == "size_call":
             size_args: list[ast.Expr] = []
             if len(c) == 1:
                 size_args = cast(list[ast.Expr], self._from_tree(c[0]))
-            return ast.FuncCall(span=self._span(node), name="size", args=size_args)
+            return ast.FuncCall(
+                span=self._span(node), name="size", args=size_args, call_style="paren"
+            )
 
         if data == "method_call":
             method_args: list[ast.Expr] = []

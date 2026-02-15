@@ -10,6 +10,6 @@ unknown BijectiveMapping(A, B) {
     must forall a in A: forall b in B: inj.is(a, b) = sur.is(a, b);
   }
   view {
-    predicate is(a in A, b in B) = inj.is(a, b);
+    predicate is(a in A, b in B): Bool = inj.is(a, b);
   }
 }

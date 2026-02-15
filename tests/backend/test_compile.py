@@ -504,7 +504,7 @@ unknown AssignLike(A, B) {
     m : Mapping(A -> B);
   }
   view {
-    predicate is(a in A, b in B) = m.is(a, b);
+    predicate is(a in A, b in B): Bool = m.is(a, b);
   }
 }
 """.strip()
@@ -580,6 +580,50 @@ problem StdlibPermutation {
         source,
         options=CompileOptions(
             filename="stdlib_perm.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_stdlib_logic_macros(tmp_path: Path) -> None:
+    source = """
+use stdlib.logic;
+
+problem StdlibLogic {
+  set A;
+  find S : Subset(A);
+
+  must exactly(1, sum(indicator(S.has(x)) for x in A));
+  must atleast(1, sum(indicator(S.has(x)) for x in A));
+  must atmost(2, sum(indicator(S.has(x)) for x in A));
+  must between(1, 2, sum(indicator(S.has(x)) for x in A));
+  minimize sum(indicator(S.has(x)) for x in A);
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "problem": "StdlibLogic",
+                "sets": {"A": ["a1", "a2"]},
+                "params": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="stdlib_logic.qsol",
             instance_path=str(instance_path),
             outdir=str(outdir),
             output_format="qubo",

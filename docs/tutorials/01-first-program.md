@@ -28,10 +28,8 @@ Create `first_program.qsol.toml`:
 ```toml
 schema_version = "1"
 
-[selection]
-default_scenario = "baseline"
-
-[defaults.execution]
+[entrypoint]
+scenario = "baseline"
 runtime = "local-dimod"
 
 [scenarios.baseline]
@@ -50,7 +48,7 @@ i4 = 2
 Ready-to-run copy:
 - `examples/tutorials/first_program.qsol.toml`
 
-`execution` is optional. CLI flags can override it.
+`entrypoint` is optional. CLI flags override config defaults.
 
 ## 3. Inspect Frontend Stages
 
@@ -122,7 +120,7 @@ This also writes `run.json`.
 - `QSOL2101`: type issue (method call target/arity mismatch).
 - `QSOL2201`: scenario payload shape mismatch.
 - `QSOL3001`: backend-lowering limitation for valid language shape.
-- `QSOL4006`: runtime not resolved from CLI or config `execution` defaults.
+- `QSOL4006`: runtime not resolved from CLI or config `entrypoint.runtime` / `execution.runtime`.
 - `QSOL4007`: unknown runtime/backend id.
 - `QSOL4008`: incompatible runtime/backend pair.
 - `QSOL4009`: plugin loading/config issue.

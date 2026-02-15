@@ -24,6 +24,8 @@ sep: END
 item: problem
     | use_stmt
     | unknown_def
+    | predicate_def
+    | function_def
 
 use_stmt: "use" module_path
 module_path: NAME ("." NAME)*
@@ -70,11 +72,13 @@ find_like_decl: NAME ":" unknown_type
 laws_stmt: constraint_stmt
 
 view_stmt: predicate_def
+         | function_def
 
 formal_params: formal_param ("," formal_param)*
 formal_param: NAME
 
-predicate_def: "predicate" NAME "(" [pred_formals] ")" "=" bool_expr
+predicate_def: "predicate" NAME "(" [pred_formals] ")" ":" "Bool" "=" bool_expr
+function_def: "function" NAME "(" [pred_formals] ")" ":" "Real" "=" num_expr
 pred_formals: pred_formal ("," pred_formal)*
 pred_formal: NAME ["in" NAME]
 
@@ -180,7 +184,7 @@ else_clause_bool: "else" bool_expr
 ?bool_atom: "(" bool_expr ")"
           | quantifier
           | comparison
-          | predicate_call
+          | bool_call
           | bool_aggregate          // STRICT: only any/all here
           | bool_name
           | BOOL
@@ -193,17 +197,19 @@ comparison: num_expr comp_op num_expr
           | bool_value eq_op bool_value
 
 bool_value: BOOL
-          | predicate_call
+          | bool_call
           | "(" bool_expr ")"
 
 comp_op: "<" | "<=" | ">" | ">="
 eq_op: "=" | "!="
 
 // Predicates/templates/member calls
-predicate_call: NAME "(" [arg_list] ")"            -> func_call
-              | dotted_call
+call_expr: paren_call
+         | dotted_call
+paren_call: NAME "(" [arg_list] ")"                -> paren_call
+bool_call.2: call_expr
 
-indexed_ref: NAME "[" [arg_list] "]"               -> func_call
+indexed_ref: NAME "[" [arg_list] "]"               -> indexed_call
 size_call: "size" "(" [arg_list] ")"
 
 dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
@@ -226,9 +232,11 @@ dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
          | if_expr
          | num_aggregate          // STRICT: only sum/count here
          | size_call
+         | num_call
          | indexed_ref
          | num_name
          | NUMBER
+num_call.1: call_expr
 
 num_name.2: NAME
 

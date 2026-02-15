@@ -48,7 +48,7 @@ class UnknownDef(TopItem):
     formals: list[str]
     rep_block: list[RepDecl]
     laws_block: list[Constraint]
-    view_block: list[PredicateDef]
+    view_block: list[ViewMember]
 
 
 class ProblemStmt(Node):
@@ -123,10 +123,20 @@ class PredicateFormal(Node):
 
 
 @dataclass(frozen=True, slots=True)
-class PredicateDef(Node):
+class PredicateDef(TopItem):
     name: str
     formals: list[PredicateFormal]
     expr: BoolExpr
+
+
+@dataclass(frozen=True, slots=True)
+class FunctionDef(TopItem):
+    name: str
+    formals: list[PredicateFormal]
+    expr: NumExpr
+
+
+ViewMember = PredicateDef | FunctionDef
 
 
 class Expr(Node):
@@ -195,6 +205,7 @@ class Compare(BoolExpr):
 class FuncCall(Expr):
     name: str
     args: list[Expr]
+    call_style: str = "paren"
 
 
 @dataclass(frozen=True, slots=True)

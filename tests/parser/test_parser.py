@@ -35,6 +35,24 @@ problem P {
     assert program.items[1].module == "mylib.graph.unknowns"
 
 
+def test_parse_top_level_predicate_and_function_definitions() -> None:
+    text = """
+predicate iff(a, b): Bool = a and b or not a and not b;
+function indicator(b): Real = if b then 1 else 0;
+
+problem P {
+  param Flag : Bool;
+  must iff(Flag, true);
+  minimize indicator(Flag);
+}
+"""
+    program = parse_to_ast(text, filename="top_level_macros.qsol")
+    assert len(program.items) == 3
+    assert isinstance(program.items[0], ast.PredicateDef)
+    assert isinstance(program.items[1], ast.FunctionDef)
+    assert isinstance(program.items[2], ast.ProblemDef)
+
+
 def test_parse_invalid_missing_separator() -> None:
     text = "problem P { set A find S : Subset(A); }"
     try:
@@ -129,7 +147,7 @@ problem P {
     assert isinstance(program.items[0], ast.ProblemDef)
 
 
-def test_parse_rejects_numeric_indexed_param_paren_style() -> None:
+def test_parse_accepts_numeric_indexed_param_paren_style_for_sema_validation() -> None:
     text = """
 problem P {
   set A;
@@ -138,11 +156,22 @@ problem P {
   minimize sum(if S.has(x) then Cost(x) else 0 for x in A);
 }
 """
+    program = parse_to_ast(text, filename="indexed_param_paren_bad.qsol")
+    assert len(program.items) == 1
+    assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_rejects_untyped_predicate_declaration() -> None:
+    text = """
+predicate old_style(x) = true;
+problem P {
+  must true;
+}
+"""
     try:
-        parse_to_ast(text, filename="indexed_param_paren_bad.qsol")
+        parse_to_ast(text, filename="untyped_predicate_bad.qsol")
     except ParseFailure as exc:
         assert exc.diagnostic.code == "QSOL1001"
-        assert any("brackets" in item for item in exc.diagnostic.help)
     else:
         raise AssertionError("expected parse failure")
 

@@ -5,6 +5,6 @@ unknown Permutation(A) {
     bij : BijectiveMapping(A, A);
   }
   view {
-    predicate is(a in A, b in A) = bij.is(a, b);
+    predicate is(a in A, b in A): Bool = bij.is(a, b);
   }
 }

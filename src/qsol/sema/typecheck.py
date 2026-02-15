@@ -176,7 +176,7 @@ class TypeChecker:
         elif isinstance(expr, ast.FuncCall):
             if expr.name == "size":
                 out = self._size_call_type(expr, scope, binders, diagnostics, tmap)
-            else:
+            elif expr.call_style == "bracket":
                 symbol = scope.lookup(expr.name)
                 if (
                     symbol is not None
@@ -189,10 +189,50 @@ class TypeChecker:
                 else:
                     for arg in expr.args:
                         self._expr_type(arg, scope, binders, diagnostics, tmap)
-                    if expr.name in {"exactly_one", "at_most_one", "and", "or"}:
-                        out = BOOL
+                    diagnostics.append(
+                        self._type_err(
+                            expr.span,
+                            f"indexed access `{expr.name}[...]` requires a declared parameter",
+                        )
+                    )
+                    out = UNKNOWN
+            else:
+                symbol = scope.lookup(expr.name)
+                if (
+                    symbol is not None
+                    and symbol.kind == SymbolKind.PARAM
+                    and isinstance(symbol.type, ParamType)
+                ):
+                    if symbol.type.indices:
+                        for arg in expr.args:
+                            self._expr_type(arg, scope, binders, diagnostics, tmap)
+                        diagnostics.append(
+                            self._type_err(
+                                expr.span,
+                                (
+                                    f"indexed param `{expr.name}` must use bracket access "
+                                    f"`{expr.name}[...]`"
+                                ),
+                            )
+                        )
+                        out = symbol.type.elem
                     else:
-                        out = BOOL
+                        out = self._param_call_type(
+                            expr, symbol.type, scope, binders, diagnostics, tmap
+                        )
+                else:
+                    for arg in expr.args:
+                        self._expr_type(arg, scope, binders, diagnostics, tmap)
+                    diagnostics.append(
+                        self._type_err(
+                            expr.span,
+                            (
+                                f"unknown function/predicate `{expr.name}`; "
+                                "ensure it is declared and importable, and that macro expansion succeeded"
+                            ),
+                        )
+                    )
+                    out = UNKNOWN
         elif isinstance(expr, ast.MethodCall):
             target_ty = self._expr_type(expr.target, scope, binders, diagnostics, tmap)
             out = self._method_type(expr, target_ty, scope, binders, diagnostics, tmap)
@@ -503,8 +543,16 @@ class TypeChecker:
             return ["Use numeric operands on both sides of `<`, `<=`, `>`, and `>=`."]
         if message.startswith("param call `") and "expects" in message:
             return ["Pass one argument per declared index dimension of the parameter."]
+        if message.startswith("indexed param `") and "must use bracket access" in message:
+            return ["Use bracket syntax for indexed params, for example `Cost[i, j]`."]
+        if message.startswith("indexed access `") and "requires a declared parameter" in message:
+            return ["Use indexed access only with declared parameters."]
         if message.startswith("scalar param `"):
             return ["Reference scalar params as bare names, not as calls."]
+        if message.startswith("unknown function/predicate `"):
+            return [
+                "Declare the predicate/function at top-level or in unknown `view`, and import modules before use."
+            ]
         if message == "constraint expression must be Bool":
             return ["`must`, `should`, and `nice` constraints require Bool expressions."]
         if message == "objective expression must be numeric":

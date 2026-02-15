@@ -1,1 +1,1 @@
-"""Packaged QSOL stdlib unknown modules."""
+"""Packaged QSOL stdlib modules (unknowns + macro helpers)."""

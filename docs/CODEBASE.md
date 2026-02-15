@@ -7,8 +7,8 @@ This guide explains QSOL's staged compiler + pluggable targeting architecture.
 Pipeline from source to runtime result:
 
 1. Parse source text into AST (`qsol.parse`)
-2. Resolve `use` imports into merged top-level unknown definitions (`qsol.parse.module_loader`)
-3. Elaborate custom unknown finds into primitive finds + generated constraints (`qsol.sema.unknown_elaboration`)
+2. Resolve `use` imports into merged top-level unknown/predicate/function definitions (`qsol.parse.module_loader`)
+3. Expand macros and elaborate custom unknown finds into primitive finds + generated constraints (`qsol.sema.unknown_elaboration`)
 4. Resolve symbols (`qsol.sema.resolver`)
 5. Typecheck (`qsol.sema.typecheck`)
 6. Validate structural rules (`qsol.sema.validate`)
@@ -88,7 +88,8 @@ Pipeline from source to runtime result:
 Selection precedence:
 1. CLI `--runtime`
 2. Scenario execution default `execution.runtime` (from config)
-3. Default backend `dimod-cqm-v1`
+3. Config `entrypoint.runtime`
+4. Default backend `dimod-cqm-v1`
 
 ## 6. Plugin Model
 

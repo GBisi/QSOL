@@ -4,10 +4,11 @@ Goal: understand the target-aware CLI workflow, how to write config TOML with sc
 
 This tutorial uses `examples/tutorials/first_program.qsol`.
 
-If your model imports reusable unknowns, use dotted module imports:
+If your model imports reusable unknowns/macros, use dotted module imports:
 
 ```qsol
 use stdlib.permutation;
+use stdlib.logic;
 use mylib.graph.unknowns;
 ```
 
@@ -33,16 +34,13 @@ QSOL uses TOML config files (`*.qsol.toml`). Example:
 ```toml
 schema_version = "1"
 
-[selection]
-default_scenario = "baseline"
+[entrypoint]
+scenario = "baseline"
 combine_mode = "intersection"
 failure_policy = "run-all-fail"
-
-[defaults.execution]
 runtime = "local-dimod"
 plugins = []
-
-[defaults.solve]
+runtime_options = { sampler = "exact" }
 solutions = 3
 energy_max = 0
 
@@ -61,9 +59,7 @@ i4 = 2
 
 Field rules:
 - `schema_version`: currently must be `"1"`.
-- `selection`: scenario selection defaults (`mode`, `default_scenario`, `subset`, `combine_mode`, `failure_policy`).
-- `defaults.execution`: default runtime/backend/plugins.
-- `defaults.solve`: default solve controls (`solutions`, `energy_min`, `energy_max`).
+- `entrypoint`: optional CLI-equivalent defaults (`scenario`/`scenarios`/`all_scenarios`, `runtime`, `backend`, `plugins`, `runtime_options`, `solutions`, `energy_min`, `energy_max`, `out`, `format`, `combine_mode`, `failure_policy`).
 - `scenarios.<name>`: scenario payload (`problem`, `sets`, `params`, optional `execution`, optional `solve`).
 
 Auto-discovery when `--config` is omitted:
@@ -143,6 +139,16 @@ uv run qsol solve \
   --runtime-option reps=2
 ```
 
+For `algorithm=qaoa`, QSOL auto-wires backend transpilation using
+`pass_manager`/`transpiler` according to the installed Qiskit package variant.
+
+Solve terminal output:
+- `Run Summary` reports status/runtime/backend, solve thresholds, and `Runtime Parameters`
+  (resolved runtime option values including defaults).
+- `Returned Solutions` lists every returned solution row with rank/energy/compact sample summary plus
+  optional metadata (`num_occurrences`, `probability`, `status`, `scenario_energies`) when present.
+- `Selected Assignments` still summarizes the best solution assignment meanings.
+
 ## 6. Output Directory Structure (`outdir/...`)
 
 Single-scenario outputs:
@@ -171,7 +177,9 @@ Multi-scenario aggregate run extensions include:
 
 Runtime selection order:
 1. CLI: `--runtime`
-2. Scenario/default config: `execution.runtime`
+2. Scenario config: `execution.runtime`
+3. Config `entrypoint.runtime`
+4. Legacy config `defaults.execution.runtime`
 
 If unresolved, QSOL emits `QSOL4006`.
 Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
@@ -179,7 +187,7 @@ Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
 Plugin loading order for `targets check`, `build`, and `solve`:
 1. Built-in plugins
 2. Installed entry-point plugins (`qsol.backends`, `qsol.runtimes`)
-3. Config `execution.plugins`
+3. Config `execution.plugins` (scenario -> `entrypoint` -> legacy defaults)
 4. CLI `--plugin module:attribute`
 
 Scenario/default plugin specs and CLI plugin specs are merged with exact-string deduplication.

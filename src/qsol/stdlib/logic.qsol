@@ -1,0 +1,8 @@
+function indicator(b): Real = if b then 1 else 0;
+
+predicate exactly(k, n): Bool = n = k;
+predicate atleast(k, n): Bool = n >= k;
+predicate atmost(k, n): Bool = n <= k;
+predicate between(lo, hi, n): Bool = (lo <= n) and (n <= hi);
+predicate iff(a, b): Bool = a and b or not a and not b;
+predicate xor(a, b): Bool = a and not b or not a and b;

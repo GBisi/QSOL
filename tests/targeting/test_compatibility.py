@@ -10,6 +10,7 @@ from qsol.targeting.plugins import (
     DimodCQMBackendPlugin,
     LocalDimodRuntimePlugin,
     QiskitRuntimePlugin,
+    _instantiate_qaoa,
 )
 from qsol.targeting.types import (
     CompiledModel,
@@ -292,6 +293,13 @@ def test_local_runtime_run_model_simulated_annealing_branch(monkeypatch) -> None
     assert result.reads == 3
     assert result.energy == -1.0
     assert result.selected_assignments == [{"variable": "x", "meaning": "X", "value": 1}]
+    runtime_options = result.extensions["runtime_options"]
+    assert runtime_options["sampler"] == "simulated-annealing"
+    assert runtime_options["num_reads"] == 5
+    assert runtime_options["seed"] == 7
+    assert runtime_options["solutions"] == 1
+    assert runtime_options["energy_min"] is None
+    assert runtime_options["energy_max"] is None
     assert result.extensions["returned_solutions"] == 1
     assert result.extensions["requested_solutions"] == 1
     assert result.extensions["energy_threshold"]["passed"] is True
@@ -478,6 +486,121 @@ def test_qiskit_runtime_check_support_reports_missing_optional_deps(monkeypatch)
     assert any("uv sync --extra qiskit" in issue.message for issue in issues)
 
 
+def test_instantiate_qaoa_prefers_pass_manager_kwargs(monkeypatch) -> None:
+    class _FakeCOBYLA:
+        def __init__(self, *, maxiter: int) -> None:
+            self.maxiter = maxiter
+
+    class _FakeQAOA:
+        last_kwargs: dict[str, object] | None = None
+
+        def __init__(self, **kwargs: object) -> None:
+            _FakeQAOA.last_kwargs = kwargs
+            if "pass_manager" not in kwargs:
+                raise TypeError("missing pass_manager")
+            if "transpiler" in kwargs:
+                raise TypeError("unexpected transpiler")
+
+    fake_optimizers = type("FakeOptimizers", (), {"COBYLA": _FakeCOBYLA})()
+
+    monkeypatch.setattr("qsol.targeting.plugins._resolve_qaoa_class", lambda: _FakeQAOA)
+
+    def _fake_import_module(module_name: str):
+        if module_name == "qiskit_algorithms.optimizers":
+            return fake_optimizers
+        raise AssertionError(f"unexpected module import: {module_name}")
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins.import_module",
+        _fake_import_module,
+    )
+
+    sampler = object()
+    pass_manager = object()
+    qaoa = _instantiate_qaoa(sampler=sampler, reps=2, maxiter=12, pass_manager=pass_manager)
+    assert isinstance(qaoa, _FakeQAOA)
+    assert _FakeQAOA.last_kwargs is not None
+    assert _FakeQAOA.last_kwargs["sampler"] is sampler
+    assert _FakeQAOA.last_kwargs["reps"] == 2
+    assert _FakeQAOA.last_kwargs["pass_manager"] is pass_manager
+    assert "transpiler" not in _FakeQAOA.last_kwargs
+
+
+def test_instantiate_qaoa_falls_back_to_transpiler_kwargs(monkeypatch) -> None:
+    class _FakeCOBYLA:
+        def __init__(self, *, maxiter: int) -> None:
+            self.maxiter = maxiter
+
+    class _FakeQAOA:
+        calls: list[dict[str, object]] = []
+
+        def __init__(self, **kwargs: object) -> None:
+            _FakeQAOA.calls.append(kwargs)
+            if "pass_manager" in kwargs:
+                raise TypeError("unexpected pass_manager")
+            if "transpiler" not in kwargs:
+                raise TypeError("missing transpiler")
+
+    fake_optimizers = type("FakeOptimizers", (), {"COBYLA": _FakeCOBYLA})()
+
+    monkeypatch.setattr("qsol.targeting.plugins._resolve_qaoa_class", lambda: _FakeQAOA)
+
+    def _fake_import_module(module_name: str):
+        if module_name == "qiskit_algorithms.optimizers":
+            return fake_optimizers
+        raise AssertionError(f"unexpected module import: {module_name}")
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins.import_module",
+        _fake_import_module,
+    )
+
+    pass_manager = object()
+    qaoa = _instantiate_qaoa(sampler=object(), reps=1, maxiter=8, pass_manager=pass_manager)
+    assert isinstance(qaoa, _FakeQAOA)
+    assert len(_FakeQAOA.calls) == 2
+    assert "pass_manager" in _FakeQAOA.calls[0]
+    assert _FakeQAOA.calls[1]["transpiler"] is pass_manager
+    assert _FakeQAOA.calls[1]["transpiler_options"] == {}
+
+
+def test_instantiate_qaoa_falls_back_to_minimal_kwargs(monkeypatch) -> None:
+    class _FakeCOBYLA:
+        def __init__(self, *, maxiter: int) -> None:
+            self.maxiter = maxiter
+
+    class _FakeQAOA:
+        calls: list[dict[str, object]] = []
+        last_kwargs: dict[str, object] | None = None
+
+        def __init__(self, **kwargs: object) -> None:
+            _FakeQAOA.calls.append(kwargs)
+            if "pass_manager" in kwargs or "transpiler" in kwargs:
+                raise TypeError("unsupported keyword")
+            _FakeQAOA.last_kwargs = kwargs
+
+    fake_optimizers = type("FakeOptimizers", (), {"COBYLA": _FakeCOBYLA})()
+
+    monkeypatch.setattr("qsol.targeting.plugins._resolve_qaoa_class", lambda: _FakeQAOA)
+
+    def _fake_import_module(module_name: str):
+        if module_name == "qiskit_algorithms.optimizers":
+            return fake_optimizers
+        raise AssertionError(f"unexpected module import: {module_name}")
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins.import_module",
+        _fake_import_module,
+    )
+
+    qaoa = _instantiate_qaoa(sampler=object(), reps=3, maxiter=21, pass_manager=object())
+    assert isinstance(qaoa, _FakeQAOA)
+    assert len(_FakeQAOA.calls) == 4
+    assert _FakeQAOA.last_kwargs is not None
+    assert set(_FakeQAOA.last_kwargs.keys()) == {"sampler", "optimizer", "reps"}
+    assert _FakeQAOA.last_kwargs["reps"] == 3
+
+
 def test_qiskit_runtime_run_model_uses_solver_payload(monkeypatch) -> None:
     runtime = QiskitRuntimePlugin()
     model = CompiledModel(
@@ -536,6 +659,17 @@ def test_qiskit_runtime_run_model_uses_solver_payload(monkeypatch) -> None:
     assert result.reads == 256
     assert result.best_sample == {"x": 1, "y": 0}
     assert result.extensions["algorithm"] == "qaoa"
+    runtime_options = result.extensions["runtime_options"]
+    assert runtime_options["algorithm"] == "qaoa"
+    assert runtime_options["fake_backend"] == "FakeManilaV2"
+    assert runtime_options["reps"] == 1
+    assert runtime_options["maxiter"] == 100
+    assert runtime_options["shots"] == 1024
+    assert runtime_options["seed"] is None
+    assert runtime_options["optimization_level"] == 1
+    assert runtime_options["solutions"] == 2
+    assert runtime_options["energy_min"] is None
+    assert runtime_options["energy_max"] is None
     assert result.extensions["returned_solutions"] == 2
     assert result.extensions["fake_backend"] == "FakeManilaV2"
     assert result.extensions["openqasm_path"] == "/tmp/out/qaoa.qasm"

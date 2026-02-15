@@ -10,12 +10,15 @@ from qsol.config.loader import (
     materialize_instance_payload,
     resolve_combine_mode,
     resolve_failure_policy,
+    resolve_output_format,
+    resolve_runtime_options,
     resolve_selected_scenarios,
     resolve_solve_settings,
 )
 from qsol.config.types import (
     CombineMode,
     DefaultsConfig,
+    EntryPointConfig,
     ExecutionConfig,
     FailurePolicy,
     QsolConfig,
@@ -479,3 +482,166 @@ def test_resolve_solve_settings_rejects_invalid_resolved_values() -> None:
             cli_energy_min=2.0,
             cli_energy_max=1.0,
         )
+
+
+def test_load_config_parses_entrypoint_section(tmp_path: Path) -> None:
+    config_path = tmp_path / "demo.qsol.toml"
+    _write_text(
+        config_path,
+        """
+        schema_version = "1"
+
+        [entrypoint]
+        scenario = "base"
+        combine_mode = "union"
+        failure_policy = "best-effort"
+        out = "outdir/demo"
+        format = "ising"
+        runtime = "local-dimod"
+        backend = "dimod-cqm-v1"
+        plugins = ["plugins.default:bundle"]
+        runtime_options = { sampler = "exact", num_reads = 7 }
+        solutions = 3
+        energy_min = -1
+        energy_max = 2
+
+        [scenarios.base]
+        """,
+    )
+
+    config = load_config(config_path)
+    assert config.entrypoint.scenario == "base"
+    assert config.entrypoint.combine_mode is CombineMode.union
+    assert config.entrypoint.failure_policy is FailurePolicy.best_effort
+    assert config.entrypoint.out == "outdir/demo"
+    assert config.entrypoint.output_format == "ising"
+    assert config.entrypoint.runtime == "local-dimod"
+    assert config.entrypoint.backend == "dimod-cqm-v1"
+    assert config.entrypoint.plugins == ("plugins.default:bundle",)
+    assert config.entrypoint.runtime_options == {"sampler": "exact", "num_reads": 7}
+    assert config.entrypoint.solutions == 3
+    assert config.entrypoint.energy_min == -1.0
+    assert config.entrypoint.energy_max == 2.0
+
+
+def test_load_config_rejects_invalid_entrypoint_shapes(tmp_path: Path) -> None:
+    invalid_path = tmp_path / "invalid.qsol.toml"
+    _write_text(
+        invalid_path,
+        """
+        schema_version = "1"
+        [entrypoint]
+        all_scenarios = true
+        scenarios = ["base"]
+        [scenarios.base]
+        """,
+    )
+    with pytest.raises(ValueError, match="all_scenarios=true"):
+        load_config(invalid_path)
+
+
+def test_resolve_selected_scenarios_uses_entrypoint_when_cli_missing(tmp_path: Path) -> None:
+    config_path = tmp_path / "demo.qsol.toml"
+    _write_text(
+        config_path,
+        """
+        schema_version = "1"
+        [entrypoint]
+        scenarios = ["alt", "base"]
+
+        [scenarios.base]
+        [scenarios.alt]
+        """,
+    )
+    config = load_config(config_path)
+    selected = resolve_selected_scenarios(config=config, cli_scenarios=(), cli_all_scenarios=False)
+    assert selected == ["alt", "base"]
+
+
+def test_materialize_instance_payload_merges_entrypoint_execution(tmp_path: Path) -> None:
+    config_path = tmp_path / "demo.qsol.toml"
+    _write_text(
+        config_path,
+        """
+        schema_version = "1"
+
+        [defaults.execution]
+        runtime = "legacy-runtime"
+        backend = "dimod-cqm-v1"
+        plugins = ["plugins.legacy:bundle"]
+
+        [entrypoint]
+        runtime = "local-dimod"
+        plugins = ["plugins.default:bundle"]
+
+        [scenarios.base]
+
+        [scenarios.base.execution]
+        backend = "scenario-backend"
+        """,
+    )
+    config = load_config(config_path)
+    payload = materialize_instance_payload(config=config, scenario_name="base")
+    execution = payload["execution"]
+    assert isinstance(execution, dict)
+    assert execution["runtime"] == "local-dimod"
+    assert execution["backend"] == "scenario-backend"
+    assert execution["plugins"] == ["plugins.default:bundle"]
+
+
+def test_resolve_combine_mode_and_failure_policy_entrypoint_precedence() -> None:
+    config = QsolConfig(
+        schema_version="1",
+        entrypoint=EntryPointConfig(
+            combine_mode=CombineMode.union,
+            failure_policy=FailurePolicy.best_effort,
+        ),
+        selection=SelectionConfig(
+            combine_mode=CombineMode.intersection,
+            failure_policy=FailurePolicy.run_all_fail,
+        ),
+        scenarios={"base": ScenarioConfig()},
+    )
+
+    assert resolve_combine_mode(config=config, cli_mode=None) is CombineMode.union
+    assert resolve_failure_policy(config=config, cli_policy=None) is FailurePolicy.best_effort
+
+
+def test_resolve_solve_settings_uses_entrypoint_defaults() -> None:
+    config = QsolConfig(
+        schema_version="1",
+        entrypoint=EntryPointConfig(
+            solutions=4,
+            energy_min=-2.0,
+            energy_max=3.0,
+        ),
+        scenarios={
+            "base": ScenarioConfig(),
+        },
+    )
+
+    settings = resolve_solve_settings(
+        config=config,
+        scenario_name="base",
+        cli_solutions=None,
+        cli_energy_min=None,
+        cli_energy_max=None,
+    )
+    assert settings == SolveSettings(solutions=4, energy_min=-2.0, energy_max=3.0)
+
+
+def test_resolve_output_format_and_runtime_options_from_entrypoint() -> None:
+    config = QsolConfig(
+        schema_version="1",
+        entrypoint=EntryPointConfig(
+            output_format="ising",
+            runtime_options={"sampler": "exact", "num_reads": 5},
+        ),
+        scenarios={"base": ScenarioConfig()},
+    )
+
+    assert resolve_output_format(config=config, cli_format=None) == "ising"
+    assert resolve_output_format(config=config, cli_format="qubo") == "qubo"
+    assert resolve_runtime_options(
+        config=config, cli_runtime_options={"num_reads": 10, "seed": 7}
+    ) == {"sampler": "exact", "num_reads": 10, "seed": 7}

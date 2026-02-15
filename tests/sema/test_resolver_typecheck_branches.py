@@ -150,7 +150,12 @@ def test_typechecker_expr_branches() -> None:
             left=ast.BoolLit(span=span, value=True),
             right=ast.BoolLit(span=span, value=False),
         ),
-        ast.FuncCall(span=span, name="p", args=[ast.NameRef(span=span, name="x")]),
+        ast.FuncCall(
+            span=span,
+            name="p",
+            args=[ast.NameRef(span=span, name="x")],
+            call_style="bracket",
+        ),
         ast.MethodCall(
             span=span,
             target=ast.NameRef(span=span, name="S"),

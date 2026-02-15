@@ -65,7 +65,7 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Tasks`
   - `scenarios.baseline.sets.Workers`
   - `scenarios.baseline.params.Cost[worker][task]`
-  - optional `defaults.execution.runtime`
+  - optional `entrypoint.runtime`
 
 ## Related
 

@@ -1,0 +1,12 @@
+problem SimpleSubset {
+  set Elements;
+
+  // Positive integer value for each item
+  param Value[Elements] : Int[1 .. 1000000000];
+
+  // Choose a subset S ⊆ Elements
+  find S : Subset(Elements);
+
+  must count(v in Elements where S.has(v)) + 1 = size(Elements);
+
+}

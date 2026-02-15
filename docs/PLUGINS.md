@@ -154,12 +154,12 @@ uv run qsol solve model.qsol -c model.qsol.toml --plugin my_qsol_plugins:plugin_
 
 ### 6.3 Config TOML `execution.plugins`
 
-Declare plugin bundles in the config file (defaults or per-scenario):
+Declare plugin bundles in the config file (`entrypoint` or per-scenario):
 
 ```toml
 schema_version = "1"
 
-[defaults.execution]
+[entrypoint]
 runtime = "demo-runtime"
 plugins = ["my_qsol_plugins:plugin_bundle"]
 ```
@@ -173,7 +173,7 @@ For `targets check`, `build`, and `solve`, plugin specs are resolved in this ord
 
 1. Built-in plugins
 2. Installed entry-point plugins
-3. Scenario/default config `execution.plugins`
+3. Config `execution.plugins` (scenario -> `entrypoint` -> legacy defaults)
 4. CLI `--plugin`
 
 Instance and CLI plugin specs are merged with stable order and exact-string deduplication.

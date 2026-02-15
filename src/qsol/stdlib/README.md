@@ -1,4 +1,4 @@
-# QSOL Stdlib Unknown Library
+# QSOL Stdlib Library
 
 This directory contains packaged unknown modules under the reserved `stdlib.*` namespace.
 
@@ -8,6 +8,7 @@ QSOL uses one import form for both stdlib and user modules:
 
 ```qsol
 use stdlib.permutation;
+use stdlib.logic;
 use mylib.graph.unknowns;
 ```
 
@@ -18,13 +19,13 @@ Rules:
 - Non-`stdlib.*` resolves from importer directory, then process CWD
 - `stdlib` prefix is reserved and cannot be overridden by user modules
 
-## 2. Why Stdlib Unknowns Work on Backend v1
+## 2. Why Stdlib Modules Work on Backend v1
 
 Backend v1 is primitive-focused (`Subset`, `Mapping`).
-Stdlib unknowns compile because frontend unknown elaboration expands them into:
+Stdlib unknown and macro modules compile because frontend expansion elaborates them into:
 - generated primitive finds (`Subset`/`Mapping`)
 - generated constraints from unknown `laws`
-- rewritten method calls from unknown `view` predicates
+- rewritten method and macro calls from unknown `view` and top-level predicate/function definitions
 
 ## 3. Module Catalog
 
@@ -84,6 +85,24 @@ View methods:
 Semantics:
 - a bijection from `A` to `A`
 
+### `stdlib.logic`
+
+Exports:
+- `function indicator(b): Real`
+- `predicate exactly(k, n): Bool`
+- `predicate atleast(k, n): Bool`
+- `predicate atmost(k, n): Bool`
+- `predicate between(lo, hi, n): Bool`
+- `predicate iff(a, b): Bool`
+- `predicate xor(a, b): Bool`
+
+Semantics:
+- frontend macro helpers for common boolean/count expressions
+- no backend primitive changes; helpers expand before lowering/backend stages
+- `iff(a, b)` is logical equivalence (`(a => b) and (b => a)`)
+- `xor(a, b)` is exclusive-or (`(a or b) and not (a and b)`)
+- `between(lo, hi, n)` is inclusive
+
 ## 4. Usage Examples
 
 ### Permutation
@@ -112,6 +131,19 @@ problem InjectiveAssign {
 }
 ```
 
+### Logic Helpers
+
+```qsol
+use stdlib.logic;
+
+problem Demo {
+  set A;
+  find S : Subset(A);
+  must exactly(1, sum(indicator(S.has(x)) for x in A));
+  minimize sum(indicator(S.has(x)) for x in A);
+}
+```
+
 ## 5. Diagnostics and Failure Modes
 
 Common import/elaboration diagnostics:
@@ -123,7 +155,7 @@ Common import/elaboration diagnostics:
 ## 6. Authoring and Extending
 
 When adding new stdlib modules:
-- keep top-level content to `use` and `unknown` items
-- provide stable, well-named `view` predicates as module API
+- keep top-level content to `use`, `unknown`, `predicate`, and/or `function` items
+- provide stable, well-named `view` predicates/functions and top-level macro APIs
 - encode semantics in `laws` with backend-friendly boolean/numeric patterns
 - add parser/sema/backend tests and update docs (`README.md`, `QSOL_reference.md`, syntax/tutorial docs)

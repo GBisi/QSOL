@@ -10,6 +10,7 @@ from typing import TypeVar, cast
 from qsol.config.types import (
     CombineMode,
     DefaultsConfig,
+    EntryPointConfig,
     ExecutionConfig,
     FailurePolicy,
     QsolConfig,
@@ -72,14 +73,17 @@ def load_config(path: str | Path) -> QsolConfig:
 
     selection_raw = root.get("selection", {})
     defaults_raw = root.get("defaults", {})
+    entrypoint_raw = root.get("entrypoint", {})
     scenarios_raw = root.get("scenarios")
 
+    entrypoint = _parse_entrypoint(entrypoint_raw, path="entrypoint")
     selection = _parse_selection(selection_raw, path="selection")
     defaults = _parse_defaults(defaults_raw, path="defaults")
     scenarios = _parse_scenarios(scenarios_raw, path="scenarios")
 
     return QsolConfig(
         schema_version=schema_version,
+        entrypoint=entrypoint,
         selection=selection,
         defaults=defaults,
         scenarios=scenarios,
@@ -108,6 +112,23 @@ def resolve_selected_scenarios(
             available=config.scenarios,
             path="CLI `--scenario`",
         )
+
+    if config.entrypoint.all_scenarios:
+        return scenario_names
+
+    if config.entrypoint.scenarios:
+        return _validate_and_deduplicate_names(
+            names=config.entrypoint.scenarios,
+            available=config.scenarios,
+            path="entrypoint.scenarios",
+        )
+
+    if config.entrypoint.scenario is not None:
+        if config.entrypoint.scenario not in config.scenarios:
+            raise ValueError(
+                f"`entrypoint.scenario` references unknown scenario `{config.entrypoint.scenario}`"
+            )
+        return [config.entrypoint.scenario]
 
     mode = config.selection.mode
     if mode is SelectionMode.all:
@@ -142,6 +163,8 @@ def resolve_selected_scenarios(
 def resolve_combine_mode(*, config: QsolConfig, cli_mode: CombineMode | None) -> CombineMode:
     if cli_mode is not None:
         return cli_mode
+    if config.entrypoint.combine_mode is not None:
+        return config.entrypoint.combine_mode
     if config.selection.combine_mode is not None:
         return config.selection.combine_mode
     return CombineMode.intersection
@@ -152,6 +175,8 @@ def resolve_failure_policy(
 ) -> FailurePolicy:
     if cli_policy is not None:
         return cli_policy
+    if config.entrypoint.failure_policy is not None:
+        return config.entrypoint.failure_policy
     if config.selection.failure_policy is not None:
         return config.selection.failure_policy
     return FailurePolicy.run_all_fail
@@ -172,16 +197,26 @@ def resolve_solve_settings(
     defaults = config.defaults.solve
 
     resolved_solutions = _coalesce_int(
-        cli_solutions, scenario.solve.solutions, defaults.solutions, 1
+        cli_solutions,
+        scenario.solve.solutions,
+        config.entrypoint.solutions,
+        defaults.solutions,
+        1,
     )
     if resolved_solutions < 1:
         raise ValueError("resolved solve option `solutions` must be >= 1")
 
     resolved_energy_min = _coalesce_float(
-        cli_energy_min, scenario.solve.energy_min, defaults.energy_min
+        cli_energy_min,
+        scenario.solve.energy_min,
+        config.entrypoint.energy_min,
+        defaults.energy_min,
     )
     resolved_energy_max = _coalesce_float(
-        cli_energy_max, scenario.solve.energy_max, defaults.energy_max
+        cli_energy_max,
+        scenario.solve.energy_max,
+        config.entrypoint.energy_max,
+        defaults.energy_max,
     )
     if (
         resolved_energy_min is not None
@@ -202,7 +237,13 @@ def materialize_instance_payload(*, config: QsolConfig, scenario_name: str) -> d
         raise ValueError(f"unknown scenario `{scenario_name}`")
 
     scenario = config.scenarios[scenario_name]
-    execution = _merge_execution(config.defaults.execution, scenario.execution)
+    entrypoint_execution = ExecutionConfig(
+        runtime=config.entrypoint.runtime,
+        backend=config.entrypoint.backend,
+        plugins=config.entrypoint.plugins,
+    )
+    execution = _merge_execution(config.defaults.execution, entrypoint_execution)
+    execution = _merge_execution(execution, scenario.execution)
 
     payload: dict[str, object] = {
         "sets": copy.deepcopy(scenario.sets),
@@ -222,6 +263,87 @@ def materialize_instance_payload(*, config: QsolConfig, scenario_name: str) -> d
         payload["execution"] = execution_payload
 
     return payload
+
+
+def resolve_output_format(*, config: QsolConfig, cli_format: str | None) -> str:
+    if cli_format is not None:
+        return cli_format
+    if config.entrypoint.output_format is not None:
+        return config.entrypoint.output_format
+    return "qubo"
+
+
+def resolve_runtime_options(
+    *,
+    config: QsolConfig,
+    cli_runtime_options: Mapping[str, object],
+) -> dict[str, object]:
+    resolved = copy.deepcopy(config.entrypoint.runtime_options)
+    resolved.update(cli_runtime_options)
+    return resolved
+
+
+def _parse_entrypoint(raw: object, *, path: str) -> EntryPointConfig:
+    table = _require_mapping(raw, path)
+    scenario = _parse_optional_non_empty_str(table.get("scenario"), path=f"{path}.scenario")
+    scenarios = _parse_optional_name_list(table, "scenarios", path=path)
+    if scenario is not None and scenarios:
+        raise ValueError(f"`{path}.scenario` cannot be combined with `{path}.scenarios`")
+
+    all_scenarios = _parse_optional_bool(table.get("all_scenarios"), path=f"{path}.all_scenarios")
+    if all_scenarios and (scenario is not None or scenarios):
+        raise ValueError(
+            f"`{path}.all_scenarios=true` cannot be combined with `{path}.scenario(s)`"
+        )
+
+    combine_mode = _parse_optional_enum(
+        table.get("combine_mode"), enum_cls=CombineMode, path=f"{path}.combine_mode"
+    )
+    failure_policy = _parse_optional_enum(
+        table.get("failure_policy"), enum_cls=FailurePolicy, path=f"{path}.failure_policy"
+    )
+    out = _parse_optional_non_empty_str(table.get("out"), path=f"{path}.out")
+    output_format = _parse_optional_non_empty_str(table.get("format"), path=f"{path}.format")
+    runtime = _parse_optional_non_empty_str(table.get("runtime"), path=f"{path}.runtime")
+    backend = _parse_optional_non_empty_str(table.get("backend"), path=f"{path}.backend")
+
+    plugins: tuple[str, ...] | None = None
+    if "plugins" in table:
+        plugins = _parse_plugin_list(table.get("plugins"), path=f"{path}.plugins")
+
+    runtime_options = _parse_optional_runtime_options(table, "runtime_options", path=path)
+
+    solutions: int | None = None
+    if "solutions" in table:
+        solutions = _parse_positive_int(table.get("solutions"), path=f"{path}.solutions")
+
+    energy_min: float | None = None
+    if "energy_min" in table:
+        energy_min = _parse_float(table.get("energy_min"), path=f"{path}.energy_min")
+
+    energy_max: float | None = None
+    if "energy_max" in table:
+        energy_max = _parse_float(table.get("energy_max"), path=f"{path}.energy_max")
+
+    if energy_min is not None and energy_max is not None and energy_min > energy_max:
+        raise ValueError(f"`{path}` requires `energy_min <= energy_max`")
+
+    return EntryPointConfig(
+        scenario=scenario,
+        scenarios=scenarios,
+        all_scenarios=all_scenarios,
+        combine_mode=combine_mode,
+        failure_policy=failure_policy,
+        out=out,
+        output_format=output_format,
+        runtime=runtime,
+        backend=backend,
+        plugins=plugins,
+        runtime_options=runtime_options,
+        solutions=solutions,
+        energy_min=energy_min,
+        energy_max=energy_max,
+    )
 
 
 def _parse_selection(raw: object, *, path: str) -> SelectionConfig:
@@ -376,6 +498,14 @@ def _parse_optional_non_empty_str(raw: object, *, path: str) -> str | None:
     return raw.strip()
 
 
+def _parse_optional_bool(raw: object, *, path: str) -> bool:
+    if raw is None:
+        return False
+    if not isinstance(raw, bool):
+        raise ValueError(f"`{path}` must be a boolean when provided")
+    return raw
+
+
 def _parse_optional_mapping(
     table: Mapping[str, object], key: str, root_path: str
 ) -> dict[str, object]:
@@ -412,6 +542,24 @@ def _parse_plugin_list(raw: object, *, path: str) -> tuple[str, ...]:
             raise ValueError(f"`{path}[{idx}]` must be a non-empty plugin spec string")
         values.append(value.strip())
     return tuple(values)
+
+
+def _parse_optional_runtime_options(
+    table: Mapping[str, object], key: str, *, path: str
+) -> dict[str, object]:
+    if key not in table:
+        return {}
+    raw = table.get(key)
+    if not isinstance(raw, Mapping):
+        raise ValueError(f"`{path}.{key}` must be a TOML table/object")
+
+    runtime_options: dict[str, object] = {}
+    for option_key, option_value in raw.items():
+        normalized_key = str(option_key).strip()
+        if not normalized_key:
+            raise ValueError(f"`{path}.{key}` keys must be non-empty strings")
+        runtime_options[normalized_key] = copy.deepcopy(option_value)
+    return runtime_options
 
 
 def _parse_positive_int(raw: object, *, path: str) -> int:

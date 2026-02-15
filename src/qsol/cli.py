@@ -30,6 +30,8 @@ from qsol.config import (
     materialize_instance_payload,
     resolve_combine_mode,
     resolve_failure_policy,
+    resolve_output_format,
+    resolve_runtime_options,
     resolve_selected_scenarios,
     resolve_solve_settings,
 )
@@ -156,6 +158,100 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 
+def _solution_entries(run_result: StandardRunResult) -> list[Mapping[str, object]]:
+    raw_solutions = run_result.extensions.get("solutions")
+    if not isinstance(raw_solutions, list):
+        return []
+    return [cast(Mapping[str, object], row) for row in raw_solutions if isinstance(row, Mapping)]
+
+
+def _format_solution_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, Mapping):
+        normalized = {str(key): value_raw for key, value_raw in value.items()}
+        return json.dumps(normalized, sort_keys=True, default=str)
+    return str(value)
+
+
+def _format_selected_assignments(value: object) -> str:
+    if not isinstance(value, list):
+        return ""
+
+    count = 0
+    for row in value:
+        if isinstance(row, Mapping):
+            count += 1
+    if count == 0:
+        count = len(value)
+    return f"{count} selected"
+
+
+def _format_sample_summary(value: object) -> str:
+    if not isinstance(value, Mapping):
+        return str(value) if value is not None else ""
+
+    items = sorted(
+        ((str(name), raw_value) for name, raw_value in value.items()), key=lambda item: item[0]
+    )
+    if not items:
+        return "0/0 active"
+
+    active_names = [
+        name
+        for name, raw_value in items
+        if (isinstance(raw_value, bool) and raw_value)
+        or (isinstance(raw_value, int) and raw_value == 1)
+    ]
+    header = f"{len(active_names)}/{len(items)} active"
+    if not active_names:
+        return header
+    if len(active_names) <= 3:
+        return f"{header}: {', '.join(active_names)}"
+    return f"{header}: {', '.join(active_names[:3])} (+{len(active_names) - 3} more)"
+
+
+def _format_runtime_parameter_value(value: object) -> str:
+    if isinstance(value, Mapping):
+        normalized = {str(key): raw for key, raw in value.items()}
+        return json.dumps(normalized, sort_keys=True, default=str)
+    if isinstance(value, list):
+        return json.dumps(value, sort_keys=True, default=str)
+    return str(value)
+
+
+def _runtime_parameters_summary(run_result: StandardRunResult) -> str:
+    runtime_options_raw = run_result.extensions.get("runtime_options")
+    if isinstance(runtime_options_raw, Mapping):
+        runtime_options = {str(key): value for key, value in runtime_options_raw.items()}
+        if runtime_options:
+            return "\n".join(
+                f"{key}={_format_runtime_parameter_value(runtime_options[key])}"
+                for key in sorted(runtime_options)
+            )
+
+    scenario_options_raw = run_result.extensions.get("scenario_runtime_options")
+    if isinstance(scenario_options_raw, Mapping):
+        scenario_lines: list[str] = []
+        for scenario_name in sorted(str(name) for name in scenario_options_raw.keys()):
+            params_raw = scenario_options_raw.get(scenario_name)
+            if not isinstance(params_raw, Mapping):
+                continue
+            params = {str(key): value for key, value in params_raw.items()}
+            if params:
+                joined = ", ".join(
+                    f"{key}={_format_runtime_parameter_value(params[key])}"
+                    for key in sorted(params)
+                )
+            else:
+                joined = "<none>"
+            scenario_lines.append(f"{scenario_name}: {joined}")
+        if scenario_lines:
+            return "\n".join(scenario_lines)
+
+    return ""
+
+
 def _print_diags(
     console: Console, source: SourceText | None, diagnostics: list[Diagnostic]
 ) -> bool:
@@ -184,9 +280,14 @@ def _resolve_config_path(file: Path, config: Path | None) -> tuple[Path | None, 
     )
 
 
-def _resolve_outdir(file: Path, outdir: Path | None) -> Path:
+def _resolve_outdir(file: Path, outdir: Path | None, config: QsolConfig | None = None) -> Path:
     if outdir is not None:
         return outdir
+
+    if config is not None and config.entrypoint.out is not None:
+        entrypoint_outdir = Path(config.entrypoint.out)
+        LOGGER.info("Using config entrypoint output directory: %s", entrypoint_outdir)
+        return entrypoint_outdir
 
     inferred_outdir = Path.cwd() / "outdir" / file.stem
     LOGGER.info("Inferred output directory: %s", inferred_outdir)
@@ -334,7 +435,7 @@ def inspect_parse(
     json_out: bool = typer.Option(False, "--json", "-j", help="Print AST as JSON."),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
-        LogLevel.info,
+        LogLevel.warning,
         "--log-level",
         "-l",
         help="Set CLI log verbosity.",
@@ -367,7 +468,7 @@ def inspect_check(
     file: Path = typer.Argument(..., help="Path to the QSOL model source file."),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
-        LogLevel.info,
+        LogLevel.warning,
         "--log-level",
         "-l",
         help="Set CLI log verbosity.",
@@ -398,7 +499,7 @@ def inspect_lower(
     json_out: bool = typer.Option(False, "--json", "-j", help="Print lowered IR as JSON."),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
-        LogLevel.info,
+        LogLevel.warning,
         "--log-level",
         "-l",
         help="Set CLI log verbosity.",
@@ -798,10 +899,26 @@ def _build_multi_scenario_run_result(
 
     total_reads = 0
     total_timing_ms = 0.0
+    scenario_runtime_options: dict[str, dict[str, object]] = {}
     for outcome in successful:
         assert outcome.run_result is not None
         total_reads += outcome.run_result.reads
         total_timing_ms += outcome.run_result.timing_ms
+        runtime_options_raw = outcome.run_result.extensions.get("runtime_options")
+        if isinstance(runtime_options_raw, Mapping):
+            scenario_runtime_options[outcome.scenario] = {
+                str(key): value for key, value in runtime_options_raw.items()
+            }
+
+    shared_runtime_options: dict[str, object] = {}
+    if scenario_runtime_options:
+        ordered_options = [
+            scenario_runtime_options[scenario_name]
+            for scenario_name in sorted(scenario_runtime_options)
+        ]
+        first_options = ordered_options[0]
+        if all(candidate == first_options for candidate in ordered_options[1:]):
+            shared_runtime_options = dict(first_options)
 
     return StandardRunResult(
         schema_version="1.0",
@@ -831,6 +948,8 @@ def _build_multi_scenario_run_result(
                 }
                 for outcome in outcomes
             },
+            "runtime_options": shared_runtime_options,
+            "scenario_runtime_options": scenario_runtime_options,
         },
     )
 
@@ -874,21 +993,20 @@ def targets_check(
     ),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
-        LogLevel.info,
+        LogLevel.warning,
         "--log-level",
         "-l",
         help="Set CLI log verbosity.",
     ),
 ) -> None:
     console = Console(no_color=no_color)
-    resolved_outdir = _resolve_outdir(file, out)
-    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
-
     text, _resolved_config_path, parsed_config = _read_model_and_config(
         file=file, config=config, console=console
     )
     if text is None or parsed_config is None:
         raise typer.Exit(code=1)
+    resolved_outdir = _resolve_outdir(file, out, parsed_config)
+    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
 
     try:
         selected_scenarios = resolve_selected_scenarios(
@@ -1058,11 +1176,11 @@ def build_cmd(
         "-o",
         help="Output directory for artifacts. Defaults to <cwd>/outdir/<model_stem>.",
     ),
-    output_format: str = typer.Option(
-        "qubo",
+    output_format: str | None = typer.Option(
+        None,
         "--format",
         "-f",
-        help="Export format for objective payload: qubo, ising, bqm, or cqm.",
+        help="Export format for objective payload: qubo, ising, bqm, or cqm (defaults to config entrypoint, then qubo).",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
     plugin: list[str] = typer.Option(
@@ -1073,21 +1191,21 @@ def build_cmd(
     ),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
-        LogLevel.info,
+        LogLevel.warning,
         "--log-level",
         "-l",
         help="Set CLI log verbosity.",
     ),
 ) -> None:
     console = Console(no_color=no_color)
-    resolved_outdir = _resolve_outdir(file, out)
-    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
-
     text, _resolved_config_path, parsed_config = _read_model_and_config(
         file=file, config=config, console=console
     )
     if text is None or parsed_config is None:
         raise typer.Exit(code=1)
+    resolved_outdir = _resolve_outdir(file, out, parsed_config)
+    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
+    resolved_output_format = resolve_output_format(config=parsed_config, cli_format=output_format)
 
     try:
         selected_scenarios = resolve_selected_scenarios(
@@ -1126,7 +1244,7 @@ def build_cmd(
                 filename=str(file),
                 instance_payload=instance_payload,
                 outdir=str(scenario_outdir),
-                output_format=output_format,
+                output_format=resolved_output_format,
                 runtime_id=runtime,
                 plugin_specs=tuple(plugin),
             ),
@@ -1283,11 +1401,11 @@ def solve_cmd(
         "-o",
         help="Output directory for artifacts and run output. Defaults to <cwd>/outdir/<model_stem>.",
     ),
-    output_format: str = typer.Option(
-        "qubo",
+    output_format: str | None = typer.Option(
+        None,
         "--format",
         "-f",
-        help="Export format for objective payload: qubo, ising, bqm, or cqm.",
+        help="Export format for objective payload: qubo, ising, bqm, or cqm (defaults to config entrypoint, then qubo).",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
     plugin: list[str] = typer.Option(
@@ -1332,20 +1450,20 @@ def solve_cmd(
     ),
 ) -> None:
     console = Console(no_color=no_color)
-    resolved_outdir = _resolve_outdir(file, out)
-    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
-
     text, _resolved_config_path, parsed_config = _read_model_and_config(
         file=file, config=config, console=console
     )
     if text is None or parsed_config is None:
         raise typer.Exit(code=1) from None
+    resolved_outdir = _resolve_outdir(file, out, parsed_config)
+    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
+    resolved_output_format = resolve_output_format(config=parsed_config, cli_format=output_format)
 
-    runtime_params_base, runtime_options_error = _parse_runtime_options(
+    cli_runtime_params, runtime_options_error = _parse_runtime_options(
         runtime_option_args=runtime_option,
         runtime_options_file=runtime_options_file,
     )
-    if runtime_options_error is not None or runtime_params_base is None:
+    if runtime_options_error is not None or cli_runtime_params is None:
         _print_diags(
             console,
             None,
@@ -1359,6 +1477,11 @@ def solve_cmd(
             ],
         )
         raise typer.Exit(code=1) from None
+
+    runtime_params_base = resolve_runtime_options(
+        config=parsed_config,
+        cli_runtime_options=cli_runtime_params,
+    )
 
     if solutions is not None and solutions < 1:
         _print_diags(
@@ -1471,7 +1594,7 @@ def solve_cmd(
                 filename=str(file),
                 instance_payload=instance_payload,
                 outdir=str(scenario_outdir),
-                output_format=output_format,
+                output_format=resolved_output_format,
                 runtime_id=runtime,
                 plugin_specs=tuple(plugin),
             ),
@@ -1667,9 +1790,8 @@ def solve_cmd(
     summary.add_row("Status", final_run_result.status)
     summary.add_row("Runtime", final_run_result.runtime)
     summary.add_row("Backend", final_run_result.backend)
-    summary.add_row("Sampler", str(final_run_result.extensions.get("sampler", "")))
+    summary.add_row("Runtime Parameters", _runtime_parameters_summary(final_run_result))
     summary.add_row("Energy", str(final_run_result.energy))
-    summary.add_row("Reads", str(final_run_result.reads))
     summary.add_row("Solutions Requested", str(requested_solutions))
     summary.add_row("Solutions Returned", str(returned_solutions))
     summary.add_row("Energy Min", threshold_min)
@@ -1686,6 +1808,32 @@ def solve_cmd(
     summary.add_row("Run Output", str(final_run_path))
     summary.add_row("Capability Report", str(final_report_path) if final_report_path else "")
     console.print(summary)
+
+    solutions_table = Table(title="Returned Solutions")
+    solutions_table.add_column("Rank")
+    solutions_table.add_column("Energy")
+    solutions_table.add_column("Selected")
+    solutions_table.add_column("Occurrences")
+    solutions_table.add_column("Probability")
+    solutions_table.add_column("Status")
+    solutions_table.add_column("Scenario Energies")
+    solutions_table.add_column("Sample")
+    solution_rows = _solution_entries(final_run_result)
+    if solution_rows:
+        for row in solution_rows:
+            solutions_table.add_row(
+                escape(str(row.get("rank", ""))),
+                escape(str(row.get("energy", ""))),
+                escape(_format_selected_assignments(row.get("selected_assignments"))),
+                escape(str(row.get("num_occurrences", ""))),
+                escape(str(row.get("probability", ""))),
+                escape(str(row.get("status", ""))),
+                escape(_format_solution_value(row.get("scenario_energies"))),
+                escape(_format_sample_summary(row.get("sample"))),
+            )
+    else:
+        solutions_table.add_row("-", "-", "", "", "", "", "", "No solutions returned")
+    console.print(solutions_table)
 
     selected_table = Table(title="Selected Assignments")
     selected_table.add_column("Variable")

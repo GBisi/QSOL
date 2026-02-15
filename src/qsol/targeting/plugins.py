@@ -509,6 +509,12 @@ def _instantiate_qaoa(  # pragma: no cover
             "sampler": sampler,
             "optimizer": optimizer,
             "reps": reps,
+            "pass_manager": pass_manager,
+        },
+        {
+            "sampler": sampler,
+            "optimizer": optimizer,
+            "reps": reps,
             "transpiler": pass_manager,
             "transpiler_options": {},
         },
@@ -527,10 +533,7 @@ def _instantiate_qaoa(  # pragma: no cover
 
     last_exc: Exception | None = None
     for kwargs in attempts:
-        if kwargs.get("transpiler") is None:
-            kwargs = {
-                k: v for k, v in kwargs.items() if k not in {"transpiler", "transpiler_options"}
-            }
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
         try:
             return qaoa_cls(**kwargs)
         except TypeError as exc:
@@ -825,6 +828,14 @@ class LocalDimodRuntimePlugin(RuntimePlugin):
             raise ValueError(
                 "runtime options `energy_min` and `energy_max` must satisfy `energy_min <= energy_max`"
             )
+        resolved_runtime_options: dict[str, object] = {
+            "sampler": sampler,
+            "num_reads": num_reads,
+            "seed": seed,
+            "solutions": requested_solutions,
+            "energy_min": energy_min,
+            "energy_max": energy_max,
+        }
 
         t0 = time.perf_counter()
         if sampler == "exact":
@@ -868,7 +879,7 @@ class LocalDimodRuntimePlugin(RuntimePlugin):
             timing_ms=elapsed_ms,
             capability_report_path="",
             extensions={
-                "runtime_options": params,
+                "runtime_options": resolved_runtime_options,
                 "sampler": sampler,
                 "num_reads": num_reads,
                 "seed": seed,
@@ -992,6 +1003,18 @@ class QiskitRuntimePlugin(RuntimePlugin):
         shots = _as_int_option(params, "shots", 1024)
         seed = _as_optional_int_option(params, "seed")
         optimization_level = _as_non_negative_int_option(params, "optimization_level", 1)
+        resolved_runtime_options: dict[str, object] = {
+            "algorithm": algorithm,
+            "fake_backend": fake_backend,
+            "reps": reps,
+            "maxiter": maxiter,
+            "shots": shots,
+            "seed": seed,
+            "optimization_level": optimization_level,
+            "solutions": requested_solutions,
+            "energy_min": energy_min,
+            "energy_max": energy_max,
+        }
 
         t0 = time.perf_counter()
         payload = _run_qiskit_solver(
@@ -1026,7 +1049,7 @@ class QiskitRuntimePlugin(RuntimePlugin):
         )
 
         extensions: dict[str, object] = {
-            "runtime_options": params,
+            "runtime_options": resolved_runtime_options,
             "algorithm": payload.algorithm,
             "requested_solutions": requested_solutions,
             "returned_solutions": len(payload.solutions),

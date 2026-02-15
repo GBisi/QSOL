@@ -6,6 +6,6 @@ unknown InjectiveMapping(A, B) {
     must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
   }
   view {
-    predicate is(a in A, b in B) = f.is(a, b);
+    predicate is(a in A, b in B): Bool = f.is(a, b);
   }
 }

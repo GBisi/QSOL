@@ -24,7 +24,12 @@ def desugar_program(program: ast.Program) -> ast.Program:
             items.append(replace(item, stmts=stmts))
         elif isinstance(item, ast.UnknownDef):
             laws = [replace(c, expr=_desugar_bool(c.expr), guard=None) for c in item.laws_block]
-            views = [replace(v, expr=_desugar_bool(v.expr)) for v in item.view_block]
+            views: list[ast.ViewMember] = []
+            for view_member in item.view_block:
+                if isinstance(view_member, ast.PredicateDef):
+                    views.append(replace(view_member, expr=_desugar_bool(view_member.expr)))
+                else:
+                    views.append(replace(view_member, expr=_desugar_num(view_member.expr)))
             items.append(replace(item, laws_block=laws, view_block=views))
         else:
             items.append(item)

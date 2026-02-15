@@ -36,6 +36,24 @@ class SolveConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class EntryPointConfig:
+    scenario: str | None = None
+    scenarios: tuple[str, ...] = ()
+    all_scenarios: bool = False
+    combine_mode: CombineMode | None = None
+    failure_policy: FailurePolicy | None = None
+    out: str | None = None
+    output_format: str | None = None
+    runtime: str | None = None
+    backend: str | None = None
+    plugins: tuple[str, ...] | None = None
+    runtime_options: dict[str, object] = field(default_factory=dict)
+    solutions: int | None = None
+    energy_min: float | None = None
+    energy_max: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SolveSettings:
     solutions: int
     energy_min: float | None = None
@@ -69,6 +87,7 @@ class DefaultsConfig:
 @dataclass(frozen=True, slots=True)
 class QsolConfig:
     schema_version: str
+    entrypoint: EntryPointConfig = field(default_factory=EntryPointConfig)
     selection: SelectionConfig = field(default_factory=SelectionConfig)
     defaults: DefaultsConfig = field(default_factory=DefaultsConfig)
     scenarios: dict[str, ScenarioConfig] = field(default_factory=dict)

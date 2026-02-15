@@ -1,7 +1,9 @@
 schema_version = "1"
 
-[selection]
-default_scenario = "baseline"
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+runtime_options = { sampler = "exact" }
 
 [scenarios.baseline]
 problem = "GenericBQM"

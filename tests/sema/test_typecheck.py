@@ -200,3 +200,32 @@ problem P {
         and "scalar param `Flag` must be referenced as `Flag` (bare name)" in d.message
         for d in bool_unit.diagnostics
     )
+
+
+def test_indexed_param_parentheses_call_is_rejected() -> None:
+    text = """
+problem P {
+  set A;
+  param Cost[A] : Real;
+  find S : Subset(A);
+  minimize sum(if S.has(x) then Cost(x) else 0 for x in A);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="indexed_param_paren_reject.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "indexed param `Cost` must use bracket access" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_unknown_function_or_predicate_call_is_rejected_after_macro_pass() -> None:
+    text = """
+problem P {
+  must missing_macro(true);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="unknown_macro_call.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "unknown function/predicate `missing_macro`" in d.message
+        for d in unit.diagnostics
+    )

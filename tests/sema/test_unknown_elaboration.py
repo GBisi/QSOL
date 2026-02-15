@@ -17,7 +17,7 @@ unknown InjectiveMapping(A, B) {
     must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
   }
   view {
-    predicate is(a in A, b in B) = f.is(a, b);
+    predicate is(a in A, b in B): Bool = f.is(a, b);
   }
 }
 
@@ -26,7 +26,7 @@ unknown PermLike(A) {
     inj : InjectiveMapping(A, A);
   }
   view {
-    predicate is(a in A, b in A) = inj.is(a, b);
+    predicate is(a in A, b in A): Bool = inj.is(a, b);
   }
 }
 
@@ -83,7 +83,7 @@ def test_unknown_elaboration_reports_find_arity_mismatch_and_keeps_original_find
 unknown OneArg(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 
 problem Demo {
@@ -112,7 +112,7 @@ def test_unknown_elaboration_retains_unresolved_child_rep_find_when_child_unknow
 unknown Outer(A) {
   rep { inner : MissingChild(A); }
   laws { must true; }
-  view { predicate ok() = true; }
+  view { predicate ok(): Bool = true; }
 }
 
 problem Demo {
@@ -144,13 +144,13 @@ def test_unknown_elaboration_reports_child_expansion_failure_and_falls_back_to_c
 unknown Child(A, B) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate ok() = true; }
+  view { predicate ok(): Bool = true; }
 }
 
 unknown Outer(A) {
   rep { inner : Child(A); }
   laws { must true; }
-  view { predicate ok() = true; }
+  view { predicate ok(): Bool = true; }
 }
 
 problem Demo {
@@ -182,7 +182,7 @@ def test_unknown_elaboration_resolves_alias_collisions_for_generated_find_names(
 unknown Wrap(A) {
   rep { inner : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = inner.has(x); }
+  view { predicate has(x in A): Bool = inner.has(x); }
 }
 
 problem P {
@@ -212,8 +212,8 @@ unknown Fancy(T) {
     must size(T) >= 0;
   }
   view {
-    predicate has(x in T) = base.has(x);
-    predicate alias(x in T) = has(x);
+    predicate has(x in T): Bool = base.has(x);
+    predicate alias(x in T): Bool = has(x);
   }
 }
 
@@ -244,7 +244,7 @@ def test_unknown_elaboration_reports_unknown_method_and_predicate_arity_issues()
 unknown U(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A) = s.has(x); }
+  view { predicate has(x in A): Bool = s.has(x); }
 }
 
 problem Demo {
@@ -268,7 +268,7 @@ def test_unknown_elaboration_reports_recursive_view_predicate_expansion() -> Non
 unknown Loop(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate p(x in A) = p(x); }
+  view { predicate p(x in A): Bool = p(x); }
 }
 
 problem Demo {
@@ -282,5 +282,81 @@ problem Demo {
     elaborated = elaborate_unknowns(program)
     assert any(
         diag.code == "QSOL2101" and "recursive view predicate expansion detected" in diag.message
+        for diag in elaborated.diagnostics
+    )
+
+
+def test_unknown_elaboration_expands_top_level_predicates_and_functions() -> None:
+    program = parse_to_ast(
+        """
+predicate iff(a, b): Bool = a and b or not a and not b;
+function indicator(b): Real = if b then 1 else 0;
+
+problem Demo {
+  param Flag : Bool;
+  must iff(Flag, true);
+  minimize indicator(Flag);
+}
+""",
+        filename="elab_top_level_macros.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert not any(diag.is_error for diag in elaborated.diagnostics)
+
+    problem = next(item for item in elaborated.program.items if isinstance(item, ast.ProblemDef))
+    constraint = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Constraint))
+    objective = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Objective))
+    assert isinstance(constraint.expr, ast.Or)
+    assert isinstance(objective.expr, ast.IfThenElse)
+
+
+def test_unknown_elaboration_expands_view_functions_and_global_calls() -> None:
+    program = parse_to_ast(
+        """
+function add1(x): Real = x + 1;
+
+unknown Fancy(A) {
+  rep { s : Subset(A); }
+  laws { must true; }
+  view {
+    function score(x in A): Real = add1(if s.has(x) then 1 else 0);
+    predicate ok(x in A): Bool = score(x) >= 0;
+  }
+}
+
+problem Demo {
+  set A;
+  find F : Fancy(A);
+  must forall x in A: F.ok(x);
+  minimize sum(F.score(x) for x in A);
+}
+""",
+        filename="elab_view_functions.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert not any(diag.is_error for diag in elaborated.diagnostics)
+
+    problem = next(item for item in elaborated.program.items if isinstance(item, ast.ProblemDef))
+    objective = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Objective))
+    assert isinstance(objective.expr, ast.NumAggregate)
+    assert "score(" not in repr(objective.expr)
+    assert "add1(" not in repr(objective.expr)
+
+
+def test_unknown_elaboration_reports_recursive_top_level_macro_expansion() -> None:
+    program = parse_to_ast(
+        """
+predicate p(x): Bool = q(x);
+predicate q(x): Bool = p(x);
+
+problem Demo {
+  must p(true);
+}
+""",
+        filename="elab_recursive_top_level_macros.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert any(
+        diag.code == "QSOL2101" and "recursive macro expansion detected" in diag.message
         for diag in elaborated.diagnostics
     )

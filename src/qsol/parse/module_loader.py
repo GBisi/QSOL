@@ -23,23 +23,23 @@ class ModuleLoader:
     _diagnostics: list[Diagnostic] = field(default_factory=list)
 
     def resolve(self, program: ast.Program, *, root_filename: str) -> ModuleLoadResult:
-        imported_unknowns: list[ast.UnknownDef] = []
+        imported_items: list[ast.TopItem] = []
         root_path = self._normalize_root_filename(root_filename)
 
         for item in program.items:
             if not isinstance(item, ast.UseStmt):
                 continue
-            imported_unknowns.extend(
+            imported_items.extend(
                 self._load_module(item.module, importer_file=root_path, use_span=item.span)
             )
 
         local_items = [item for item in program.items if not isinstance(item, ast.UseStmt)]
-        merged = replace(program, items=[*imported_unknowns, *local_items])
+        merged = replace(program, items=[*imported_items, *local_items])
         return ModuleLoadResult(program=merged, diagnostics=list(self._diagnostics))
 
     def _load_module(
         self, module: str, *, importer_file: Path, use_span: Span
-    ) -> list[ast.UnknownDef]:
+    ) -> list[ast.TopItem]:
         resolved = self._resolve_module_path(module, importer_file=importer_file, use_span=use_span)
         if resolved is None:
             return []
@@ -83,15 +83,15 @@ class ModuleLoader:
                 self._diagnostics.append(exc.diagnostic)
                 return []
 
-            imported_unknowns: list[ast.UnknownDef] = []
-            module_unknowns: list[ast.UnknownDef] = []
+            imported_items: list[ast.TopItem] = []
+            module_items: list[ast.TopItem] = []
             for item in imported_program.items:
                 if isinstance(item, ast.UseStmt):
-                    imported_unknowns.extend(
+                    imported_items.extend(
                         self._load_module(item.module, importer_file=resolved, use_span=item.span)
                     )
-                elif isinstance(item, ast.UnknownDef):
-                    module_unknowns.append(item)
+                elif isinstance(item, (ast.UnknownDef, ast.PredicateDef, ast.FunctionDef)):
+                    module_items.append(item)
                 else:
                     self._diagnostics.append(
                         Diagnostic(
@@ -103,13 +103,14 @@ class ModuleLoader:
                             ),
                             span=item.span,
                             help=[
-                                "Imported modules may contain only `use` and `unknown` top-level items."
+                                "Imported modules may contain only `use`, `unknown`, "
+                                "`predicate`, and `function` top-level items."
                             ],
                         )
                     )
 
             self._loaded.add(resolved)
-            return [*imported_unknowns, *module_unknowns]
+            return [*imported_items, *module_items]
         finally:
             self._active.pop()
 

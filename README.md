@@ -20,7 +20,7 @@ Project purpose, principles, and coherence rubric are in `VISION.md`.
 
 QSOL is staged and target-aware:
 
-`parse -> module load (use) -> unknown elaboration -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
+`parse -> module load (use) -> macro + unknown elaboration -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
 
 Reference targets:
 - Runtime: `local-dimod`
@@ -35,6 +35,7 @@ QSOL uses one import form for both packaged stdlib modules and user libraries:
 
 ```qsol
 use stdlib.permutation;
+use stdlib.logic;
 use mylib.graph.unknowns;
 ```
 
@@ -46,7 +47,7 @@ Import rules:
 - Module path `a.b.c` maps to `a/b/c.qsol`.
 - Quoted file imports (`use "x.qsol";`) are not supported.
 
-Custom unknowns from imported modules are elaborated in the frontend into primitive `Subset`/`Mapping` finds plus generated constraints, so backend v1 remains primitive-focused.
+Custom unknowns and predicate/function macros from imported modules are expanded in the frontend, so backend v1 remains primitive-focused.
 
 Stdlib module catalog and usage details:
 - `src/qsol/stdlib/README.md`
@@ -178,19 +179,31 @@ uv run qsol solve <model.qsol> -c <config.qsol.toml> [--runtime <id>] [--scenari
 
 Defaults:
 - config discovery: `*.qsol.toml` in model directory; if multiple, `<model>.qsol.toml` is required
-- outdir: `<cwd>/outdir/<model_stem>`
-- solve runtime options default to `sampler=simulated-annealing` and `num_reads=100`
+- outdir: CLI `--out`, then config `entrypoint.out`, then `<cwd>/outdir/<model_stem>`
 - solve returns the best solution by default (`--solutions 1`)
 
-`qiskit` runtime options:
-- `algorithm=qaoa|numpy` (default: `qaoa`)
-- `fake_backend=<FakeBackendClass>` (default: `FakeManilaV2`; used by `qaoa`)
-- `shots=<int>`, `reps=<int>`, `maxiter=<int>`, `seed=<int>`, `optimization_level=<int>`
-- QAOA writes `qaoa.qasm` (OpenQASM 3) into the selected `--out` directory.
+Config entrypoint (`[entrypoint]`) can express CLI-equivalent defaults:
+- selection: `scenario`, `scenarios`, `all_scenarios`
+- execution: `runtime`, `backend`, `plugins`
+- solve controls: `runtime_options`, `solutions`, `energy_min`, `energy_max`
+- workflow defaults: `out`, `format`, `combine_mode`, `failure_policy`
+
+Built-in runtime plugins and optional runtime params:
+- `local-dimod`
+- optional params: `sampler=exact|simulated-annealing` (default: `simulated-annealing`), `num_reads=<int>` (default: `100`), `seed=<int>`
+- default runtime options when `runtime=local-dimod`: `sampler=simulated-annealing`, `num_reads=100`
+- `qiskit`
+- optional params: `algorithm=qaoa|numpy` (default: `qaoa`), `fake_backend=<FakeBackendClass>` (default: `FakeManilaV2`), `shots=<int>` (default: `1024`), `reps=<int>` (default: `1`), `maxiter=<int>` (default: `100`), `seed=<int>`, `optimization_level=<int>` (default: `1`)
+- shared solve params for both runtimes: `solutions=<int>` (default: `1`), `energy_min=<number>`, `energy_max=<number>`
+- for `algorithm=qaoa`, QSOL auto-wires backend transpilation via `pass_manager`/`transpiler` based on the installed Qiskit package variant
+- QAOA writes `qaoa.qasm` (OpenQASM 3) into the selected `--out` directory
 
 `solve` multi-solution and thresholds:
 - `--solutions N` returns up to `N` best unique solutions.
 - Returned solutions are ordered by energy ascending (ties are deterministic).
+- `Run Summary` prints `Runtime Parameters` (resolved values, including defaults and user/config overrides).
+- CLI output includes a `Returned Solutions` table that prints all returned solutions with
+  rank, energy, compact sample summary, selected-assignment summary, and runtime-specific metadata when present.
 - `--energy-min`/`--energy-max` are inclusive thresholds.
 - Threshold checks are applied to all returned solutions.
 - If any returned solution violates thresholds, `solve` writes `run.json` and exits non-zero (`status: "threshold_failed"`).
@@ -207,7 +220,9 @@ Short command aliases:
 Runtime selection precedence:
 
 1. CLI `--runtime`
-2. Scenario/default config `execution.runtime`
+2. Scenario config `execution.runtime`
+3. Config `entrypoint.runtime`
+4. Legacy config `defaults.execution.runtime`
 
 If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4006`.
 Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
@@ -216,7 +231,7 @@ Plugin bundle loading precedence for `targets check`/`build`/`solve`:
 
 1. Built-in plugins
 2. Installed entry-point plugins (`qsol.backends`, `qsol.runtimes`)
-3. Config defaults/scenario values in `execution.plugins` (array of `module:attribute`)
+3. Config execution values in `execution.plugins` (scenario -> `entrypoint` -> legacy defaults)
 4. CLI `--plugin module:attribute` values
 
 Config + CLI plugin specs are merged with stable ordering and exact-string deduplication.

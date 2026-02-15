@@ -291,6 +291,10 @@ def test_solve_command_executes_runtime_and_exports_artifacts(tmp_path: Path) ->
 
     assert result.exit_code == 0
     assert "Run Summary" in result.stdout
+    assert "Runtime Parameters" in result.stdout
+    assert "sampler=exact" in result.stdout
+    assert "num_reads=100" in result.stdout
+    assert "│ Reads" not in result.stdout
     assert "Selected Assignments" in result.stdout
     assert (outdir / "model.bqm").exists()
     assert (outdir / "varmap.json").exists()
@@ -567,9 +571,12 @@ def test_solve_returns_top_n_unique_solutions(tmp_path: Path) -> None:
     assert run_payload["status"] == "ok"
     solutions = run_payload["extensions"]["solutions"]
     assert len(solutions) == 3
+    assert "Returned Solutions" in result.stdout
     assert [solution["rank"] for solution in solutions] == [1, 2, 3]
     energies = [solution["energy"] for solution in solutions]
     assert energies == sorted(energies)
+    for energy in energies:
+        assert str(energy) in result.stdout
     unique_samples = {json.dumps(solution["sample"], sort_keys=True) for solution in solutions}
     assert len(unique_samples) == 3
     assert run_payload["best_sample"] == solutions[0]["sample"]
@@ -1192,3 +1199,95 @@ def test_solve_rejects_backend_options(tmp_path: Path) -> None:
     plain_short_output = _strip_ansi(short_result.output)
     assert "No such option" in plain_short_output
     assert "-b" in plain_short_output
+
+
+def test_solve_uses_entrypoint_runtime_options_and_output_defaults(tmp_path: Path) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    outdir = tmp_path / "entrypoint-out"
+    config_path = tmp_path / "simple.qsol.toml"
+    config_path.write_text(
+        f"""
+schema_version = "1"
+
+[entrypoint]
+runtime = "local-dimod"
+out = "{outdir}"
+format = "ising"
+runtime_options = {{ sampler = "exact" }}
+
+[scenarios.base]
+problem = "Simple"
+
+[scenarios.base.sets]
+A = ["a1", "a2"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--config",
+            str(config_path),
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (outdir / "run.json").exists()
+    assert (outdir / "ising.json").exists()
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["runtime"] == "local-dimod"
+    assert run_payload["extensions"]["sampler"] == "exact"
+    assert run_payload["extensions"]["runtime_options"]["num_reads"] == 100
+
+
+def test_solve_entrypoint_runtime_options_are_overridden_by_cli(tmp_path: Path) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    outdir = tmp_path / "entrypoint-override"
+    config_path = tmp_path / "simple.qsol.toml"
+    config_path.write_text(
+        f"""
+schema_version = "1"
+
+[entrypoint]
+runtime = "local-dimod"
+out = "{outdir}"
+runtime_options = {{ sampler = "simulated-annealing", num_reads = 5 }}
+
+[scenarios.base]
+problem = "Simple"
+
+[scenarios.base.sets]
+A = ["a1", "a2"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--config",
+            str(config_path),
+            "--runtime-option",
+            "sampler=exact",
+            "--runtime-option",
+            "num_reads=3",
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 0
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["extensions"]["sampler"] == "exact"
+    assert run_payload["extensions"]["runtime_options"]["num_reads"] == 3
