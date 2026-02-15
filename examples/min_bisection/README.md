@@ -16,8 +16,7 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 uv run qsol targets check \
   examples/min_bisection/min_bisection.qsol \
   --instance examples/min_bisection/min_bisection.instance.json \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
 ```
 
 ```bash
@@ -25,7 +24,6 @@ uv run qsol build \
   examples/min_bisection/min_bisection.qsol \
   --instance examples/min_bisection/min_bisection.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/min_bisection \
   --format qubo
 ```
@@ -35,9 +33,21 @@ uv run qsol solve \
   examples/min_bisection/min_bisection.qsol \
   --instance examples/min_bisection/min_bisection.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/min_bisection \
   --runtime-option sampler=exact
+```
+
+```bash
+uv sync --extra qiskit
+uv run qsol solve \
+  examples/min_bisection/min_bisection.qsol \
+  --instance examples/min_bisection/min_bisection.instance.json \
+  --runtime qiskit \
+  --out outdir/min_bisection_qiskit \
+  --runtime-option algorithm=qaoa \
+  --runtime-option fake_backend=FakeManilaV2 \
+  --runtime-option shots=1024 \
+  --runtime-option reps=2
 ```
 
 ```bash
@@ -53,6 +63,7 @@ uv run python examples/min_bisection/test_equivalence.py --simulated-annealing -
 - `test_equivalence.py` exits with status `0`.
 - Runtime equivalence is the acceptance criterion for this example.
 - Structural mismatch is informational-only for this example; structural equivalence may still pass for the provided instance.
+- Qiskit QAOA runs produce `outdir/min_bisection_qiskit/qaoa.qasm`.
 
 ## Instance Knobs
 

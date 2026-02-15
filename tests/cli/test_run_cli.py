@@ -101,8 +101,6 @@ def test_solve_command_executes_runtime_and_exports_artifacts(tmp_path: Path) ->
             str(outdir),
             "--runtime",
             "local-dimod",
-            "--backend",
-            "dimod-cqm-v1",
             "--runtime-option",
             "sampler=exact",
             "--no-color",
@@ -146,8 +144,6 @@ def test_solve_command_accepts_short_options(tmp_path: Path) -> None:
             str(outdir),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-x",
             "sampler=exact",
             "-n",
@@ -322,8 +318,6 @@ def test_solve_runtime_options_file(tmp_path: Path) -> None:
             str(outdir),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-X",
             str(options_path),
             "-n",
@@ -351,8 +345,6 @@ def test_solve_invalid_runtime_option_format_reports_error(tmp_path: Path) -> No
             str(instance_path),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-x",
             "not_key_value",
             "-n",
@@ -382,8 +374,6 @@ def test_solve_returns_top_n_unique_solutions(tmp_path: Path) -> None:
             str(outdir),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-x",
             "sampler=exact",
             "--solutions",
@@ -425,8 +415,6 @@ def test_solve_threshold_failure_writes_run_and_exits_nonzero(tmp_path: Path) ->
             str(outdir),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-x",
             "sampler=exact",
             "--solutions",
@@ -462,8 +450,6 @@ def test_solve_rejects_invalid_solutions_count(tmp_path: Path) -> None:
             str(instance_path),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "--solutions",
             "0",
             "-n",
@@ -490,8 +476,6 @@ def test_solve_rejects_invalid_energy_range(tmp_path: Path) -> None:
             str(instance_path),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "--energy-min",
             "2.0",
             "--energy-max",
@@ -569,8 +553,6 @@ plugin_bundle = PluginBundle(runtimes=(RuntimeWithoutSolutions(),))
             str(outdir),
             "-u",
             "custom-runtime",
-            "-b",
-            "dimod-cqm-v1",
             "-p",
             "custom_runtime_plugin:plugin_bundle",
             "--solutions",
@@ -582,3 +564,151 @@ plugin_bundle = PluginBundle(runtimes=(RuntimeWithoutSolutions(),))
     assert result.exit_code == 1
     assert "error[QSOL5002]" in result.stdout
     assert (outdir / "run.json").exists()
+
+
+def test_solve_qiskit_runtime_writes_openqasm_artifact(tmp_path: Path, monkeypatch) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    instance_path = tmp_path / "instance.json"
+    _write_simple_instance(instance_path)
+    outdir = tmp_path / "out-qiskit"
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins._probe_qiskit_core_dependencies", lambda: (True, [])
+    )
+
+    def _fake_solver(**kwargs):
+        outdir_raw = kwargs["outdir"]
+        assert isinstance(outdir_raw, str)
+        qasm_path = Path(outdir_raw) / "qaoa.qasm"
+        qasm_path.parent.mkdir(parents=True, exist_ok=True)
+        qasm_path.write_text("OPENQASM 3;\nqubit[1] q;\n", encoding="utf-8")
+        return type(
+            "Payload",
+            (),
+            {
+                "algorithm": "qaoa",
+                "reads": 128,
+                "solutions": [
+                    {
+                        "rank": 1,
+                        "energy": 0.0,
+                        "sample": {"S.has[a1]": 1, "S.has[a2]": 1},
+                        "selected_assignments": [
+                            {"variable": "S.has[a1]", "meaning": "S.has(a1)", "value": 1},
+                            {"variable": "S.has[a2]", "meaning": "S.has(a2)", "value": 1},
+                        ],
+                        "probability": 1.0,
+                        "status": "SUCCESS",
+                    }
+                ],
+                "fake_backend": "FakeManilaV2",
+                "openqasm_path": str(qasm_path),
+            },
+        )()
+
+    monkeypatch.setattr("qsol.targeting.plugins._run_qiskit_solver", _fake_solver)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--instance",
+            str(instance_path),
+            "--out",
+            str(outdir),
+            "--runtime",
+            "qiskit",
+            "--runtime-option",
+            "algorithm=qaoa",
+            "--runtime-option",
+            "fake_backend=FakeManilaV2",
+            "--runtime-option",
+            "shots=128",
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (outdir / "qaoa.qasm").exists()
+    run_payload = json.loads((outdir / "run.json").read_text(encoding="utf-8"))
+    assert run_payload["runtime"] == "qiskit"
+    assert run_payload["extensions"]["algorithm"] == "qaoa"
+    assert run_payload["extensions"]["fake_backend"] == "FakeManilaV2"
+    assert run_payload["extensions"]["openqasm_path"] == str(outdir / "qaoa.qasm")
+
+
+def test_solve_qiskit_runtime_missing_optional_dependencies_reports_error(
+    tmp_path: Path, monkeypatch
+) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    instance_path = tmp_path / "instance.json"
+    _write_simple_instance(instance_path)
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins._probe_qiskit_core_dependencies",
+        lambda: (False, ["qiskit", "qiskit-optimization"]),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--instance",
+            str(instance_path),
+            "--runtime",
+            "qiskit",
+            "--runtime-option",
+            "algorithm=qaoa",
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "error[QSOL4010]" in result.stdout
+    assert "uv sync --extra qiskit" in result.stdout
+
+
+def test_solve_rejects_backend_options(tmp_path: Path) -> None:
+    source_path = tmp_path / "simple.qsol"
+    _write_simple_problem(source_path)
+    instance_path = tmp_path / "instance.json"
+    _write_simple_instance(instance_path)
+
+    runner = CliRunner()
+    long_result = runner.invoke(
+        app,
+        [
+            "solve",
+            str(source_path),
+            "--instance",
+            str(instance_path),
+            "--runtime",
+            "local-dimod",
+            "--backend",
+            "dimod-cqm-v1",
+        ],
+    )
+    assert long_result.exit_code != 0
+    assert "No such option: --backend" in long_result.output
+
+    short_result = runner.invoke(
+        app,
+        [
+            "s",
+            str(source_path),
+            "-i",
+            str(instance_path),
+            "-u",
+            "local-dimod",
+            "-b",
+            "dimod-cqm-v1",
+        ],
+    )
+    assert short_result.exit_code != 0
+    assert "No such option: -b" in short_result.output

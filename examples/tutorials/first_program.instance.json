@@ -12,7 +12,6 @@
     }
   },
   "execution": {
-    "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1"
+    "runtime": "local-dimod"
   }
 }

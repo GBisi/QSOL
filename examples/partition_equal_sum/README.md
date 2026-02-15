@@ -16,8 +16,7 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 uv run qsol targets check \
   examples/partition_equal_sum/partition_equal_sum.qsol \
   --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
 ```
 
 ```bash
@@ -25,7 +24,6 @@ uv run qsol build \
   examples/partition_equal_sum/partition_equal_sum.qsol \
   --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/partition_equal_sum \
   --format qubo
 ```
@@ -35,7 +33,6 @@ uv run qsol solve \
   examples/partition_equal_sum/partition_equal_sum.qsol \
   --instance examples/partition_equal_sum/partition_equal_sum.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/partition_equal_sum \
   --runtime-option sampler=exact
 ```

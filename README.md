@@ -1,9 +1,10 @@
-# QSOL
+# QSOL: Quantum/Quadratic Specification-Oriented Optimization Language
 
 ## What QSOL Is
 
-QSOL is a declarative language and compiler for combinatorial optimization.
-You model sets, params, unknowns, constraints, and objectives; QSOL compiles model + instance data into inspectable dimod artifacts and can run a selected runtime/backend target pair.
+QSOL is a declarative language, compiler and runtime for combinatorial optimization problems.
+
+You model sets, params, unknowns, constraints, and objectives; QSOL compiles model + instance data into inspectable dimod artifacts and can run a selected runtime target.
 
 ## Idea, Vision, and Why
 
@@ -21,9 +22,12 @@ QSOL is staged and target-aware:
 
 `parse -> sema -> desugar/lower -> ground -> target selection/support check -> backend compile/export -> runtime solve`
 
-Reference target pair:
+Reference targets:
 - Runtime: `local-dimod`
-- Backend: `dimod-cqm-v1`
+- Backend (implicit for CLI workflows): `dimod-cqm-v1`
+
+Additional built-in runtime:
+- Runtime: `qiskit` (QAOA/NumPy on fake IBM backends, OpenQASM3 export for QAOA)
 
 Module map:
 - `/Users/gbisi/Documents/code/qsol/src/qsol/parse/`
@@ -53,6 +57,12 @@ uv sync --extra dev
 uv run qsol -h
 ```
 
+Install optional Qiskit runtime dependencies:
+
+```bash
+uv sync --extra dev --extra qiskit
+```
+
 ## Quickstart
 
 Use tutorial files:
@@ -76,7 +86,8 @@ uv run qsol targets list
 Check pair capabilities:
 
 ```bash
-uv run qsol targets capabilities --runtime local-dimod --backend dimod-cqm-v1
+uv run qsol targets capabilities --runtime local-dimod
+uv run qsol targets capabilities --runtime qiskit
 ```
 
 Check model+instance support:
@@ -85,8 +96,7 @@ Check model+instance support:
 uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
 ```
 
 Build artifacts:
@@ -96,7 +106,6 @@ uv run qsol build \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --format qubo
 ```
@@ -108,11 +117,24 @@ uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --runtime-option sampler=exact \
   --solutions 3 \
   --energy-max 0
+```
+
+Solve with Qiskit QAOA on a fake IBM backend and emit OpenQASM 3:
+
+```bash
+uv run qsol solve \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime qiskit \
+  --out outdir/first_program_qiskit \
+  --runtime-option algorithm=qaoa \
+  --runtime-option fake_backend=FakeManilaV2 \
+  --runtime-option shots=1024 \
+  --runtime-option reps=2
 ```
 
 ## CLI Overview
@@ -125,11 +147,11 @@ uv run qsol inspect check <model.qsol>
 uv run qsol inspect lower <model.qsol> [--json]
 
 uv run qsol targets list [--plugin module:attr]
-uv run qsol targets capabilities --runtime <id> --backend <id> [--plugin module:attr]
-uv run qsol targets check <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] [--plugin module:attr]
+uv run qsol targets capabilities --runtime <id> [--plugin module:attr]
+uv run qsol targets check <model.qsol> -i <instance.json> [--runtime <id>] [--plugin module:attr]
 
-uv run qsol build <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] -o <outdir>
-uv run qsol solve <model.qsol> -i <instance.json> [--runtime <id>] [--backend <id>] -o <outdir> [-x key=value] [-X runtime_options.json] [--solutions <n>] [--energy-min <value>] [--energy-max <value>]
+uv run qsol build <model.qsol> -i <instance.json> [--runtime <id>] -o <outdir>
+uv run qsol solve <model.qsol> -i <instance.json> [--runtime <id>] -o <outdir> [-x key=value] [-X runtime_options.json] [--solutions <n>] [--energy-min <value>] [--energy-max <value>]
 ```
 
 Defaults:
@@ -137,6 +159,12 @@ Defaults:
 - outdir: `<cwd>/outdir/<model_stem>`
 - solve runtime options default to `sampler=simulated-annealing` and `num_reads=100`
 - solve returns the best solution by default (`--solutions 1`)
+
+`qiskit` runtime options:
+- `algorithm=qaoa|numpy` (default: `qaoa`)
+- `fake_backend=<FakeBackendClass>` (default: `FakeManilaV2`; used by `qaoa`)
+- `shots=<int>`, `reps=<int>`, `maxiter=<int>`, `seed=<int>`, `optimization_level=<int>`
+- QAOA writes `qaoa.qasm` (OpenQASM 3) into the selected `--out` directory.
 
 `solve` multi-solution and thresholds:
 - `--solutions N` returns up to `N` best unique solutions.
@@ -154,12 +182,13 @@ Short command aliases:
 - `targets capabilities` / `targets caps`
 - `targets check` / `targets chk`
 
-Runtime/backend selection precedence:
+Runtime selection precedence:
 
-1. CLI `--runtime` and `--backend`
-2. Instance defaults in `execution.runtime` and `execution.backend`
+1. CLI `--runtime`
+2. Instance default `execution.runtime`
 
 If unresolved after precedence, `build`/`solve`/`targets check` fail with `QSOL4006`.
+Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
 
 Plugin bundle loading precedence for `targets check`/`build`/`solve`:
 

@@ -283,7 +283,6 @@ Required shape:
   },
   "execution": {
     "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1",
     "plugins": []
   }
 }
@@ -297,16 +296,36 @@ Notes:
 - For `Elem(SetName)` params, every leaf value is normalized to string and must be present in `sets.SetName`.
 - `execution` is optional and provides default target selection:
   - `execution.runtime`
-  - `execution.backend`
+- CLI backend defaults to `dimod-cqm-v1`.
+- built-in runtime ids:
+  - `local-dimod`
+  - `qiskit`
+- built-in backend ids:
+  - `dimod-cqm-v1`
 - `execution.plugins` is optional and, when present, must be an array of non-empty
   plugin specs (`module:attribute`).
-- CLI `--runtime` / `--backend` override `execution` defaults.
+- CLI `--runtime` overrides `execution.runtime`.
 - Plugin loading order for `targets check`/`build`/`solve`:
   1. built-ins
   2. installed entry points (`qsol.backends`, `qsol.runtimes`)
   3. `execution.plugins`
   4. CLI `--plugin`
 - Instance/CLI plugin specs are merged in order and deduplicated by exact string.
+
+### 8.1 Qiskit Runtime Options
+
+The built-in `qiskit` runtime is compatible with backend `dimod-cqm-v1` and supports:
+
+- `algorithm=qaoa|numpy` (default: `qaoa`)
+- `fake_backend=<FakeBackendClass>` (default: `FakeManilaV2`; used by `qaoa`)
+- `shots=<int>` (default: `1024`, QAOA only)
+- `reps=<int>` (default: `1`, QAOA only)
+- `maxiter=<int>` (default: `100`, QAOA only)
+- `seed=<int>` (optional)
+- `optimization_level=<int>` (default: `1`, QAOA transpilation)
+- `solutions`, `energy_min`, `energy_max` (same solve contract as other runtimes)
+
+When `algorithm=qaoa`, `solve` exports OpenQASM 3 to `qaoa.qasm` in the selected output directory and reports the path in `run.json` extensions.
 
 ## 9. Backend v1 Support Matrix
 
@@ -354,12 +373,13 @@ Common diagnostic codes:
 - `QSOL4003`: model or payload file read failure
 - `QSOL4004`: instance JSON load/validation failure before compilation
 - `QSOL4005`: missing expected artifacts or target outputs
-- `QSOL4006`: runtime/backend selection unresolved
+- `QSOL4006`: runtime selection unresolved
 - `QSOL4007`: unknown runtime/backend id
 - `QSOL4008`: incompatible runtime/backend pair
 - `QSOL4009`: plugin load/registration failure
 - `QSOL4010`: unsupported required capability for selected target
 - `QSOL5001`: runtime execution failure
+- `QSOL5002`: runtime policy/output contract failure
 
 CLI diagnostics are rendered in rustc-style format by default:
 
@@ -374,8 +394,8 @@ Use CLI commands progressively:
 - `inspect check` to validate semantics/types
 - `inspect lower` to inspect normalized IR
 - `targets check` to validate concrete target support on model+instance
-- `build` to export artifacts for selected runtime/backend
-- `solve` to execute selected runtime/backend
+- `build` to export artifacts for selected runtime (backend is implicit)
+- `solve` to execute selected runtime (backend is implicit)
 
 ## 11. Complete Example
 
@@ -411,7 +431,6 @@ Instance:
   },
   "execution": {
     "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1",
     "plugins": []
   }
 }
@@ -421,9 +440,9 @@ Inspect, check support, build, and solve:
 
 ```bash
 uv run qsol inspect check examples/tutorials/first_program.qsol
-uv run qsol targets check examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1
-uv run qsol build examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1 --out outdir/first_program --format qubo
-uv run qsol solve examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --backend dimod-cqm-v1 --out outdir/first_program --runtime-option sampler=exact
+uv run qsol targets check examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod
+uv run qsol build examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --out outdir/first_program --format qubo
+uv run qsol solve examples/tutorials/first_program.qsol --instance examples/tutorials/first_program.instance.json --runtime local-dimod --out outdir/first_program --runtime-option sampler=exact
 ```
 
 ## 12. Related Docs

@@ -71,6 +71,7 @@ def test_registry_loads_builtin_plugins() -> None:
 
     assert registry.backend("dimod-cqm-v1") is not None
     assert registry.runtime("local-dimod") is not None
+    assert registry.runtime("qiskit") is not None
 
 
 def test_registry_loads_module_bundle(tmp_path, monkeypatch) -> None:

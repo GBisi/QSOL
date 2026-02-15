@@ -46,6 +46,7 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     solve_help = runner.invoke(app, ["solve", "-h"])
     assert solve_help.exit_code == 0
     assert "Path to the QSOL model source file." in solve_help.stdout
+    assert "--backend" not in solve_help.stdout
     assert "--solutions" in solve_help.stdout
     assert "Number of best unique" in solve_help.stdout
     assert "solutions to return" in solve_help.stdout
@@ -53,6 +54,18 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "Inclusive minimum" in solve_help.stdout
     assert "--energy-max" in solve_help.stdout
     assert "Inclusive maximum" in solve_help.stdout
+
+    build_help = runner.invoke(app, ["build", "-h"])
+    assert build_help.exit_code == 0
+    assert "--backend" not in build_help.stdout
+
+    caps_help = runner.invoke(app, ["targets", "capabilities", "-h"])
+    assert caps_help.exit_code == 0
+    assert "--backend" not in caps_help.stdout
+
+    check_help = runner.invoke(app, ["targets", "check", "-h"])
+    assert check_help.exit_code == 0
+    assert "--backend" not in check_help.stdout
 
 
 def test_argparse_cli_help_texts_are_useful() -> None:

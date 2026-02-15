@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 from qsol.targeting.types import SupportIssue, TargetSelection
 
+DEFAULT_BACKEND_ID = "dimod-cqm-v1"
+
 
 @dataclass(slots=True)
 class SelectionResolution:
@@ -25,36 +27,14 @@ def resolve_target_selection(
     )
 
     runtime = cli_runtime or runtime_default
-    backend = cli_backend or backend_default
+    backend = cli_backend or backend_default or DEFAULT_BACKEND_ID
     plugin_specs = _merge_plugin_specs(instance_plugin_specs, cli_plugin_specs)
-    if runtime is None and backend is None:
-        issues.append(
-            SupportIssue(
-                code="QSOL4006",
-                message=(
-                    "runtime and backend are required; provide `--runtime` and `--backend` "
-                    "or set `execution.runtime` and `execution.backend` in the instance JSON"
-                ),
-                stage="resolution",
-            )
-        )
-    elif runtime is None:
+    if runtime is None:
         issues.append(
             SupportIssue(
                 code="QSOL4006",
                 message=(
                     "runtime is required; provide `--runtime` or set `execution.runtime` "
-                    "in the instance JSON"
-                ),
-                stage="resolution",
-            )
-        )
-    elif backend is None:
-        issues.append(
-            SupportIssue(
-                code="QSOL4006",
-                message=(
-                    "backend is required; provide `--backend` or set `execution.backend` "
                     "in the instance JSON"
                 ),
                 stage="resolution",

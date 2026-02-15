@@ -16,8 +16,7 @@ From repository root (`/Users/gbisi/Documents/code/qsol`):
 uv run qsol targets check \
   examples/generic_bqm/generic_bqm.qsol \
   --instance examples/generic_bqm/generic_bqm.instance.json \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
 ```
 
 ```bash
@@ -25,7 +24,6 @@ uv run qsol build \
   examples/generic_bqm/generic_bqm.qsol \
   --instance examples/generic_bqm/generic_bqm.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/generic_bqm \
   --format qubo
 ```
@@ -35,7 +33,6 @@ uv run qsol solve \
   examples/generic_bqm/generic_bqm.qsol \
   --instance examples/generic_bqm/generic_bqm.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/generic_bqm \
   --runtime-option sampler=exact
 ```

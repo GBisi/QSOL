@@ -82,8 +82,9 @@ Pipeline from source to runtime result:
 - `solve`: build + runtime execution + standardized `run.json`
 
 Selection precedence:
-1. CLI `--runtime/--backend`
-2. Instance `execution.runtime/execution.backend`
+1. CLI `--runtime`
+2. Instance `execution.runtime`
+3. Default backend `dimod-cqm-v1`
 
 ## 6. Plugin Model
 

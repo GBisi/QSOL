@@ -63,6 +63,7 @@ class StandardRunResult:
 @dataclass(slots=True)
 class RuntimeRunOptions:
     params: dict[str, object] = field(default_factory=dict)
+    outdir: str | None = None
 
 
 @dataclass(slots=True)

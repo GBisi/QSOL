@@ -160,7 +160,6 @@ Declare plugin bundles in the instance file:
 {
   "execution": {
     "runtime": "demo-runtime",
-    "backend": "dimod-cqm-v1",
     "plugins": ["my_qsol_plugins:plugin_bundle"]
   }
 }

@@ -77,6 +77,7 @@ def test_targets_list_and_capabilities_commands() -> None:
     assert "Runtimes" in list_result.stdout
     assert "Backends" in list_result.stdout
     assert "local-dimod" in list_result.stdout
+    assert "qiskit" in list_result.stdout
     assert "dimod-cqm-v1" in list_result.stdout
 
     caps_result = runner.invoke(
@@ -86,8 +87,6 @@ def test_targets_list_and_capabilities_commands() -> None:
             "caps",
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-n",
         ],
     )
@@ -115,8 +114,6 @@ def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
             str(instance),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-o",
             str(outdir),
             "-n",
@@ -225,8 +222,6 @@ def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
             str(instance),
             "-u",
             "local-dimod",
-            "-b",
-            "dimod-cqm-v1",
             "-o",
             str(outdir),
             "-f",
@@ -251,11 +246,36 @@ def test_targets_capabilities_unknown_id_error() -> None:
             "caps",
             "-u",
             "missing-runtime",
-            "-b",
-            "dimod-cqm-v1",
             "-n",
         ],
     )
 
     assert result.exit_code == 1
     assert "error[QSOL4007]" in result.stdout
+
+
+def test_targets_and_build_reject_backend_option(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    instance = tmp_path / "demo.instance.json"
+    _write_instance(instance)
+
+    runner = CliRunner()
+    invocations = [
+        ["targets", "caps", "-u", "local-dimod", "--backend", "dimod-cqm-v1"],
+        ["targets", "chk", str(model), "-i", str(instance), "--backend", "dimod-cqm-v1"],
+        [
+            "build",
+            str(model),
+            "-i",
+            str(instance),
+            "-u",
+            "local-dimod",
+            "--backend",
+            "dimod-cqm-v1",
+        ],
+    ]
+    for args in invocations:
+        result = runner.invoke(app, args)
+        assert result.exit_code != 0
+        assert "No such option: --backend" in result.output

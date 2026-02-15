@@ -6,7 +6,11 @@ from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.parse import ast
 from qsol.targeting.compatibility import check_pair_support, extract_required_capabilities
-from qsol.targeting.plugins import DimodCQMBackendPlugin, LocalDimodRuntimePlugin
+from qsol.targeting.plugins import (
+    DimodCQMBackendPlugin,
+    LocalDimodRuntimePlugin,
+    QiskitRuntimePlugin,
+)
 from qsol.targeting.types import (
     CompiledModel,
     RuntimeRunOptions,
@@ -450,5 +454,111 @@ def test_local_runtime_run_model_invalid_runtime_options_raise() -> None:
         )
     except ValueError as exc:
         assert "sampler" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_qiskit_runtime_check_support_reports_missing_optional_deps(monkeypatch) -> None:
+    runtime = QiskitRuntimePlugin()
+    model = CompiledModel(
+        kind="cqm",
+        backend_id="dimod-cqm-v1",
+        cqm=object(),
+        bqm=object(),
+        varmap={},
+    )
+    selection = TargetSelection(runtime_id="qiskit", backend_id="dimod-cqm-v1")
+    monkeypatch.setattr(
+        "qsol.targeting.plugins._probe_qiskit_core_dependencies",
+        lambda: (False, ["qiskit", "qiskit-optimization"]),
+    )
+
+    issues = runtime.check_support(model, selection=selection)
+    assert any(issue.code == "QSOL4010" for issue in issues)
+    assert any("uv sync --extra qiskit" in issue.message for issue in issues)
+
+
+def test_qiskit_runtime_run_model_uses_solver_payload(monkeypatch) -> None:
+    runtime = QiskitRuntimePlugin()
+    model = CompiledModel(
+        kind="cqm",
+        backend_id="dimod-cqm-v1",
+        cqm=object(),
+        bqm=object(),
+        varmap={"x": "X", "y": "Y"},
+    )
+    selection = TargetSelection(runtime_id="qiskit", backend_id="dimod-cqm-v1")
+    monkeypatch.setattr(
+        "qsol.targeting.plugins._probe_qiskit_core_dependencies", lambda: (True, [])
+    )
+
+    def _fake_solver(**_kwargs):
+        return type(
+            "Payload",
+            (),
+            {
+                "algorithm": "qaoa",
+                "reads": 256,
+                "solutions": [
+                    {
+                        "rank": 1,
+                        "energy": -2.0,
+                        "sample": {"x": 1, "y": 0},
+                        "selected_assignments": [{"variable": "x", "meaning": "X", "value": 1}],
+                        "probability": 0.75,
+                        "status": "SUCCESS",
+                    },
+                    {
+                        "rank": 2,
+                        "energy": -1.0,
+                        "sample": {"x": 0, "y": 1},
+                        "selected_assignments": [{"variable": "y", "meaning": "Y", "value": 1}],
+                        "probability": 0.25,
+                        "status": "SUCCESS",
+                    },
+                ],
+                "fake_backend": "FakeManilaV2",
+                "openqasm_path": "/tmp/out/qaoa.qasm",
+            },
+        )()
+
+    monkeypatch.setattr("qsol.targeting.plugins._run_qiskit_solver", _fake_solver)
+    result = runtime.run_model(
+        model,
+        selection=selection,
+        run_options=RuntimeRunOptions(
+            params={"algorithm": "qaoa", "solutions": 2}, outdir="/tmp/out"
+        ),
+    )
+
+    assert result.status == "ok"
+    assert result.energy == -2.0
+    assert result.reads == 256
+    assert result.best_sample == {"x": 1, "y": 0}
+    assert result.extensions["algorithm"] == "qaoa"
+    assert result.extensions["returned_solutions"] == 2
+    assert result.extensions["fake_backend"] == "FakeManilaV2"
+    assert result.extensions["openqasm_path"] == "/tmp/out/qaoa.qasm"
+
+
+def test_qiskit_runtime_rejects_invalid_algorithm_option() -> None:
+    runtime = QiskitRuntimePlugin()
+    model = CompiledModel(
+        kind="cqm",
+        backend_id="dimod-cqm-v1",
+        cqm=object(),
+        bqm=object(),
+        varmap={},
+    )
+    selection = TargetSelection(runtime_id="qiskit", backend_id="dimod-cqm-v1")
+
+    try:
+        runtime.run_model(
+            model,
+            selection=selection,
+            run_options=RuntimeRunOptions(params={"algorithm": "bad-algorithm"}),
+        )
+    except ValueError as exc:
+        assert "algorithm" in str(exc)
     else:
         raise AssertionError("expected ValueError")

@@ -59,8 +59,7 @@ problem WorkerAssignment {
     }
   },
   "execution": {
-    "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1"
+    "runtime": "local-dimod"
   }
 }
 ```
@@ -87,7 +86,7 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
-The second command uses `execution` defaults from the instance. Add CLI `--runtime/--backend` to override.
+The second command uses `execution.runtime` from the instance. Add CLI `--runtime` to override.
 
 ## 5. Backend-v1 Safety Checklist
 

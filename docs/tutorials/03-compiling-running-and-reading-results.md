@@ -12,12 +12,14 @@ List available targets:
 uv run qsol targets list
 ```
 
-Inspect pair capability catalogs:
+Inspect capability catalogs:
 
 ```bash
 uv run qsol targets capabilities \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
+
+uv run qsol targets capabilities \
+  --runtime qiskit
 ```
 
 ## 2. Instance File Syntax and Authoring
@@ -40,7 +42,6 @@ QSOL instance files are JSON objects with this shape:
   },
   "execution": {
     "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1",
     "plugins": []
   }
 }
@@ -52,7 +53,6 @@ Field rules:
 - `params`: optional object; required params without model defaults must be provided.
 - `execution`: optional object for target defaults and plugin bundle specs.
 - `execution.runtime`: optional runtime id.
-- `execution.backend`: optional backend id.
 - `execution.plugins`: optional array of `module:attribute` strings.
 
 Validation notes:
@@ -67,7 +67,6 @@ uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --log-level debug
 ```
@@ -81,7 +80,6 @@ uv run qsol build \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --format qubo
 ```
@@ -95,7 +93,6 @@ uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --runtime-option sampler=exact
 ```
@@ -107,11 +104,25 @@ uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program_multi \
   --runtime-option sampler=exact \
   --solutions 3 \
   --energy-max 0
+```
+
+Qiskit QAOA on a fake IBM backend (writes OpenQASM3):
+
+```bash
+uv sync --extra qiskit
+uv run qsol solve \
+  examples/tutorials/first_program.qsol \
+  --instance examples/tutorials/first_program.instance.json \
+  --runtime qiskit \
+  --out outdir/first_program_qiskit \
+  --runtime-option algorithm=qaoa \
+  --runtime-option fake_backend=FakeManilaV2 \
+  --runtime-option shots=1024 \
+  --runtime-option reps=2
 ```
 
 ## 6. Output Directory Structure (`outdir/...`)
@@ -130,6 +141,7 @@ Files by command:
 | `varmap.json` | no | yes | yes |
 | `explain.json` | no | yes | yes |
 | `run.json` | no | no | yes |
+| `qaoa.qasm` | no | no | sometimes (Qiskit runtime + `algorithm=qaoa`) |
 
 Detailed file contents:
 
@@ -166,6 +178,11 @@ Detailed file contents:
   - Runtime output contract (`schema_version`, `runtime`, `backend`, `status`, `energy`, `reads`, `best_sample`, `selected_assignments`, `timing_ms`, `capability_report_path`, `extensions`).
   - `extensions.solutions` appears when multi-solution features are requested.
   - `extensions.energy_threshold` appears when `--energy-min/--energy-max` are used.
+  - `extensions.openqasm_path` appears for Qiskit QAOA runs.
+
+- `qaoa.qasm`
+  - OpenQASM 3 circuit export for Qiskit QAOA runs.
+  - Written only when runtime is `qiskit` and `algorithm=qaoa`.
 
 Threshold behavior:
 - Threshold checks are inclusive and apply to all returned solutions.
@@ -174,12 +191,13 @@ Threshold behavior:
 
 ## 7. Selection and Plugin Precedence
 
-Runtime/backend selection order:
+Runtime selection order:
 
-1. CLI: `--runtime`, `--backend`
-2. Instance defaults: `execution.runtime`, `execution.backend`
+1. CLI: `--runtime`
+2. Instance default: `execution.runtime`
 
 If unresolved, QSOL emits `QSOL4006`.
+Backend selection is implicit for CLI workflows and defaults to `dimod-cqm-v1`.
 
 Plugin loading order for `targets check`, `build`, and `solve`:
 
@@ -195,9 +213,9 @@ Instance and CLI plugin specs are merged in order with exact-string deduplicatio
 1. `uv run qsol inspect parse model.qsol --json`
 2. `uv run qsol inspect check model.qsol`
 3. `uv run qsol inspect lower model.qsol --json`
-4. `uv run qsol targets check model.qsol -i model.instance.json --runtime <id> --backend <id>`
-5. `uv run qsol build model.qsol -i model.instance.json --runtime <id> --backend <id> -o outdir/model`
-6. `uv run qsol solve model.qsol -i model.instance.json --runtime <id> --backend <id> -o outdir/model`
+4. `uv run qsol targets check model.qsol -i model.instance.json --runtime <id>`
+5. `uv run qsol build model.qsol -i model.instance.json --runtime <id> -o outdir/model`
+6. `uv run qsol solve model.qsol -i model.instance.json --runtime <id> -o outdir/model`
 
 ## 9. Common Diagnostics
 
@@ -205,7 +223,7 @@ Instance and CLI plugin specs are merged in order with exact-string deduplicatio
 - `QSOL2101`: type/arity mismatch
 - `QSOL2201`: instance schema/shape mismatch
 - `QSOL3001`: backend unsupported language shape
-- `QSOL4006`: runtime/backend not resolved
+- `QSOL4006`: runtime not resolved
 - `QSOL4007`: unknown runtime/backend id
 - `QSOL4008`: incompatible runtime/backend pair
 - `QSOL4009`: plugin loading failure or invalid plugin config

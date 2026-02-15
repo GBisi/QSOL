@@ -1,6 +1,6 @@
 # Tutorial 1: Your First QSOL Program
 
-Goal: write and run a minimal QSOL model end to end with explicit runtime/backend targeting.
+Goal: write and run a minimal QSOL model end to end with explicit runtime targeting.
 
 ## 1. Model
 
@@ -40,8 +40,7 @@ Create `first_program.instance.json`:
     }
   },
   "execution": {
-    "runtime": "local-dimod",
-    "backend": "dimod-cqm-v1"
+    "runtime": "local-dimod"
   }
 }
 ```
@@ -77,8 +76,7 @@ uv run qsol inspect lower examples/tutorials/first_program.qsol --json
 uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
-  --runtime local-dimod \
-  --backend dimod-cqm-v1
+  --runtime local-dimod
 ```
 
 This writes `capability_report.json` and hard-fails if unsupported.
@@ -90,7 +88,6 @@ uv run qsol build \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --format qubo
 ```
@@ -111,7 +108,6 @@ uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --runtime-option sampler=exact
 ```
@@ -124,7 +120,7 @@ This also writes `run.json`.
 - `QSOL2101`: type issue (method call target/arity mismatch).
 - `QSOL2201`: instance shape mismatch.
 - `QSOL3001`: backend-lowering limitation for valid language shape.
-- `QSOL4006`: runtime/backend not resolved from CLI or `execution` defaults.
+- `QSOL4006`: runtime not resolved from CLI or `execution` defaults.
 - `QSOL4007`: unknown runtime/backend id.
 - `QSOL4008`: incompatible runtime/backend pair.
 - `QSOL4009`: plugin loading/config issue.

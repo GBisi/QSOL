@@ -15,7 +15,7 @@ These tutorials walk from first model to target-aware build/solve workflows.
    - Validate with `targets check` and run with `solve`
 
 3. `03-compiling-running-and-reading-results.md`
-   - Discover runtimes/backends with `targets list`
+   - Discover runtimes with `targets list` (backend is implicit in CLI workflows)
    - Understand `capability_report.json` and build artifacts
    - Read standardized `run.json` output
 

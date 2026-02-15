@@ -24,7 +24,6 @@ uv run qsol build \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --format qubo
 ```
@@ -34,7 +33,6 @@ uv run qsol solve \
   examples/tutorials/first_program.qsol \
   --instance examples/tutorials/first_program.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/first_program \
   --runtime-option sampler=exact
 ```
@@ -44,7 +42,6 @@ uv run qsol solve \
   examples/tutorials/assignment_balance.qsol \
   --instance examples/tutorials/assignment_balance.instance.json \
   --runtime local-dimod \
-  --backend dimod-cqm-v1 \
   --out outdir/assignment_balance \
   --runtime-option sampler=exact
 ```
@@ -68,7 +65,7 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `sets.Tasks`
   - `sets.Workers`
   - `params.Cost[worker][task]`
-  - optional `execution.runtime` / `execution.backend` defaults
+  - optional `execution.runtime` default
 
 ## Related
 

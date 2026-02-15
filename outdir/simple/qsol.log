@@ -28,3 +28,4 @@
 2026-02-15 10:57:56,713 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
 2026-02-15 11:00:44,471 | ERROR | qsol.cli | instance file not provided and default instance was not found: /private/var/folders/wq/p5kk0_8x1g92_4gnbhvd2bgc0000gn/T/pytest-of-gbisi/pytest-108/test_run_errors_when_inferred_0/simple.instance.json
 2026-02-15 11:00:44,473 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol
+2026-02-15 15:51:30,197 | ERROR | qsol.compiler.pipeline | Parse failure for golden.qsol

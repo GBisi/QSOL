@@ -28,6 +28,7 @@ from qsol.diag.reporter import DiagnosticReporter
 from qsol.diag.source import SourceText, Span
 from qsol.targeting import PluginRegistry, RuntimeRunOptions
 from qsol.targeting.compatibility import support_report_to_dict
+from qsol.targeting.resolution import DEFAULT_BACKEND_ID
 from qsol.targeting.types import StandardRunResult
 
 app = typer.Typer(
@@ -68,8 +69,8 @@ def root_callback(ctx: typer.Context) -> None:
         Panel(
             (
                 "[bold cyan]Welcome to QSOL[/bold cyan]\n\n"
-                "[white]QSOL compiles declarative models to CQM IR, checks runtime/backend "
-                "support, and runs pluggable targets.[/white]"
+                "[white]QSOL compiles declarative models to CQM IR, checks target support, "
+                "and runs pluggable runtimes.[/white]"
             ),
             title="[bold green]QSOL CLI[/bold green]",
             border_style="bright_blue",
@@ -86,24 +87,15 @@ def root_callback(ctx: typer.Context) -> None:
     )
     quickstart.add_row(
         "Check target compatibility",
-        (
-            "qsol targets check model.qsol -i model.instance.json "
-            "--runtime local-dimod --backend dimod-cqm-v1"
-        ),
+        ("qsol targets check model.qsol -i model.instance.json --runtime local-dimod"),
     )
     quickstart.add_row(
         "Build artifacts",
-        (
-            "qsol build model.qsol -i model.instance.json "
-            "--runtime local-dimod --backend dimod-cqm-v1 -o outdir/model"
-        ),
+        ("qsol build model.qsol -i model.instance.json --runtime local-dimod -o outdir/model"),
     )
     quickstart.add_row(
         "Solve",
-        (
-            "qsol solve model.qsol -i model.instance.json "
-            "--runtime local-dimod --backend dimod-cqm-v1"
-        ),
+        ("qsol solve model.qsol -i model.instance.json --runtime local-dimod"),
     )
     console.print(quickstart)
     console.print("[dim]Use `qsol -h` for full command help.[/dim]")
@@ -463,7 +455,6 @@ def targets_list(
 @targets_app.command("capabilities", help="Show capability catalogs and pair compatibility.")
 def targets_capabilities(
     runtime: str = typer.Option(..., "--runtime", "-u", help="Runtime plugin identifier."),
-    backend: str = typer.Option(..., "--backend", "-b", help="Backend plugin identifier."),
     plugin: list[str] = typer.Option(
         [],
         "--plugin",
@@ -491,7 +482,7 @@ def targets_capabilities(
         raise typer.Exit(code=1) from None
 
     runtime_plugin = registry.runtime(runtime)
-    backend_plugin = registry.backend(backend)
+    backend_plugin = registry.backend(DEFAULT_BACKEND_ID)
     diagnostics: list[Diagnostic] = []
     if runtime_plugin is None:
         diagnostics.append(
@@ -499,7 +490,11 @@ def targets_capabilities(
         )
     if backend_plugin is None:
         diagnostics.append(
-            _diag(Path("<cli>"), code="QSOL4007", message=f"unknown backend id: `{backend}`")
+            _diag(
+                Path("<cli>"),
+                code="QSOL4007",
+                message=f"unknown backend id: `{DEFAULT_BACKEND_ID}`",
+            )
         )
     if diagnostics:
         _print_diags(console, None, diagnostics)
@@ -570,7 +565,6 @@ def targets_check(
         help="Output directory for capability_report.json and qsol.log.",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
-    backend: str | None = typer.Option(None, "--backend", "-b", help="Backend plugin identifier."),
     plugin: list[str] = typer.Option(
         [],
         "--plugin",
@@ -601,7 +595,6 @@ def targets_check(
             filename=str(file),
             instance_path=str(resolved_instance),
             runtime_id=runtime,
-            backend_id=backend,
             plugin_specs=tuple(plugin),
         ),
     )
@@ -626,7 +619,7 @@ def targets_check(
     )
     summary.add_row(
         "Backend",
-        unit.target_selection.backend_id if unit.target_selection else backend or "<unresolved>",
+        unit.target_selection.backend_id if unit.target_selection else DEFAULT_BACKEND_ID,
     )
     summary.add_row(
         "Capability Report", str(report_path) if report_path is not None else "<not-written>"
@@ -659,7 +652,6 @@ def build_cmd(
         help="Export format for objective payload: qubo, ising, bqm, or cqm.",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
-    backend: str | None = typer.Option(None, "--backend", "-b", help="Backend plugin identifier."),
     plugin: list[str] = typer.Option(
         [],
         "--plugin",
@@ -692,7 +684,6 @@ def build_cmd(
             outdir=str(resolved_outdir),
             output_format=output_format,
             runtime_id=runtime,
-            backend_id=backend,
             plugin_specs=tuple(plugin),
         ),
     )
@@ -746,7 +737,6 @@ def solve_cmd(
         help="Export format for objective payload: qubo, ising, bqm, or cqm.",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
-    backend: str | None = typer.Option(None, "--backend", "-b", help="Backend plugin identifier."),
     plugin: list[str] = typer.Option(
         [],
         "--plugin",
@@ -861,10 +851,9 @@ def solve_cmd(
             outdir=str(resolved_outdir),
             output_format=output_format,
             runtime_id=runtime,
-            backend_id=backend,
             plugin_specs=tuple(plugin),
         ),
-        run_options=RuntimeRunOptions(params=runtime_params),
+        run_options=RuntimeRunOptions(params=runtime_params, outdir=str(resolved_outdir)),
     )
     source = SourceText(text, str(file))
     has_errors = _print_diags(console, source, unit.diagnostics)
