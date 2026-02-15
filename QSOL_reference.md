@@ -160,6 +160,37 @@ Rules:
 - Import loading is recursive with stable de-duplication and cycle detection
 - Imported modules may contain only `use`, `unknown`, `predicate`, and `function` top-level items (`problem` blocks are rejected in imported modules)
 
+Import semantics:
+- `use` imports all top-level `unknown`, `predicate`, and `function` declarations from the target module.
+- Importing is transitive: if module `A` uses module `B`, `A`'s importer also sees `B`'s exported top-level declarations.
+- There is no selective import syntax in this release (no `only` list and no import aliasing).
+- Imported and local top-level names share one global namespace:
+  - duplicate `unknown` names produce `QSOL2002` (duplicate declaration),
+  - duplicate top-level macro names across `predicate`/`function` produce `QSOL2101` (redefinition of macro).
+
+Example:
+
+```qsol
+// mylib/custom_types.qsol
+unknown ExactSubset(X, k) {
+  rep { inner : Subset(X); }
+  laws { must count(x in X where inner.has(x)) = k; }
+  view { predicate has(x: Elem(X)): Bool = inner.has(x); }
+}
+predicate exactly_k(k: Real, terms: Comp(Real)): Bool = terms = k;
+function indicator(b: Bool): Real = if b then 1 else 0;
+
+// model.qsol
+use mylib.custom_types;
+
+problem Demo {
+  set A;
+  find S : ExactSubset(A, 3);
+  must exactly_k(3, indicator(S.has(x)) for x in A);
+  maximize 0;
+}
+```
+
 ## 5. Declarations
 
 ### 5.1 Sets
