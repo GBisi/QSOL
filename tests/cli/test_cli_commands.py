@@ -30,7 +30,7 @@ def _write_instance(path: Path) -> None:
     )
 
 
-def test_parse_check_lower_and_compile_commands(tmp_path: Path) -> None:
+def test_compile_stage_flags_and_compile_command(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)
     instance = tmp_path / "demo.instance.json"
@@ -38,15 +38,15 @@ def test_parse_check_lower_and_compile_commands(tmp_path: Path) -> None:
     outdir = tmp_path / "out"
     runner = CliRunner()
 
-    parse_result = runner.invoke(app, ["parse", str(model), "--json", "--no-color"])
+    parse_result = runner.invoke(app, ["compile", str(model), "--parse", "--json", "--no-color"])
     assert parse_result.exit_code == 0
     assert '"name": "Demo"' in parse_result.stdout
 
-    check_result = runner.invoke(app, ["check", str(model), "--no-color"])
+    check_result = runner.invoke(app, ["compile", str(model), "--check", "--no-color"])
     assert check_result.exit_code == 0
     assert "No diagnostics." in check_result.stdout
 
-    lower_result = runner.invoke(app, ["lower", str(model), "--json", "--no-color"])
+    lower_result = runner.invoke(app, ["compile", str(model), "--lower", "--json", "--no-color"])
     assert lower_result.exit_code == 0
     assert '"problems"' in lower_result.stdout
 
@@ -107,9 +107,25 @@ def test_run_command_simulated_annealing_branch(tmp_path: Path) -> None:
     assert payload["seed"] == 7
 
 
-def test_parse_reports_error_for_invalid_input(tmp_path: Path) -> None:
+def test_compile_parse_flag_reports_error_for_invalid_input(tmp_path: Path) -> None:
     invalid = tmp_path / "bad.qsol"
     invalid.write_text("problem P { set A find S : Subset(A); }", encoding="utf-8")
     runner = CliRunner()
-    result = runner.invoke(app, ["parse", str(invalid), "--no-color"])
+    result = runner.invoke(app, ["compile", str(invalid), "--parse", "--no-color"])
     assert result.exit_code == 1
+
+
+def test_compile_stage_flags_are_mutually_exclusive(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    runner = CliRunner()
+    result = runner.invoke(app, ["compile", str(model), "--parse", "--check"])
+    assert result.exit_code != 0
+
+
+def test_compile_json_requires_parse_or_lower_flag(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    runner = CliRunner()
+    result = runner.invoke(app, ["compile", str(model), "--check", "--json"])
+    assert result.exit_code != 0

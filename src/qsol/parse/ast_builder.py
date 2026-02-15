@@ -394,13 +394,31 @@ class ASTBuilder:
 
         if data == "comp_count":
             var_ref = self._name(c[0])
-            count_var = self._name(c[1])
-            count_domain = self._name(c[2])
+            count_var = var_ref
+            count_domain = ""
+            count_tail_idx: int | None = None
+
+            if len(c) == 2:
+                count_domain = self._name(c[1])
+            elif len(c) == 3 and isinstance(c[2], Tree):
+                count_domain = self._name(c[1])
+                count_tail_idx = 2
+            elif len(c) == 3:
+                count_var = self._name(c[1])
+                count_domain = self._name(c[2])
+            elif len(c) == 4:
+                count_var = self._name(c[1])
+                count_domain = self._name(c[2])
+                count_tail_idx = 3
+            else:
+                raise TypeError("invalid count comprehension shape")
+
             count_where: ast.BoolExpr | None = None
             count_else_term: ast.BoolExpr | None = None
-            if len(c) == 4:
+            if count_tail_idx is not None:
                 count_where, count_else_term = cast(
-                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[3])
+                    tuple[ast.BoolExpr | None, ast.BoolExpr | None],
+                    self._from_tree(c[count_tail_idx]),
                 )
             return ast.CountComprehension(
                 span=self._span(node),
@@ -415,22 +433,20 @@ class ASTBuilder:
             tail_num_where: ast.BoolExpr | None = None
             tail_num_else: ast.NumExpr | None = None
             for ch in c:
-                val = self._from_tree(ch)
-                if isinstance(val, ast.BoolExpr):
-                    tail_num_where = val
-                elif isinstance(val, ast.NumExpr):
-                    tail_num_else = val
+                if isinstance(ch, Tree) and ch.data == "where_clause":
+                    tail_num_where = cast(ast.BoolExpr, self._from_tree(ch))
+                elif isinstance(ch, Tree) and ch.data == "else_clause_num":
+                    tail_num_else = cast(ast.NumExpr, self._from_tree(ch))
             return tail_num_where, tail_num_else
 
         if data == "comp_tail_bool":
             tail_bool_where: ast.BoolExpr | None = None
             tail_bool_else: ast.BoolExpr | None = None
             for ch in c:
-                val = self._from_tree(ch)
-                if isinstance(val, ast.BoolExpr) and tail_bool_where is None:
-                    tail_bool_where = val
-                elif isinstance(val, ast.BoolExpr):
-                    tail_bool_else = val
+                if isinstance(ch, Tree) and ch.data == "where_clause":
+                    tail_bool_where = cast(ast.BoolExpr, self._from_tree(ch))
+                elif isinstance(ch, Tree) and ch.data == "else_clause_bool":
+                    tail_bool_else = cast(ast.BoolExpr, self._from_tree(ch))
             return tail_bool_where, tail_bool_else
 
         if data == "where_clause":

@@ -32,7 +32,7 @@ problem GenericBQM {
   find X : Subset(Vars);
 
   minimize
-    C[]
+    C
     + sum(if X.has(v) then L[v] else 0 for v in Vars)
     + sum(
         sum(

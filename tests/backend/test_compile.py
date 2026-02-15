@@ -285,3 +285,210 @@ problem SizeFold {
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
     assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:
+    source = """
+problem ScalarBare {
+  set A;
+  param C : Real;
+  param Flag : Bool;
+  find S : Subset(A);
+
+  must Flag;
+  minimize C;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "problem": "ScalarBare",
+                "sets": {"A": ["a1", "a2"]},
+                "params": {"C": 3.5, "Flag": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="scalar_bare.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_bare_scalar_elem_param_in_method_arg(tmp_path: Path) -> None:
+    source = """
+problem ScalarElemArg {
+  set V;
+  param Start : Elem(V);
+  find S : Subset(V);
+
+  must S.has(Start);
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps(
+            {
+                "problem": "ScalarElemArg",
+                "sets": {"V": ["v1", "v2"]},
+                "params": {"Start": "v1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="scalar_elem_arg.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_hard_not_equal_constraint(tmp_path: Path) -> None:
+    source = """
+problem HardNotEqual {
+  set A;
+  find S : Subset(A);
+  must sum(if S.has(x) then 1 else 0 for x in A) != 1;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps({"problem": "HardNotEqual", "sets": {"A": ["a1", "a2"]}, "params": {}}),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="hard_not_equal.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_treats_should_false_as_soft_only(tmp_path: Path) -> None:
+    source = """
+problem SoftOnlyShould {
+  set A;
+  find S : Subset(A);
+  should false;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps({"problem": "SoftOnlyShould", "sets": {"A": ["a1"]}, "params": {}}),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="soft_only_should.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_soft_not_equal_constraint(tmp_path: Path) -> None:
+    source = """
+problem SoftNotEqual {
+  set A;
+  find S : Subset(A);
+  should sum(if S.has(x) then 1 else 0 for x in A) != 1;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps({"problem": "SoftNotEqual", "sets": {"A": ["a1", "a2"]}, "params": {}}),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="soft_not_equal.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_reports_infeasible_hard_not_equal_constant(tmp_path: Path) -> None:
+    source = """
+problem InfeasibleHardNotEqual {
+  set A;
+  find S : Subset(A);
+  must 1 != 1;
+  minimize 0;
+}
+"""
+    instance_path = tmp_path / "instance.json"
+    instance_path.write_text(
+        json.dumps({"problem": "InfeasibleHardNotEqual", "sets": {"A": ["a1"]}, "params": {}}),
+        encoding="utf-8",
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="infeasible_hard_not_equal.qsol",
+            instance_path=str(instance_path),
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert any(diag.is_error for diag in unit.diagnostics)
+    assert any(diag.message == "infeasible constant constraint `=`" for diag in unit.diagnostics)

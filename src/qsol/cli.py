@@ -41,6 +41,12 @@ class LogLevel(str, Enum):
     error = "error"
 
 
+class CompileInspectMode(str, Enum):
+    parse = "parse"
+    check = "check"
+    lower_ = "lower"
+
+
 @app.callback(invoke_without_command=True)
 def root_callback(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
@@ -219,81 +225,28 @@ def _sample_sa(bqm: dimod.BinaryQuadraticModel, sample_kwargs: dict[str, Any]) -
     sampler_ctor = cast(Callable[[], Any], dimod.SimulatedAnnealingSampler)
     sampler = sampler_ctor()
     sample_fn = cast(Callable[..., Any], sampler.sample)
+    supported_params = set(getattr(sampler, "parameters", {}).keys())
+    if supported_params:
+        filtered_kwargs = {k: v for k, v in sample_kwargs.items() if k in supported_params}
+        dropped = sorted(set(sample_kwargs) - set(filtered_kwargs))
+        if dropped:
+            LOGGER.debug("Ignoring unsupported simulated annealing kwargs: %s", ", ".join(dropped))
+        return sample_fn(bqm, **filtered_kwargs)
     return sample_fn(bqm, **sample_kwargs)
-
-
-@app.command("parse")
-def parse_cmd(
-    file: Path,
-    json_out: bool = typer.Option(False, "--json", "-j", help="Print JSON AST"),
-    no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
-    log_level: LogLevel = typer.Option(LogLevel.info, "--log-level", "-l", help="Log level"),
-) -> None:
-    _configure_logging(log_level)
-    LOGGER.info("Running parse on %s", file)
-
-    console = Console(no_color=no_color)
-    text = _read_file(file)
-    unit = compile_source(text, options=CompileOptions(filename=str(file)))
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
-    if has_errors or unit.ast is None:
-        raise typer.Exit(code=1)
-
-    if json_out:
-        console.print(json.dumps(_to_jsonable(unit.ast), indent=2, sort_keys=True))
-    else:
-        console.print(Pretty(unit.ast))
-
-
-@app.command("check")
-def check_cmd(
-    file: Path,
-    no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
-    log_level: LogLevel = typer.Option(LogLevel.info, "--log-level", "-l", help="Log level"),
-) -> None:
-    _configure_logging(log_level)
-    LOGGER.info("Running check on %s", file)
-
-    console = Console(no_color=no_color)
-    text = _read_file(file)
-    unit = compile_source(text, options=CompileOptions(filename=str(file)))
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
-    if not unit.diagnostics:
-        LOGGER.info("No diagnostics emitted")
-        console.print("No diagnostics.")
-    if has_errors:
-        raise typer.Exit(code=1)
-
-
-@app.command("lower")
-def lower_cmd(
-    file: Path,
-    json_out: bool = typer.Option(False, "--json", "-j", help="Print JSON Kernel IR"),
-    no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
-    log_level: LogLevel = typer.Option(LogLevel.info, "--log-level", "-l", help="Log level"),
-) -> None:
-    _configure_logging(log_level)
-    LOGGER.info("Running lower on %s", file)
-
-    console = Console(no_color=no_color)
-    text = _read_file(file)
-    unit = compile_source(text, options=CompileOptions(filename=str(file)))
-    source = SourceText(text, str(file))
-    has_errors = _print_diags(console, source, unit.diagnostics)
-    if has_errors or unit.lowered_ir_symbolic is None:
-        raise typer.Exit(code=1)
-
-    if json_out:
-        console.print(json.dumps(_to_jsonable(unit.lowered_ir_symbolic), indent=2, sort_keys=True))
-    else:
-        console.print(Pretty(unit.lowered_ir_symbolic))
 
 
 @app.command("compile")
 def compile_cmd(
     file: Path,
+    parse: bool = typer.Option(False, "--parse", help="Run parse stage only"),
+    check: bool = typer.Option(False, "--check", help="Run semantic checks only"),
+    lower: bool = typer.Option(False, "--lower", help="Run lowering stage only"),
+    json_out: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Print JSON output in --parse/--lower modes",
+    ),
     instance: Path | None = typer.Option(None, "--instance", "-i", help="Instance JSON file"),
     out: Path | None = typer.Option(None, "--out", "-o", help="Output directory"),
     output_format: str = typer.Option("qubo", "--format", "-f", help="qubo|ising|bqm|cqm"),
@@ -301,33 +254,93 @@ def compile_cmd(
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
     log_level: LogLevel = typer.Option(LogLevel.info, "--log-level", "-l", help="Log level"),
 ) -> None:
-    resolved_outdir = _resolve_outdir(file, out)
-    _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
+    selected_modes = [
+        mode
+        for mode, enabled in (
+            (CompileInspectMode.parse, parse),
+            (CompileInspectMode.check, check),
+            (CompileInspectMode.lower_, lower),
+        )
+        if enabled
+    ]
+    if len(selected_modes) > 1:
+        raise typer.BadParameter("choose only one of --parse, --check, or --lower")
 
-    resolved_instance = _resolve_instance_path(file, instance)
-    LOGGER.info("Running compile on %s", file)
-    LOGGER.debug(
-        "Compile options: instance=%s outdir=%s format=%s",
-        resolved_instance,
-        resolved_outdir,
-        output_format,
-    )
+    inspect_mode = selected_modes[0] if selected_modes else None
+    if json_out and inspect_mode not in (CompileInspectMode.parse, CompileInspectMode.lower_):
+        raise typer.BadParameter("--json is only valid with --parse or --lower")
+
+    resolved_outdir: Path | None = None
+    if inspect_mode is None:
+        resolved_outdir = _resolve_outdir(file, out)
+        _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
+    else:
+        _configure_logging(log_level)
+
+    if inspect_mode == CompileInspectMode.parse:
+        LOGGER.info("Running parse via compile on %s", file)
+    elif inspect_mode == CompileInspectMode.check:
+        LOGGER.info("Running check via compile on %s", file)
+    elif inspect_mode == CompileInspectMode.lower_:
+        LOGGER.info("Running lower via compile on %s", file)
+    else:
+        LOGGER.info("Running compile on %s", file)
 
     console = Console(no_color=no_color)
     text = _read_file(file)
-    unit = compile_source(
-        text,
-        options=CompileOptions(
-            filename=str(file),
-            instance_path=str(resolved_instance),
-            outdir=str(resolved_outdir),
-            output_format=output_format,
-            verbose=verbose,
-        ),
-    )
+    if inspect_mode is None:
+        resolved_instance = _resolve_instance_path(file, instance)
+        LOGGER.debug(
+            "Compile options: instance=%s outdir=%s format=%s",
+            resolved_instance,
+            resolved_outdir,
+            output_format,
+        )
+        unit = compile_source(
+            text,
+            options=CompileOptions(
+                filename=str(file),
+                instance_path=str(resolved_instance),
+                outdir=str(resolved_outdir),
+                output_format=output_format,
+                verbose=verbose,
+            ),
+        )
+    else:
+        unit = compile_source(text, options=CompileOptions(filename=str(file)))
+
     source = SourceText(text, str(file))
     has_errors = _print_diags(console, source, unit.diagnostics)
-    if has_errors or unit.artifacts is None:
+
+    if inspect_mode == CompileInspectMode.parse:
+        if has_errors or unit.ast is None:
+            raise typer.Exit(code=1)
+        if json_out:
+            console.print(json.dumps(_to_jsonable(unit.ast), indent=2, sort_keys=True))
+        else:
+            console.print(Pretty(unit.ast))
+        return
+
+    if inspect_mode == CompileInspectMode.check:
+        if not unit.diagnostics:
+            LOGGER.info("No diagnostics emitted")
+            console.print("No diagnostics.")
+        if has_errors:
+            raise typer.Exit(code=1)
+        return
+
+    if inspect_mode == CompileInspectMode.lower_:
+        if has_errors or unit.lowered_ir_symbolic is None:
+            raise typer.Exit(code=1)
+        if json_out:
+            console.print(
+                json.dumps(_to_jsonable(unit.lowered_ir_symbolic), indent=2, sort_keys=True)
+            )
+        else:
+            console.print(Pretty(unit.lowered_ir_symbolic))
+        return
+
+    if has_errors or unit.artifacts is None or resolved_outdir is None:
         raise typer.Exit(code=1)
 
     table = Table(title="Compilation Artifacts")

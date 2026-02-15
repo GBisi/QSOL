@@ -381,6 +381,9 @@ def test_dimod_codegen_covers_soft_and_compare_paths() -> None:
     assert any(
         "unsupported" in d.message or "not supported" in d.message for d in result.diagnostics
     )
+    assert not any(
+        d.message == "`!=` constraints are not supported in backend v1" for d in result.diagnostics
+    )
     assert any(key.startswith("S.has[") for key in result.varmap)
     assert any(key.startswith("M.is[") for key in result.varmap)
 
@@ -450,7 +453,7 @@ def test_dimod_codegen_internal_error_paths() -> None:
         is None
     )
 
-    # Unsupported objective and unsupported soft-constraint paths in compile().
+    # Unsupported objective path in compile().
     bad_problem = ir.GroundProblem(
         span=span,
         name="Bad",
@@ -494,6 +497,10 @@ def test_dimod_codegen_internal_error_paths() -> None:
     )
     compile_result = codegen.compile(ir.GroundIR(span=span, problems=(bad_problem,)))
     assert compile_result.diagnostics
+    assert not any(
+        d.message == "`!=` constraints are not supported in backend v1"
+        for d in compile_result.diagnostics
+    )
 
     # Mapping declaration with missing set.
     cqm = dimod.ConstrainedQuadraticModel()
@@ -657,3 +664,54 @@ def test_dimod_codegen_bool_ops_fallback_when_product_is_not_quadratic_safe() ->
     assert len(cqm.constraints) == constraints_before + 3
     assert any(str(label).startswith("aux:or:") for label in fallback_or.variables)
     assert not any(diag.is_error for diag in diagnostics)
+
+
+def test_dimod_codegen_treats_should_false_as_soft_only() -> None:
+    span = _span()
+    problem = ir.GroundProblem(
+        span=span,
+        name="SoftOnly",
+        set_values={"A": ["a1"]},
+        params={},
+        finds=(_subset_find("S", "A"),),
+        constraints=(
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.SHOULD,
+                expr=ir.KBoolLit(span=span, value=False),
+            ),
+        ),
+        objectives=(),
+    )
+
+    result = DimodCodegen().compile(ir.GroundIR(span=span, problems=(problem,)))
+    assert not any(diag.is_error for diag in result.diagnostics)
+    assert len(result.cqm.constraints) == 0
+
+
+def test_dimod_codegen_reports_infeasible_constant_hard_not_equal() -> None:
+    span = _span()
+    problem = ir.GroundProblem(
+        span=span,
+        name="HardNotEqualInfeasible",
+        set_values={"A": ["a1"]},
+        params={},
+        finds=(_subset_find("S", "A"),),
+        constraints=(
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.MUST,
+                expr=ir.KCompare(
+                    span=span,
+                    op="!=",
+                    left=ir.KNumLit(span=span, value=1.0),
+                    right=ir.KNumLit(span=span, value=1.0),
+                ),
+            ),
+        ),
+        objectives=(),
+    )
+
+    result = DimodCodegen().compile(ir.GroundIR(span=span, problems=(problem,)))
+    assert any(diag.is_error for diag in result.diagnostics)
+    assert any(diag.message == "infeasible constant constraint `=`" for diag in result.diagnostics)

@@ -84,19 +84,19 @@ When something fails, use this order:
 1. Syntax stage:
 
 ```bash
-uv run qsol parse model.qsol --json
+uv run qsol compile model.qsol --parse --json
 ```
 
 2. Semantic/type stage:
 
 ```bash
-uv run qsol check model.qsol
+uv run qsol compile model.qsol --check
 ```
 
 3. Lowering stage:
 
 ```bash
-uv run qsol lower model.qsol --json
+uv run qsol compile model.qsol --lower --json
 ```
 
 4. Backend stage:

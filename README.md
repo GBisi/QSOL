@@ -17,10 +17,14 @@ Implemented and stable:
 - Desugaring for guards and aggregate sugar (`if`, `where`, `else`, `count`, `any`, `all`)
 - Symbolic and grounded IR
 - dimod backend for core patterns
-- CLI workflows: `parse`, `check`, `lower`, `compile`, `run`
+- CLI workflows: `compile`, `run`
 
 Important limitation:
 - The grammar/type system accepts more forms than backend v1 can encode. Unsupported codegen shapes are reported as `QSOL3001` during `compile`/`run`.
+
+Backend behavior note:
+- `must` constraints enforce hard feasibility; `should` and `nice` are soft-only weighted penalties.
+- Hard `!=` comparisons are supported for backend-supported numeric expressions using the same `1e-6` tolerance band policy as boolean-context comparisons.
 
 ## Install
 
@@ -53,17 +57,15 @@ uv run qsol run \
 Inspect syntax/semantics quickly:
 
 ```bash
-uv run qsol parse examples/qubo/bounded_max_cut.qsol --json
-uv run qsol check examples/qubo/bounded_max_cut.qsol
-uv run qsol lower examples/qubo/bounded_max_cut.qsol --json
+uv run qsol compile examples/qubo/bounded_max_cut.qsol --parse --json
+uv run qsol compile examples/qubo/bounded_max_cut.qsol --check
+uv run qsol compile examples/qubo/bounded_max_cut.qsol --lower --json
 ```
 
 ## CLI Reference
 
 ```bash
-uv run qsol parse <model.qsol> [--json]
-uv run qsol check <model.qsol>
-uv run qsol lower <model.qsol> [--json]
+uv run qsol compile <model.qsol> [--parse|--check|--lower] [--json]
 uv run qsol compile <model.qsol> [-i <instance.json>] [-o <outdir>] [-f qubo|ising]
 uv run qsol run <model.qsol> [-i <instance.json>] [-o <outdir>] [-s exact|simulated-annealing]
 ```
@@ -106,12 +108,13 @@ Rules enforced by instantiation:
 
 ## Documentation
 
+- Vision and design principles: `VISION.md`
 - Language reference: `QSOL_reference.md`
 - Syntax guide: `docs/QSOL_SYNTAX.md`
 - Tutorials: `docs/tutorials/README.md`
 - Codebase guide: `docs/CODEBASE.md`
 - Tutorial model files: `examples/tutorials/README.md`
-- Example models: `examples/qubo/README.md`
+- Example models: `examples/generic_bqm/`, `examples/min_bisection/`, `examples/partition_equal_sum/`
 - VS Code syntax extension: `editors/vscode-qsol/README.md`
 
 ## Python API

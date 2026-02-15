@@ -93,3 +93,62 @@ problem P {
     program = parse_to_ast(text, filename="size_builtin.qsol")
     assert len(program.items) == 1
     assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_bare_scalar_bool_param_in_constraint() -> None:
+    text = """
+problem P {
+  param Flag : Bool;
+  must Flag;
+}
+"""
+    program = parse_to_ast(text, filename="bare_scalar_bool.qsol")
+    assert len(program.items) == 1
+    assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_rejects_numeric_indexed_param_paren_style() -> None:
+    text = """
+problem P {
+  set A;
+  param Cost[A] : Real;
+  find S : Subset(A);
+  minimize sum(if S.has(x) then Cost(x) else 0 for x in A);
+}
+"""
+    try:
+        parse_to_ast(text, filename="indexed_param_paren_bad.qsol")
+    except ParseFailure as exc:
+        assert exc.diagnostic.code == "QSOL1001"
+    else:
+        raise AssertionError("expected parse failure")
+
+
+def test_parse_count_shorthand_forms() -> None:
+    text = """
+problem P {
+  set X;
+  find S : Subset(X);
+  minimize count(x in X) + count(x in X where S.has(x));
+}
+"""
+    program = parse_to_ast(text, filename="count_shorthand.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    objective = problem.stmts[2]
+    assert isinstance(objective, ast.Objective)
+    assert isinstance(objective.expr, ast.Add)
+    lhs = objective.expr.left
+    rhs = objective.expr.right
+    assert isinstance(lhs, ast.NumAggregate)
+    assert isinstance(lhs.comp, ast.CountComprehension)
+    assert lhs.comp.var_ref == "x"
+    assert lhs.comp.var == "x"
+    assert lhs.comp.domain_set == "X"
+    assert lhs.comp.where is None
+    assert isinstance(rhs, ast.NumAggregate)
+    assert isinstance(rhs.comp, ast.CountComprehension)
+    assert rhs.comp.var_ref == "x"
+    assert rhs.comp.var == "x"
+    assert rhs.comp.domain_set == "X"
+    assert rhs.comp.where is not None

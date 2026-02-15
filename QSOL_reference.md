@@ -74,9 +74,10 @@ Default values:
 - `Elem(SetName)` params do not support defaults.
 
 Reading params in expressions:
-- Indexed params can be read as `Cost[w, t]` or `Cost(w, t)`.
+- Indexed params can be read as `Cost[w, t]` (bracket syntax).
 - Set-valued params can be used as set elements (for example `Pick.has(StartNode[t])`).
-- Scalar params are currently limited in numeric expression lowering; prefer literals or indexed params in backend-v1-safe models.
+- Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
+- Scalar call/index forms such as `C[]` and `Flag()` are rejected with `QSOL2101`.
 - `size(SetName)` returns set cardinality and is constant-folded after instance loading.
 
 ### 3.3 Unknowns
@@ -139,8 +140,8 @@ Operators and forms:
 - aggregates: `sum(...)`, `count(...)`
 - builtin set cardinality: `size(SetName)` (numeric)
 - parameter access:
-  - call style: `Cost(i,j)`
-  - index style: `Cost[i,j]` (numeric expression form)
+  - indexed style: `Cost[i,j]` (numeric indexed params)
+  - scalar style: `C` (bare scalar params)
 
 ### 4.3 Operator Precedence (high to low)
 
@@ -182,6 +183,8 @@ sum(expr for x in X where cond else alt)
 
 count(x for x in X)
 count(x for x in X where cond)
+count(x in X)
+count(x in X where cond)
 ```
 
 #### Boolean aggregates
@@ -244,6 +247,7 @@ Desugaring is applied before lowering/codegen.
 ### 7.2 `count`
 
 - `count(x for x in X where c)` -> `sum(1 for x in X where c)`
+- `count(x in X where c)` -> `sum(1 for x in X where c)`
 
 ### 7.3 `sum` with filters
 
@@ -294,23 +298,21 @@ The language accepted by parser/typechecker is broader than backend v1 codegen.
 ### 9.1 Fully supported (safe patterns)
 
 - `find` with `Subset` and `Mapping`
-- hard numeric comparisons (`=`, `<`, `<=`, `>`, `>=`) where both sides lower to numeric backend expressions
+- hard numeric comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`) where both sides lower to numeric backend expressions
 - boolean-context comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`) are supported in objectives/soft expressions via indicator encoding
 - hard constraints as conjunctions of supported atoms/comparisons
 - hard `not <atom>`
 - hard implications where both sides are atom-like
 - `sum`, arithmetic, `if-then-else`, numeric param lookups
-- soft constraints (`should`, `nice`) over bool formulas built from atom-like terms and boolean operators
+- soft constraints (`should`, `nice`) over bool formulas built from atom-like terms and boolean operators; these are soft-only and do not add hard feasibility constraints
 - objectives over supported numeric expressions
 
 ### 9.2 Known unsupported/partial areas
 
-- `!=` in hard constraints (`must`/`should`/`nice` comparisons lowered as direct constraints)
 - custom unknown kinds in `find` (user-defined unknown instantiation)
 - many template-style function calls (for example `exactly_one(...)`) are not backend primitives in v1
 - some boolean expression shapes may parse/typecheck but fail backend lowering with `QSOL3001`
 - backend quantifier handling is expansion-based; use quantified forms carefully and verify generated behavior on your problem
-- scalar params in numeric expressions are not consistently supported across all stages yet
 
 Compare tolerance notes:
 - Boolean-context compare encoding uses a fixed epsilon `1e-6`.
@@ -333,9 +335,9 @@ Common diagnostic codes:
 - `QSOL3001`: unsupported backend shape or validation/backend limitation
 
 Use CLI commands progressively:
-- `parse` to validate syntax
-- `check` to validate semantics/types
-- `lower` to inspect normalized IR
+- `compile --parse` to validate syntax
+- `compile --check` to validate semantics/types
+- `compile --lower` to inspect normalized IR
 - `compile` to validate backend support on concrete instances
 
 ## 11. Complete Example

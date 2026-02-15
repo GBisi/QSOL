@@ -20,7 +20,7 @@ The pipeline entrypoint is `qsol.compiler.pipeline.compile_source`.
 
 ## 2. Directory Map
 
-- `src/qsol/cli.py`: Typer CLI (`parse`, `check`, `lower`, `compile`, `run`)
+- `src/qsol/cli.py`: Typer CLI (`compile`, `run`)
 - `src/qsol/compiler/`: compile options + pipeline orchestration
 - `src/qsol/parse/`: grammar, parser, AST, AST builder
 - `src/qsol/sema/`: symbol resolution, type checking, static validation
@@ -65,23 +65,23 @@ All AST nodes carry a `Span` for diagnostics.
 
 ## 4. Command Flow
 
-### 4.1 `parse`
+### 4.1 `compile --parse`
 
 - Reads file
 - Runs `compile_source` without instance/outdir
 - Prints AST (pretty or JSON)
 
-### 4.2 `check`
+### 4.2 `compile --check`
 
 - Same pipeline stage range as `parse`
 - Prints diagnostics only
 
-### 4.3 `lower`
+### 4.3 `compile --lower`
 
 - Runs through desugaring/lowering
 - Prints symbolic kernel IR
 
-### 4.4 `compile`
+### 4.4 `compile` (full backend build)
 
 - Resolves instance path + output directory
 - Runs full pipeline with instance and codegen
@@ -152,9 +152,9 @@ uv run pytest
 
 ## 9. Practical Debugging Workflow
 
-1. `uv run qsol parse model.qsol --json`
-2. `uv run qsol check model.qsol`
-3. `uv run qsol lower model.qsol --json`
+1. `uv run qsol compile model.qsol --parse --json`
+2. `uv run qsol compile model.qsol --check`
+3. `uv run qsol compile model.qsol --lower --json`
 4. `uv run qsol compile model.qsol -i instance.json -o outdir/model --log-level debug`
 5. Inspect `outdir/model/explain.json` and `outdir/model/qsol.log`
 

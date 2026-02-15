@@ -62,10 +62,11 @@ param StartNode[Tasks] : Elem(Workers);
 ```
 
 Usage notes:
-- Indexed params can be referenced as `Cost[w, t]` or `Cost(w, t)`.
+- Indexed params can be referenced as `Cost[w, t]`.
 - `Elem(SetName)` params return set elements and can be passed to methods like `Subset.has(...)`.
 - `Elem(SetName)` params do not allow defaults.
-- Scalar param usage in numeric expressions is currently limited; prefer indexed params or literals in backend-v1-safe models.
+- Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
+- Scalar call/index forms such as `C[]` and `Flag()` are rejected with `QSOL2101`.
 
 ### 3.3 Finds
 
@@ -115,7 +116,7 @@ x > y
 x >= y
 ```
 
-Compare tolerance notes in boolean contexts (`if`, soft constraints, nested formulas):
+Compare tolerance notes in boolean contexts (`if`, soft constraints, nested formulas) and hard `!=` constraints:
 - fixed epsilon: `1e-6`
 - `<` means `lhs - rhs <= -1e-6`
 - `<=` means `lhs - rhs <= +1e-6`
@@ -144,8 +145,8 @@ size(V)
 S.has(x)
 Assign.is(w, t)
 
-Cost(w, t)
 Cost[w, t]
+C
 size(V)
 ```
 
@@ -169,6 +170,8 @@ sum(term for x in X where cond else alt)
 
 count(x for x in X)
 count(x for x in X where cond)
+count(x in X)
+count(x in X where cond)
 ```
 
 ### 7.2 Boolean
@@ -241,5 +244,5 @@ The canonical grammar lives in:
 When in doubt, validate with:
 
 ```bash
-uv run qsol parse path/to/model.qsol --json
+uv run qsol compile path/to/model.qsol --parse --json
 ```

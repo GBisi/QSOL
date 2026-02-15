@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from lark import Token, Tree
 
@@ -113,6 +115,41 @@ def test_ast_builder_dispatch_branches() -> None:
         )
     )
     assert isinstance(comp_tail_bool, tuple)
+
+    count_comp_explicit = cast(
+        ast.CountComprehension,
+        builder._from_tree(
+            _with_meta(
+                Tree(
+                    "comp_count",
+                    [Token("NAME", "x"), Token("NAME", "y"), Token("NAME", "A")],
+                )
+            )
+        ),
+    )
+    assert count_comp_explicit.var_ref == "x"
+    assert count_comp_explicit.var == "y"
+    assert count_comp_explicit.domain_set == "A"
+
+    count_comp_shorthand = cast(
+        ast.CountComprehension,
+        builder._from_tree(
+            _with_meta(
+                Tree(
+                    "comp_count",
+                    [
+                        Token("NAME", "x"),
+                        Token("NAME", "A"),
+                        Tree("comp_tail_bool", [Tree("where_clause", [Token("BOOL", "true")])]),
+                    ],
+                )
+            )
+        ),
+    )
+    assert count_comp_shorthand.var_ref == "x"
+    assert count_comp_shorthand.var == "x"
+    assert count_comp_shorthand.domain_set == "A"
+    assert isinstance(count_comp_shorthand.where, ast.BoolLit)
 
     assert isinstance(
         builder._from_tree(

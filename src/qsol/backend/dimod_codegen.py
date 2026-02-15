@@ -13,6 +13,7 @@ from qsol.lower import ir
 BinaryVar = Any
 CMP_EPS = 1e-6
 BOOL_EPS = 1e-9
+INTEGRAL_TOL = 1e-9
 
 
 def _new_cqm() -> dimod.ConstrainedQuadraticModel:
@@ -58,7 +59,10 @@ class DimodCodegen:
             self._declare_find_variables(problem, cqm, binaries, varmap, diagnostics)
 
             for constraint in problem.constraints:
-                self._emit_constraint(problem, constraint.expr, cqm, binaries, diagnostics, env={})
+                if constraint.kind.value == "must":
+                    self._emit_constraint(
+                        problem, constraint.expr, cqm, binaries, diagnostics, env={}
+                    )
 
             for objective_stmt in problem.objectives:
                 expr_obj = self._num_expr(
@@ -243,10 +247,20 @@ class DimodCodegen:
                     )
                     return
                 if expr.op == "!=":
-                    diagnostics.append(
-                        self._unsupported(
-                            expr.span, "`!=` constraints are not supported in backend v1"
+                    indicator = self._compare_truth_indicator(cqm, expr, lhs, rhs, diagnostics)
+                    if indicator is None:
+                        diagnostics.append(
+                            self._unsupported(expr.span, "unsupported `!=` hard constraint")
                         )
+                        return
+                    self._add_numeric_constraint(
+                        cqm,
+                        lhs=indicator,
+                        rhs=1.0,
+                        op="=",
+                        label=label,
+                        span=expr.span,
+                        diagnostics=diagnostics,
                     )
                     return
                 if expr.op == "<=":
@@ -329,16 +343,17 @@ class DimodCodegen:
             return
 
         if self._is_quadratic_model(diff):
+            integral_diff = self._is_integral_value(diff)
             if op == "=":
                 sense, bound = "==", 0.0
             elif op == "<=":
                 sense, bound = "<=", 0.0
             elif op == "<":
-                sense, bound = "<=", -1e-9
+                sense, bound = "<=", (-1.0 if integral_diff else -CMP_EPS)
             elif op == ">=":
                 sense, bound = ">=", 0.0
             else:  # op == ">"
-                sense, bound = ">=", 1e-9
+                sense, bound = ">=", (1.0 if integral_diff else CMP_EPS)
             cqm.add_constraint_from_model(diff, sense=sense, rhs=bound, label=label)
             return
 
@@ -597,12 +612,15 @@ class DimodCodegen:
                 self._unsupported(expr.span, "compare operands are not numeric in boolean context")
             )
             return None
+        integral_diff = self._is_integral_value(diff)
+        strict_lo = -1.0 if integral_diff else -CMP_EPS
+        strict_hi = 1.0 if integral_diff else CMP_EPS
 
         if expr.op == "<":
             return self._indicator_leq(
                 cqm,
                 diff,
-                threshold=-CMP_EPS,
+                threshold=strict_lo,
                 span=expr.span,
                 diagnostics=diagnostics,
             )
@@ -610,7 +628,7 @@ class DimodCodegen:
             return self._indicator_leq(
                 cqm,
                 diff,
-                threshold=CMP_EPS,
+                threshold=(0.0 if integral_diff else CMP_EPS),
                 span=expr.span,
                 diagnostics=diagnostics,
             )
@@ -618,7 +636,7 @@ class DimodCodegen:
             return self._indicator_geq(
                 cqm,
                 diff,
-                threshold=CMP_EPS,
+                threshold=strict_hi,
                 span=expr.span,
                 diagnostics=diagnostics,
             )
@@ -626,7 +644,7 @@ class DimodCodegen:
             return self._indicator_geq(
                 cqm,
                 diff,
-                threshold=-CMP_EPS,
+                threshold=(0.0 if integral_diff else -CMP_EPS),
                 span=expr.span,
                 diagnostics=diagnostics,
             )
@@ -634,14 +652,14 @@ class DimodCodegen:
             z_low = self._indicator_leq(
                 cqm,
                 diff,
-                threshold=-CMP_EPS,
+                threshold=strict_lo,
                 span=expr.span,
                 diagnostics=diagnostics,
             )
             z_high = self._indicator_geq(
                 cqm,
                 diff,
-                threshold=CMP_EPS,
+                threshold=strict_hi,
                 span=expr.span,
                 diagnostics=diagnostics,
             )
@@ -701,15 +719,16 @@ class DimodCodegen:
             span=span,
             diagnostics=diagnostics,
         )
-        self._add_numeric_constraint(
-            cqm,
-            lhs=diff,
-            rhs=threshold + (lo - threshold) * z,
-            op=">=",
-            label=self._constraint_label(span),
-            span=span,
-            diagnostics=diagnostics,
-        )
+        if abs(lo - threshold) > INTEGRAL_TOL:
+            self._add_numeric_constraint(
+                cqm,
+                lhs=diff,
+                rhs=threshold + (lo - threshold) * z,
+                op=">=",
+                label=self._constraint_label(span),
+                span=span,
+                diagnostics=diagnostics,
+            )
         return z
 
     def _indicator_geq(
@@ -737,24 +756,26 @@ class DimodCodegen:
             return 0.0
 
         z = _new_binary(self._aux_label("geq", span))
-        self._add_numeric_constraint(
-            cqm,
-            lhs=diff,
-            rhs=threshold + (lo - threshold) * (1 - z),
-            op=">=",
-            label=self._constraint_label(span),
-            span=span,
-            diagnostics=diagnostics,
-        )
-        self._add_numeric_constraint(
-            cqm,
-            lhs=diff,
-            rhs=threshold + (hi - threshold) * z,
-            op="<=",
-            label=self._constraint_label(span),
-            span=span,
-            diagnostics=diagnostics,
-        )
+        if abs(lo - threshold) > INTEGRAL_TOL:
+            self._add_numeric_constraint(
+                cqm,
+                lhs=diff,
+                rhs=threshold + (lo - threshold) * (1 - z),
+                op=">=",
+                label=self._constraint_label(span),
+                span=span,
+                diagnostics=diagnostics,
+            )
+        if abs(hi - threshold) > INTEGRAL_TOL:
+            self._add_numeric_constraint(
+                cqm,
+                lhs=diff,
+                rhs=threshold + (hi - threshold) * z,
+                op="<=",
+                label=self._constraint_label(span),
+                span=span,
+                diagnostics=diagnostics,
+            )
         return z
 
     def _quadratic_bounds(self, expr: Any) -> tuple[float, float] | None:
@@ -776,6 +797,19 @@ class DimodCodegen:
             hi += max(0.0, b)
         return lo, hi
 
+    def _is_integral_value(self, expr: Any) -> bool:
+        if isinstance(expr, bool):
+            return True
+        if isinstance(expr, int):
+            return True
+        if isinstance(expr, float):
+            return abs(expr - round(expr)) <= INTEGRAL_TOL
+        if not self._is_quadratic_model(expr):
+            return False
+        model = cast(BinaryQuadraticModel | QuadraticModel, expr)
+        values = [model.offset, *model.linear.values(), *model.quadratic.values()]
+        return all(abs(float(value) - round(float(value))) <= INTEGRAL_TOL for value in values)
+
     def _aux_label(self, prefix: str, span: Span) -> str:
         self._label_counter += 1
         return f"aux:{prefix}:{span.line}:{span.col}:{self._label_counter}"
@@ -788,6 +822,13 @@ class DimodCodegen:
         diagnostics: list[Diagnostic],
         env: dict[str, str],
     ) -> Any | None:
+        if isinstance(expr, ir.KName):
+            if expr.name in problem.params and not isinstance(problem.params[expr.name], dict):
+                val = problem.params[expr.name]
+                truth = self._bool_constant(val)
+                if truth is not None:
+                    return truth
+            return None
         if isinstance(expr, ir.KMethodCall):
             label = self._method_label(problem, expr, diagnostics, env)
             if label is None:
@@ -1010,7 +1051,11 @@ class DimodCodegen:
         env: dict[str, str],
     ) -> str | None:
         if isinstance(expr, ir.KName):
-            return env.get(expr.name, expr.name)
+            if expr.name in env:
+                return env[expr.name]
+            if expr.name in problem.params and not isinstance(problem.params[expr.name], dict):
+                return str(problem.params[expr.name])
+            return expr.name
         if isinstance(expr, ir.KNumLit):
             return str(int(expr.value)) if float(expr.value).is_integer() else str(expr.value)
         if isinstance(expr, ir.KFuncCall):

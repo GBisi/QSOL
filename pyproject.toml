@@ -47,6 +47,9 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "B"]
 ignore = ["B008", "E501"]
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.mypy]
 python_version = "3.11"
 warn_unused_configs = true

@@ -6,7 +6,7 @@ These tutorials walk from first model to inspecting solver output.
 
 1. `01-first-program.md`
    - Write a minimal QSOL program
-   - Parse, check, lower
+   - Stage checks via `compile --parse/--check/--lower`
    - Compile and run with a small instance
 
 2. `02-writing-your-own-model.md`

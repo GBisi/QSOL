@@ -117,7 +117,14 @@ class TypeChecker:
                     )
                     out = UNKNOWN
                 else:
-                    out = symbol.type
+                    if (
+                        symbol.kind == SymbolKind.PARAM
+                        and isinstance(symbol.type, ParamType)
+                        and not symbol.type.indices
+                    ):
+                        out = symbol.type.elem
+                    else:
+                        out = symbol.type
         elif isinstance(expr, ast.Not):
             sub = self._expr_type(expr.expr, scope, binders, diagnostics, tmap)
             if not isinstance(sub, type(BOOL)):
@@ -362,6 +369,17 @@ class TypeChecker:
         tmap: dict[int, str],
     ) -> Type:
         expected_arity = len(ptype.indices)
+        if expected_arity == 0:
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"scalar param `{expr.name}` must be referenced as `{expr.name}` (bare name)",
+                )
+            )
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            return ptype.elem
+
         if len(expr.args) != expected_arity:
             diagnostics.append(
                 self._type_err(

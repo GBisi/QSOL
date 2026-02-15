@@ -56,19 +56,19 @@ Ready-to-run copy:
 Parse only:
 
 ```bash
-uv run qsol parse examples/tutorials/first_program.qsol --json
+uv run qsol compile examples/tutorials/first_program.qsol --parse --json
 ```
 
 Type and semantic checks:
 
 ```bash
-uv run qsol check examples/tutorials/first_program.qsol
+uv run qsol compile examples/tutorials/first_program.qsol --check
 ```
 
 Inspect lowered symbolic IR:
 
 ```bash
-uv run qsol lower examples/tutorials/first_program.qsol --json
+uv run qsol compile examples/tutorials/first_program.qsol --lower --json
 ```
 
 ## 4. Compile to Artifacts

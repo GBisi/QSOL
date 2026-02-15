@@ -137,3 +137,66 @@ problem P {
         d.code == "QSOL2101" and "size() expects exactly one argument" in d.message
         for d in unit.diagnostics
     )
+
+
+def test_scalar_numeric_param_bare_name_is_numeric() -> None:
+    text = """
+problem P {
+  set A;
+  param C : Real;
+  find S : Subset(A);
+  must true;
+  minimize C;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="scalar_numeric_bare.qsol"))
+    assert not any(
+        d.code == "QSOL2101" and "objective expression must be numeric" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_scalar_bool_param_bare_name_in_constraint() -> None:
+    text = """
+problem P {
+  param Flag : Bool;
+  must Flag;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="scalar_bool_bare.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_scalar_param_call_forms_are_rejected() -> None:
+    numeric_text = """
+problem P {
+  set A;
+  param C : Real;
+  find S : Subset(A);
+  must true;
+  minimize C[];
+}
+"""
+    bool_text = """
+problem P {
+  param Flag : Bool;
+  must Flag();
+}
+"""
+    numeric_unit = compile_source(
+        numeric_text, options=CompileOptions(filename="scalar_numeric_call_reject.qsol")
+    )
+    bool_unit = compile_source(
+        bool_text, options=CompileOptions(filename="scalar_bool_call_reject.qsol")
+    )
+
+    assert any(
+        d.code == "QSOL2101"
+        and "scalar param `C` must be referenced as `C` (bare name)" in d.message
+        for d in numeric_unit.diagnostics
+    )
+    assert any(
+        d.code == "QSOL2101"
+        and "scalar param `Flag` must be referenced as `Flag` (bare name)" in d.message
+        for d in bool_unit.diagnostics
+    )

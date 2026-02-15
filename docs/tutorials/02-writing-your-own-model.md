@@ -64,7 +64,7 @@ problem WorkerAssignment {
 ## 4. Run Workflow
 
 ```bash
-uv run qsol check examples/tutorials/assignment_balance.qsol
+uv run qsol compile examples/tutorials/assignment_balance.qsol --check
 
 uv run qsol compile \
   examples/tutorials/assignment_balance.qsol \
@@ -93,7 +93,7 @@ To reduce `QSOL3001` unsupported diagnostics:
 
 ## 6. Extend This Example
 
-Try these incremental changes and re-run `check` then `compile` each time:
+Try these incremental changes and re-run `compile --check` then `compile` each time:
 
 1. Add a `should` preference for balancing worker loads.
 2. Add a `param Forbidden[Workers,Tasks] : Bool = false;` and forbid matches with `must`.
