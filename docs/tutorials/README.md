@@ -19,6 +19,11 @@ These tutorials walk from first model to target-aware build/solve workflows.
    - Understand `capability_report.json` and build artifacts
    - Read standardized `run.json` output
 
+4. `04-custom-unknowns-functions-and-predicates.md`
+   - Define top-level reusable `predicate` and `function` macros
+   - Build custom `unknown` types with `rep`, `laws`, and `view`
+   - Use custom modules from problem files with concrete examples
+
 ## Prerequisites
 
 ```bash

@@ -253,14 +253,15 @@ The CI workflow (`.github/workflows/ci.yml`) executes:
 3. `docs/tutorials/01-first-program.md` (Human-first): first end-to-end workflow.
 4. `docs/tutorials/02-writing-your-own-model.md` (Human-first): build your own model.
 5. `docs/tutorials/03-compiling-running-and-reading-results.md` (Both): artifacts and troubleshooting.
-6. `docs/PLUGINS.md` (Both): plugin architecture, authoring, and loading methods.
-7. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
-8. `QSOL_reference.md` (Both): detailed language/reference guide (includes config TOML + scenario contract).
-9. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
-10. `src/qsol/stdlib/README.md` (Both): packaged stdlib modules and contracts.
-11. `docs/README.md` (Both): documentation index.
-12. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
-13. `AGENTS.md` (Agent-first): repository execution/completion policy.
+6. `docs/tutorials/04-custom-unknowns-functions-and-predicates.md` (Human-first): author reusable unknowns and macro APIs.
+7. `docs/PLUGINS.md` (Both): plugin architecture, authoring, and loading methods.
+8. `docs/QSOL_SYNTAX.md` (Both): practical syntax reference.
+9. `QSOL_reference.md` (Both): detailed language/reference guide (includes config TOML + scenario contract).
+10. `docs/CODEBASE.md` (Agent-first): stage ownership and implementation map.
+11. `src/qsol/stdlib/README.md` (Both): packaged stdlib modules and contracts.
+12. `docs/README.md` (Both): documentation index.
+13. `examples/README.md` and `examples/*/README.md` (Both): runnable examples.
+14. `AGENTS.md` (Agent-first): repository execution/completion policy.
 
 ## Roadmap
 
