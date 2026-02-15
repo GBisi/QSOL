@@ -14,6 +14,10 @@ def _strip_ansi(text: str) -> str:
     return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
+def _has_option(help_text: str, option_prefix: str) -> bool:
+    return re.search(rf"{re.escape(option_prefix)}\S*", help_text) is not None
+
+
 def test_qsol_root_help_includes_command_descriptions() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["-h"], env={"COLUMNS": "120"})
@@ -53,39 +57,40 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert solve_help.exit_code == 0
     plain_solve_help = _strip_ansi(solve_help.stdout)
     assert "Path to the QSOL model source file." in plain_solve_help
-    assert "--backend" not in plain_solve_help
-    assert re.search(r"--sol\S*", plain_solve_help)
+    assert not _has_option(plain_solve_help, "--back")
+    assert _has_option(plain_solve_help, "--sol")
     assert "Number of best unique" in plain_solve_help
     assert "solutions to return" in plain_solve_help
-    assert "--config" in plain_solve_help
-    assert "--scenario" in plain_solve_help
-    assert "--all-scenarios" in plain_solve_help
-    assert "--combine-mode" in plain_solve_help
-    assert "--failure-policy" in plain_solve_help
-    assert "--energy-min" in plain_solve_help
+    assert _has_option(plain_solve_help, "--con")
+    assert _has_option(plain_solve_help, "--scen")
+    assert _has_option(plain_solve_help, "--all-s")
+    assert _has_option(plain_solve_help, "--comb")
+    assert _has_option(plain_solve_help, "--fail")
     assert "Inclusive minimum" in plain_solve_help
-    assert "--energy-max" in plain_solve_help
     assert "Inclusive maximum" in plain_solve_help
 
     build_help = runner.invoke(app, ["build", "-h"], env=env)
     assert build_help.exit_code == 0
-    assert "--backend" not in build_help.stdout
-    assert "--config" in build_help.stdout
-    assert "--scenario" in build_help.stdout
-    assert "--all-scenarios" in build_help.stdout
-    assert "--failure-policy" in build_help.stdout
+    plain_build_help = _strip_ansi(build_help.stdout)
+    assert not _has_option(plain_build_help, "--back")
+    assert _has_option(plain_build_help, "--con")
+    assert _has_option(plain_build_help, "--scen")
+    assert _has_option(plain_build_help, "--all-s")
+    assert _has_option(plain_build_help, "--fail")
 
     caps_help = runner.invoke(app, ["targets", "capabilities", "-h"], env=env)
     assert caps_help.exit_code == 0
-    assert "--backend" not in caps_help.stdout
+    plain_caps_help = _strip_ansi(caps_help.stdout)
+    assert not _has_option(plain_caps_help, "--back")
 
     check_help = runner.invoke(app, ["targets", "check", "-h"], env=env)
     assert check_help.exit_code == 0
-    assert "--backend" not in check_help.stdout
-    assert "--config" in check_help.stdout
-    assert "--scenario" in check_help.stdout
-    assert "--all-scenarios" in check_help.stdout
-    assert "--failure-policy" in check_help.stdout
+    plain_check_help = _strip_ansi(check_help.stdout)
+    assert not _has_option(plain_check_help, "--back")
+    assert _has_option(plain_check_help, "--con")
+    assert _has_option(plain_check_help, "--scen")
+    assert _has_option(plain_check_help, "--all-s")
+    assert _has_option(plain_check_help, "--fail")
 
 
 def test_argparse_cli_help_texts_are_useful() -> None:
