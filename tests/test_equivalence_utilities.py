@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
-import json
+import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -53,15 +53,28 @@ def _single_var_bqm(name: str = "x") -> dimod.BinaryQuadraticModel:
 
 def _write_minimal_example_files(base_dir: Path) -> None:
     program = """
-problem P {
-  set A;
-  find X : Subset(A);
-  minimize 0;
-}
+ problem P {
+   set A;
+   find X : Subset(A);
+   minimize 0;
+ }
+ """.strip()
+    config = """
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+
+[scenarios.baseline]
+problem = "P"
+
+[scenarios.baseline.sets]
+A = ["a"]
 """.strip()
-    instance = {"problem": "P", "sets": {"A": ["a"]}, "params": {}}
     (base_dir / "model.qsol").write_text(program, encoding="utf-8")
-    (base_dir / "instance.json").write_text(json.dumps(instance), encoding="utf-8")
+    (base_dir / "model.qsol.toml").write_text(
+        textwrap.dedent(config).strip() + "\n", encoding="utf-8"
+    )
 
 
 def _build_spec(
@@ -99,7 +112,7 @@ def _build_spec(
         description="test",
         base_dir=base_dir,
         program_filename="model.qsol",
-        instance_filename="instance.json",
+        config_filename="model.qsol.toml",
         custom_solution_title="custom",
         compiled_solution_title="compiled",
         build_custom_bqm=lambda instance: _single_var_bqm(str(instance.get("problem", "x"))),
@@ -131,7 +144,7 @@ def test_sample_best_assignment_covers_exact_sa_and_guard() -> None:
         )
 
 
-def test_parse_args_positive_int_and_read_json(
+def test_parse_args_positive_int_and_load_instance_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     spec = _build_spec(tmp_path)
@@ -149,13 +162,48 @@ def test_parse_args_positive_int_and_read_json(
         exeq._positive_int("0")
     with pytest.raises(argparse.ArgumentTypeError):
         exeq._positive_int("x")
+    config_path = tmp_path / "payload.qsol.toml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            schema_version = "1"
 
-    payload_path = tmp_path / "payload.json"
-    payload_path.write_text('{"k": 1}', encoding="utf-8")
-    assert exeq._read_json(payload_path) == {"k": 1}
-    payload_path.write_text("[]", encoding="utf-8")
+            [entrypoint]
+            scenario = "baseline"
+
+            [scenarios.baseline]
+            problem = "Demo"
+
+            [scenarios.baseline.sets]
+            A = ["a1"]
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    assert exeq._load_instance_payload(config_path, None) == {
+        "problem": "Demo",
+        "sets": {"A": ["a1"]},
+        "params": {},
+    }
+    bad_path = tmp_path / "bad.qsol.toml"
+    bad_path.write_text(
+        textwrap.dedent(
+            """
+            schema_version = "1"
+
+            [scenarios.only]
+            problem = "Demo"
+
+            [scenarios.second]
+            problem = "Demo"
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError):
-        exeq._read_json(payload_path)
+        exeq._load_instance_payload(bad_path, None)
 
 
 def test_parse_args_help_has_useful_descriptions(
@@ -383,7 +431,7 @@ def test_run_bqm_equivalence_example_qsol_solver_value_error_keeps_success_on_eq
         description=spec.description,
         base_dir=spec.base_dir,
         program_filename=spec.program_filename,
-        instance_filename=spec.instance_filename,
+        config_filename=spec.config_filename,
         custom_solution_title=spec.custom_solution_title,
         compiled_solution_title=spec.compiled_solution_title,
         build_custom_bqm=lambda _instance: custom_bqm,

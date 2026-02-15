@@ -1097,7 +1097,7 @@ class DimodCodegen:
             return ["Use numeric objective forms that lower to linear/quadratic expressions."]
         if "unknown set" in message and "quantifier" in message:
             return [
-                "Ensure quantifier domain sets are declared and instantiated in the instance JSON."
+                "Ensure quantifier domain sets are declared and instantiated in the instance payload."
             ]
         if "infeasible constant constraint" in message:
             return [

@@ -150,7 +150,7 @@ def main() -> int:
         description="Compare number partition custom BQM against compiled QSOL output.",
         base_dir=Path(__file__).resolve().parent,
         program_filename="partition_equal_sum.qsol",
-        instance_filename="partition_equal_sum.instance.json",
+        config_filename="partition_equal_sum.qsol.toml",
         custom_solution_title="Best Partition From Custom BQM",
         compiled_solution_title="Best Partition From Compiled QSOL BQM",
         build_custom_bqm=_build_custom_bqm,

@@ -14,12 +14,8 @@ from qsol.compiler.options import CompileOptions
 from qsol.compiler.pipeline import (
     check_program,
     compile_source,
-    compile_with_instance,
     lower_symbolic,
     parse_program,
-)
-from qsol.compiler.pipeline import (
-    instantiate_ir as instantiate_ir_pipeline,
 )
 from qsol.diag.cli_diagnostics import (
     file_read_error,
@@ -171,12 +167,12 @@ def test_diagnostic_reporter_handles_non_primary_and_multiline_spans() -> None:
 
 def test_cli_diagnostic_builders_cover_codes(tmp_path: Path) -> None:
     model = tmp_path / "model.qsol"
-    inferred = tmp_path / "model.instance.json"
+    inferred = tmp_path / "model.qsol.toml"
 
     assert invalid_flag_combination("bad", file=model).code == "QSOL4001"
     assert missing_instance_file(inferred, model_path=model).code == "QSOL4002"
     assert file_read_error(model, OSError("denied")).code == "QSOL4003"
-    assert instance_load_error(inferred, ValueError("json")).code == "QSOL4004"
+    assert instance_load_error(inferred, ValueError("toml")).code == "QSOL4004"
     assert missing_artifact("missing", model_path=model).code == "QSOL4005"
     assert runtime_prep_error(model, "prep", notes=["note"]).code == "QSOL4005"
     assert runtime_sampling_error(model, RuntimeError("sampler")).code == "QSOL5001"
@@ -269,23 +265,27 @@ problem Demo {
     lowered = lower_symbolic(source, filename="wrap.qsol")
     assert lowered.lowered_ir_symbolic is not None
 
-    instance = tmp_path / "wrap.instance.json"
-    instance.write_text('{"problem":"Demo","sets":{"A":["a1"]},"params":{}}', encoding="utf-8")
+    instance = {
+        "problem": "Demo",
+        "sets": {"A": ["a1"]},
+        "params": {},
+    }
 
-    instantiated = instantiate_ir_pipeline(
+    instantiated = compile_source(
         source,
-        filename="wrap.qsol",
-        instance_path=str(instance),
+        options=CompileOptions(filename="wrap.qsol", instance_payload=instance),
     )
     assert instantiated.lowered_ir_symbolic is not None
 
     outdir = tmp_path / "out"
-    compiled = compile_with_instance(
+    compiled = compile_source(
         source,
-        filename="wrap.qsol",
-        instance_path=str(instance),
-        outdir=str(outdir),
-        output_format="qubo",
+        options=CompileOptions(
+            filename="wrap.qsol",
+            instance_payload=instance,
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
     )
     assert compiled.artifacts is not None
 

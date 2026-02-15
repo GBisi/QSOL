@@ -35,7 +35,7 @@ def resolve_target_selection(
                 code="QSOL4006",
                 message=(
                     "runtime is required; provide `--runtime` or set `execution.runtime` "
-                    "in the instance JSON"
+                    "in the instance payload"
                 ),
                 stage="resolution",
             )

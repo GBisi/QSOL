@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,7 @@ problem Demo {
     )
 
 
-def _write_instance(path: Path, *, with_execution: bool = False) -> None:
+def _instance_payload(*, with_execution: bool = False) -> dict[str, object]:
     payload: dict[str, object] = {
         "problem": "Demo",
         "sets": {"A": ["a1", "a2"]},
@@ -37,7 +36,7 @@ def _write_instance(path: Path, *, with_execution: bool = False) -> None:
     }
     if with_execution:
         payload["execution"] = {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    return payload
 
 
 def test_check_target_support_requires_instance_grounding() -> None:
@@ -47,14 +46,13 @@ def test_check_target_support_requires_instance_grounding() -> None:
 
 
 def test_check_target_support_unknown_backend_and_runtime(tmp_path: Path) -> None:
-    instance_path = tmp_path / "instance.json"
-    _write_instance(instance_path)
+    instance_payload = _instance_payload()
 
     backend_unknown = check_target_support(
         _model_text(),
         options=CompileOptions(
             filename="demo.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload,
             runtime_id="local-dimod",
             backend_id="unknown-backend",
         ),
@@ -68,7 +66,7 @@ def test_check_target_support_unknown_backend_and_runtime(tmp_path: Path) -> Non
         _model_text(),
         options=CompileOptions(
             filename="demo.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload,
             runtime_id="unknown-runtime",
             backend_id="dimod-cqm-v1",
         ),
@@ -80,14 +78,13 @@ def test_check_target_support_unknown_backend_and_runtime(tmp_path: Path) -> Non
 
 
 def test_build_for_target_requires_outdir(tmp_path: Path) -> None:
-    instance_path = tmp_path / "instance.json"
-    _write_instance(instance_path)
+    instance_payload = _instance_payload()
 
     unit = build_for_target(
         _model_text(),
         options=CompileOptions(
             filename="demo.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload,
             runtime_id="local-dimod",
             backend_id="dimod-cqm-v1",
         ),

@@ -94,3 +94,5 @@ Before completion:
 - Run the mandatory coherence rubric.
 - Report how the final change aligns with project purpose and principles.
 - If tradeoffs are introduced, state them explicitly with rationale.
+
+> If you are an AI agent and you haven't already, please read the AGENTS.md policy file to understand the rules and requirements for contributing to this codebase. Then move to CONTRIBUTING.md for contribution guidelines and best practices.

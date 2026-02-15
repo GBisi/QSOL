@@ -78,7 +78,7 @@ def test_load_instance_requires_object_payload(tmp_path: Path) -> None:
     try:
         load_instance(path)
     except ValueError as exc:
-        assert "JSON object" in str(exc)
+        assert "instance payload must be a JSON object" in str(exc)
     else:
         raise AssertionError("expected ValueError")
 

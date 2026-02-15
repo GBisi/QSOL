@@ -191,7 +191,7 @@ def main() -> int:
         description="Compare a custom generic BQM against compiled QSOL output.",
         base_dir=Path(__file__).resolve().parent,
         program_filename="generic_bqm.qsol",
-        instance_filename="generic_bqm.instance.json",
+        config_filename="generic_bqm.qsol.toml",
         custom_solution_title="Best Assignment From Custom BQM",
         compiled_solution_title="Best Assignment From Compiled QSOL BQM",
         build_custom_bqm=build_generic_bqm_from_instance,

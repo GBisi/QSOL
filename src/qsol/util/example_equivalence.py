@@ -15,6 +15,7 @@ from qsol.backend.dimod_codegen import DimodCodegen
 from qsol.backend.instance import instantiate_ir
 from qsol.compiler.options import CompileOptions
 from qsol.compiler.pipeline import compile_source
+from qsol.config import load_config, materialize_instance_payload, resolve_selected_scenarios
 from qsol.diag.diagnostic import Diagnostic
 from qsol.util.bqm_equivalence import BQMEquivalenceReport, check_qsol_program_bqm_equivalence
 
@@ -55,7 +56,7 @@ class EquivalenceExampleSpec(Generic[SolveResultT]):
     description: str
     base_dir: Path
     program_filename: str
-    instance_filename: str
+    config_filename: str
     custom_solution_title: str
     compiled_solution_title: str
     build_custom_bqm: Callable[[Mapping[str, object]], dimod.BinaryQuadraticModel]
@@ -65,6 +66,7 @@ class EquivalenceExampleSpec(Generic[SolveResultT]):
     ]
     render_solution: Callable[[Console, SolveResultT, str], None]
     same_runtime_result: Callable[[SolveResultT, SolveResultT, float], bool]
+    scenario_name: str | None = None
     atol: float = 1e-9
     default_num_reads: int = 100
     default_max_exact_variables: int = 24
@@ -111,9 +113,9 @@ def run_bqm_equivalence_example(spec: EquivalenceExampleSpec[SolveResultT]) -> i
     )
     console = Console()
     qsol_path = spec.base_dir / spec.program_filename
-    instance_path = spec.base_dir / spec.instance_filename
+    config_path = spec.base_dir / spec.config_filename
     program_text = qsol_path.read_text(encoding="utf-8")
-    instance = _read_json(instance_path)
+    instance = _load_instance_payload(config_path, spec.scenario_name)
 
     custom_bqm = spec.build_custom_bqm(instance)
     custom_solution: SolveResultT | None = None
@@ -251,11 +253,22 @@ def _parse_args(spec: EquivalenceExampleSpec[SolveResultT]) -> argparse.Namespac
     return parser.parse_args()
 
 
-def _read_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"expected JSON object in {path}")
-    return payload
+def _load_instance_payload(path: Path, scenario_name: str | None) -> dict[str, object]:
+    config = load_config(path)
+    resolved_scenario = scenario_name
+    if resolved_scenario is None:
+        resolved = resolve_selected_scenarios(
+            config=config,
+            cli_scenarios=[],
+            cli_all_scenarios=False,
+        )
+        if len(resolved) != 1:
+            raise ValueError(
+                "equivalence examples require exactly one resolved scenario; "
+                "set `entrypoint.scenario` in the config or pass `scenario_name`"
+            )
+        resolved_scenario = resolved[0]
+    return materialize_instance_payload(config=config, scenario_name=resolved_scenario)
 
 
 def _compile_qsol_bqm(

@@ -65,8 +65,8 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 message="instance problem does not match any compiled problem",
                 span=kernel.span,
                 help=[
-                    "Set `problem` in the instance JSON to one of the compiled problem names.",
-                    "Run `qsol compile --lower --json` to inspect compiled problem names.",
+                    "Set `problem` in the instance payload to one of the compiled problem names.",
+                    "Run `qsol inspect lower --json` to inspect compiled problem names.",
                 ],
             )
         )
@@ -91,7 +91,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                         code="QSOL2201",
                         message=f"missing set values for `{decl.name}`",
                         span=decl.span,
-                        help=[f"Add `sets.{decl.name}` as a JSON array in the instance payload."],
+                        help=[f"Add `sets.{decl.name}` as an array in the instance payload."],
                     )
                 )
                 continue
@@ -100,7 +100,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                     Diagnostic(
                         severity=Severity.ERROR,
                         code="QSOL2201",
-                        message=f"set `{decl.name}` must be a JSON array",
+                        message=f"set `{decl.name}` must be an array",
                         span=decl.span,
                         help=[
                             f'Replace `sets.{decl.name}` with an array value, e.g. `["a1", "a2"]`.'
@@ -124,7 +124,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                         message=f"missing value for param `{pdecl.name}`",
                         span=pdecl.span,
                         help=[
-                            f"Provide `params.{pdecl.name}` in the instance JSON or declare a default in the model."
+                            f"Provide `params.{pdecl.name}` in the instance payload or declare a default in the model."
                         ],
                     )
                 )
@@ -142,7 +142,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                                 message=f"param `{pdecl.name}` expects indexed object",
                                 span=pdecl.span,
                                 help=[
-                                    "Use nested JSON objects keyed by index set elements for indexed params."
+                                    "Use nested objects keyed by index set elements for indexed params."
                                 ],
                             )
                         )

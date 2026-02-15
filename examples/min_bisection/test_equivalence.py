@@ -225,7 +225,7 @@ def main() -> int:
         description="Compare min-bisection custom BQM against compiled QSOL output.",
         base_dir=Path(__file__).resolve().parent,
         program_filename="min_bisection.qsol",
-        instance_filename="min_bisection.instance.json",
+        config_filename="min_bisection.qsol.toml",
         custom_solution_title="Best Partition From Custom BQM",
         compiled_solution_title="Best Partition From Compiled QSOL BQM",
         build_custom_bqm=lambda instance: build_min_bisection_bqm(instance, unknown_name="Side"),

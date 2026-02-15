@@ -37,7 +37,7 @@ def missing_instance_file(inferred_path: Path, *, model_path: Path) -> Diagnosti
         span=_span_for_file(model_path),
         help=[
             f"Create `{inferred_path.name}` next to the model, or pass `--instance <path>`.",
-            "Instance JSON must contain `problem`, `sets`, and optional `params`.",
+            "Instance payloads must contain `problem`, `sets`, and optional `params`.",
         ],
     )
 
@@ -107,7 +107,7 @@ def instance_load_error(path: Path, exc: Exception) -> Diagnostic:
     return Diagnostic(
         severity=Severity.ERROR,
         code="QSOL4004",
-        message=f"failed to load instance JSON: {path}",
+        message=f"failed to load instance payload: {path}",
         span=_span_for_file(path),
         notes=[str(exc)],
         help=["Ensure the instance payload is valid JSON object syntax."],
@@ -120,7 +120,7 @@ def missing_artifact(message: str, *, model_path: Path) -> Diagnostic:
         code="QSOL4005",
         message=message,
         span=_span_for_file(model_path),
-        help=["Run `qsol compile` first and verify artifacts were exported successfully."],
+        help=["Run `qsol build` first and verify artifacts were exported successfully."],
     )
 
 
@@ -137,7 +137,7 @@ def runtime_prep_error(
         span=_span_for_file(model_path),
         notes=notes or [],
         help=[
-            "Inspect artifacts in the output directory and regenerate with `qsol compile` if needed."
+            "Inspect artifacts in the output directory and regenerate with `qsol build` if needed."
         ],
     )
 

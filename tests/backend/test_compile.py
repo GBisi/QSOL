@@ -1,4 +1,4 @@
-import json
+import tomllib
 from pathlib import Path
 
 import dimod
@@ -16,10 +16,16 @@ problem Simple {
   minimize sum( if S.has(x) then 1 else 0 for x in A );
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "Simple", "sets": {"A": ["a1", "a2"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "Simple"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -27,7 +33,7 @@ problem Simple {
         source,
         options=CompileOptions(
             filename="simple.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -51,10 +57,16 @@ problem LinkedCut {
   maximize sum(sum(if Left.has(u) then if Left.has(v) then 0 else LinkWeight[u, v] else if Left.has(v) then LinkWeight[u, v] else 0 for v in V) for u in V) / 2;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "LinkedCut", "sets": {"V": ["v1", "v2", "v3"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "LinkedCut"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2", "v3"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -62,7 +74,7 @@ problem LinkedCut {
         source,
         options=CompileOptions(
             filename="linked_cut.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -72,29 +84,28 @@ problem LinkedCut {
     assert Path(unit.artifacts.cqm_path or "").exists()
     assert Path(unit.artifacts.bqm_path or "").exists()
 
-    weighted_instance_path = tmp_path / "instance-weighted.json"
-    weighted_instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "LinkedCut",
-                "sets": {"V": ["v1", "v2", "v3"]},
-                "params": {
-                    "LinkWeight": {
-                        "v1": {"v1": 0, "v2": 2, "v3": 0},
-                        "v2": {"v1": 2, "v2": 0, "v3": 3},
-                        "v3": {"v1": 0, "v2": 3, "v3": 0},
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
+    weighted_instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "LinkedCut"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2", "v3"]
+
+[scenarios.baseline.params.LinkWeight]
+v1 = { v1 = 0, v2 = 2, v3 = 0 }
+v2 = { v1 = 2, v2 = 0, v3 = 3 }
+v3 = { v1 = 0, v2 = 3, v3 = 0 }
+""".lstrip()
     )
     weighted_outdir = tmp_path / "out-weighted"
     weighted_unit = compile_source(
         source,
         options=CompileOptions(
             filename="linked_cut.qsol",
-            instance_path=str(weighted_instance_path),
+            instance_payload=weighted_instance_payload["scenarios"]["baseline"],
             outdir=str(weighted_outdir),
             output_format="qubo",
         ),
@@ -118,16 +129,22 @@ problem PartitionEqualSum {
     sum(if not R.has(i) then Value[i] else 0 for i in Items);
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "PartitionEqualSum",
-                "sets": {"Items": ["a", "b", "c", "d"]},
-                "params": {"Value": {"a": 1, "b": 2, "c": 3, "d": 4}},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "PartitionEqualSum"
+
+[scenarios.baseline.sets]
+Items = ["a", "b", "c", "d"]
+
+[scenarios.baseline.params.Value]
+a = 1
+b = 2
+c = 3
+d = 4
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -135,7 +152,7 @@ problem PartitionEqualSum {
         source,
         options=CompileOptions(
             filename="partition_equal_sum.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -164,20 +181,30 @@ problem MinBisection {
   );
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "MinBisection",
-                "sets": {"V": [0, 1, 2, 3], "E": ["e0", "e1", "e2"]},
-                "params": {
-                    "U": {"e0": 0, "e1": 1, "e2": 2},
-                    "W": {"e0": 1, "e1": 2, "e2": 3},
-                    "Half": 2,
-                },
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MinBisection"
+
+[scenarios.baseline.sets]
+V = [0, 1, 2, 3]
+E = ["e0", "e1", "e2"]
+
+[scenarios.baseline.params.U]
+e0 = 0
+e1 = 1
+e2 = 2
+
+[scenarios.baseline.params.W]
+e0 = 1
+e1 = 2
+e2 = 3
+
+[scenarios.baseline.params]
+Half = 2
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -185,7 +212,7 @@ problem MinBisection {
         source,
         options=CompileOptions(
             filename="min_bisection.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -214,23 +241,36 @@ problem MinBisection {
   );
 }
 """
-    instance_payload = {
-        "problem": "MinBisection",
-        "sets": {"V": ["v1", "v2", "v3", "v4"], "E": ["e1", "e2", "e3"]},
-        "params": {
-            "U": {"e1": "v1", "e2": "v2", "e3": "v3"},
-            "W": {"e1": "v2", "e2": "v3", "e3": "v4"},
-        },
-    }
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(json.dumps(instance_payload), encoding="utf-8")
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MinBisection"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2", "v3", "v4"]
+E = ["e1", "e2", "e3"]
+
+[scenarios.baseline.params.U]
+e1 = "v1"
+e2 = "v2"
+e3 = "v3"
+
+[scenarios.baseline.params.W]
+e1 = "v2"
+e2 = "v3"
+e3 = "v4"
+""".lstrip()
+    )
 
     outdir = tmp_path / "out"
+    scenario_payload = instance_payload["scenarios"]["baseline"]
     unit = compile_source(
         source,
         options=CompileOptions(
             filename="min_bisection_bool_logic.qsol",
-            instance_path=str(instance_path),
+            instance_payload=scenario_payload,
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -244,7 +284,7 @@ problem MinBisection {
         bqm = dimod.BinaryQuadraticModel.from_file(fp)
 
     variable_labels = [str(var) for var in bqm.variables]
-    assert len(variable_labels) == len(instance_payload["sets"]["V"])
+    assert len(variable_labels) == len(scenario_payload["sets"]["V"])
     assert not any(label.startswith("aux:") for label in variable_labels)
     assert not any(label.startswith("slack_") for label in variable_labels)
 
@@ -258,16 +298,16 @@ problem SizeFold {
   minimize size(V);
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "SizeFold",
-                "sets": {"V": ["v1", "v2", "v3"]},
-                "params": {},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SizeFold"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2", "v3"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -275,7 +315,7 @@ problem SizeFold {
         source,
         options=CompileOptions(
             filename="size_fold.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -299,16 +339,20 @@ problem ScalarBare {
   minimize C;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "ScalarBare",
-                "sets": {"A": ["a1", "a2"]},
-                "params": {"C": 3.5, "Flag": True},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ScalarBare"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+
+[scenarios.baseline.params]
+C = 3.5
+Flag = true
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -316,7 +360,7 @@ problem ScalarBare {
         source,
         options=CompileOptions(
             filename="scalar_bare.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -339,16 +383,19 @@ problem ScalarElemArg {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "ScalarElemArg",
-                "sets": {"V": ["v1", "v2"]},
-                "params": {"Start": "v1"},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ScalarElemArg"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2"]
+
+[scenarios.baseline.params]
+Start = "v1"
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -356,7 +403,7 @@ problem ScalarElemArg {
         source,
         options=CompileOptions(
             filename="scalar_elem_arg.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -377,10 +424,16 @@ problem HardNotEqual {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "HardNotEqual", "sets": {"A": ["a1", "a2"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "HardNotEqual"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -388,7 +441,7 @@ problem HardNotEqual {
         source,
         options=CompileOptions(
             filename="hard_not_equal.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -409,10 +462,16 @@ problem SoftOnlyShould {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "SoftOnlyShould", "sets": {"A": ["a1"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SoftOnlyShould"
+
+[scenarios.baseline.sets]
+A = ["a1"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -420,7 +479,7 @@ problem SoftOnlyShould {
         source,
         options=CompileOptions(
             filename="soft_only_should.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -441,10 +500,16 @@ problem SoftNotEqual {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "SoftNotEqual", "sets": {"A": ["a1", "a2"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SoftNotEqual"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -452,7 +517,7 @@ problem SoftNotEqual {
         source,
         options=CompileOptions(
             filename="soft_not_equal.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -473,10 +538,16 @@ problem InfeasibleHardNotEqual {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps({"problem": "InfeasibleHardNotEqual", "sets": {"A": ["a1"]}, "params": {}}),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "InfeasibleHardNotEqual"
+
+[scenarios.baseline.sets]
+A = ["a1"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -484,7 +555,7 @@ problem InfeasibleHardNotEqual {
         source,
         options=CompileOptions(
             filename="infeasible_hard_not_equal.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -523,16 +594,17 @@ problem ImportedUnknown {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "ImportedUnknown",
-                "sets": {"A": ["a1", "a2"], "B": ["b1", "b2"]},
-                "params": {},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ImportedUnknown"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+B = ["b1", "b2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -540,7 +612,7 @@ problem ImportedUnknown {
         source,
         options=CompileOptions(
             filename=str(tmp_path / "model.qsol"),
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -563,16 +635,16 @@ problem StdlibPermutation {
   minimize 0;
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "StdlibPermutation",
-                "sets": {"V": ["v1", "v2"]},
-                "params": {},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StdlibPermutation"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -580,7 +652,7 @@ problem StdlibPermutation {
         source,
         options=CompileOptions(
             filename="stdlib_perm.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
@@ -607,16 +679,16 @@ problem StdlibLogic {
   minimize sum(indicator(S.has(x)) for x in A);
 }
 """
-    instance_path = tmp_path / "instance.json"
-    instance_path.write_text(
-        json.dumps(
-            {
-                "problem": "StdlibLogic",
-                "sets": {"A": ["a1", "a2"]},
-                "params": {},
-            }
-        ),
-        encoding="utf-8",
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StdlibLogic"
+
+[scenarios.baseline.sets]
+A = ["a1", "a2"]
+""".lstrip()
     )
 
     outdir = tmp_path / "out"
@@ -624,7 +696,7 @@ problem StdlibLogic {
         source,
         options=CompileOptions(
             filename="stdlib_logic.qsol",
-            instance_path=str(instance_path),
+            instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
             output_format="qubo",
         ),
