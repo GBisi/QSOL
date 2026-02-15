@@ -20,7 +20,7 @@ problem MinBisection {
 
   must
     //sum(if Side.has(v) then 2 else 0 for v in V) = size(V);
-    count(v in Side) * 2 = size(V);
+    count(v in V where Side.has(v)) * 2 = size(V);
 
   // Minimize number of edges crossing the cut:
   // an edge contributes 1 iff endpoints are on different sides.
