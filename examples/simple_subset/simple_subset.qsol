@@ -1,3 +1,5 @@
+use stdlib.logic;
+
 problem SimpleSubset {
   set Elements;
 
@@ -7,6 +9,6 @@ problem SimpleSubset {
   // Choose a subset S ⊆ Elements
   find S : Subset(Elements);
 
-  must count(v in Elements where S.has(v)) + 1 = size(Elements);
+  must exactly(size(Elements) - 1, S.has(v) for v in Elements);
 
 }

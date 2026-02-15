@@ -228,7 +228,7 @@ unknown MyType(A) {
     must true;
   }
   view {
-    predicate has(x in A): Bool = inner.has(x);
+    predicate has(x: Elem(A)): Bool = inner.has(x);
   }
 }
 ```
@@ -245,22 +245,24 @@ See [§15. Extending QSOL: User-Defined Unknown Types](#15-extending-qsol-user-d
 Top-level reusable macros use typed declarations:
 
 ```qsol
-predicate iff(a, b): Bool = a and b or not a and not b;
-function indicator(b): Real = if b then 1 else 0;
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+function indicator(b: Bool): Real = if b then 1 else 0;
 ```
 
 Unknown `view` members use the same declaration style:
 
 ```qsol
 view {
-  predicate has(x in A): Bool = inner.has(x);
-  function score(x in A): Real = if inner.has(x) then 1 else 0;
+  predicate has(x: Elem(A)): Bool = inner.has(x);
+  function score(x: Elem(A)): Real = if inner.has(x) then 1 else 0;
 }
 ```
 
 Rules:
 - `predicate` return type is always `Bool`.
 - `function` return type is `Real` in the current release.
+- Macro formals are explicitly typed: `Bool`, `Real`, `Elem(SetName)`, `Comp(Bool)`, `Comp(Real)`.
+- `Comp(...)` formals accept comprehension-style call arguments (`term for x in X where ... else ...`).
 - Variadic formals (`...`) are not supported in this release.
 - Macro calls can compose (predicate/function bodies may call other predicates/functions).
 - All macro calls are expanded in frontend elaboration before lowering/backend stages.
@@ -328,6 +330,13 @@ agg(term for x in X where predicate else fallback)
 `where` and `else` are optional.
 
 Each comprehension supports a single `for` clause. For multiple iteration variables, use nested comprehensions (e.g., nested `sum` calls).
+
+Comprehension-style call arguments:
+
+```qsol
+predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
+must atleast(1, S.has(x) for x in X where cond else false);
+```
 
 #### Numeric aggregates
 
@@ -728,7 +737,7 @@ unknown InjectiveMapping(A, B) {
     must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
   }
   view {
-    predicate is(a in A, b in B): Bool = f.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);
   }
 }
 ```
@@ -752,7 +761,7 @@ unknown SurjectiveMapping(A, B) {
     must forall b in B: count(a for a in A where f.is(a, b)) >= 1;
   }
   view {
-    predicate is(a in A, b in B): Bool = f.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);
   }
 }
 ```
@@ -776,7 +785,7 @@ unknown BijectiveMapping(A, B) {
     must forall a in A: forall b in B: inj.is(a, b) = sur.is(a, b);
   }
   view {
-    predicate is(a in A, b in B): Bool = inj.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = inj.is(a, b);
   }
 }
 ```
@@ -798,7 +807,7 @@ unknown Permutation(A) {
     bij : BijectiveMapping(A, A);
   }
   view {
-    predicate is(a in A, b in A): Bool = bij.is(a, b);
+    predicate is(a: Elem(A), b: Elem(A)): Bool = bij.is(a, b);
   }
 }
 ```
@@ -826,7 +835,7 @@ unknown ExactSubset(X, k) {
     must count(x in X where inner.has(x)) = k;
   }
   view {
-    predicate has(x in X): Bool = inner.has(x);
+    predicate has(x: Elem(X)): Bool = inner.has(x);
   }
 }
 ```
@@ -1064,13 +1073,15 @@ problem MinBisection {
 Model:
 
 ```qsol
+use stdlib.logic;
+
 problem FirstProgram {
   set Items;
   param Value[Items] : Real = 1;
 
   find Pick : Subset(Items);
 
-  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
+  must exactly(2, Pick.has(i) for i in Items);
   maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items);
 }
 ```

@@ -219,8 +219,24 @@ class ASTBuilder:
             return [cast(ast.PredicateFormal, self._from_tree(ch)) for ch in c]
         if data == "pred_formal":
             name = self._name(c[0])
-            in_set = self._name(c[1]) if len(c) == 2 else None
-            return ast.PredicateFormal(span=self._span(node), name=name, in_set=in_set)
+            kind, type_arg = cast(tuple[str, str | None], self._from_tree(c[1]))
+            return ast.PredicateFormal(
+                span=self._span(node),
+                name=name,
+                kind=kind,
+                type_arg=type_arg,
+            )
+        if data == "pred_formal_type":
+            text = self._slice(node).strip()
+            if text in {"Bool", "Real"}:
+                return text, None
+            if text.startswith("Elem("):
+                return "Elem", self._name(c[0])
+            if text.startswith("Comp("):
+                return "Comp", cast(str, self._from_tree(c[0]))
+            raise TypeError(f"unknown predicate formal type `{text}`")
+        if data == "pred_formal_comp_type":
+            return self._slice(node).strip()
 
         if data == "set_decl":
             return ast.SetDecl(span=self._span(node), name=self._name(c[0]))
@@ -412,6 +428,52 @@ class ASTBuilder:
                 where=bool_where,
                 else_term=bool_else_term,
             )
+        if data == "comp_arg_num":
+            num_term = cast(ast.NumExpr, self._from_tree(c[0]))
+            num_var = self._name(c[1])
+            num_domain = self._name(c[2])
+            arg_num_where: ast.BoolExpr | None = None
+            arg_num_else_term: ast.NumExpr | None = None
+            if len(c) == 4:
+                arg_num_where, arg_num_else_term = cast(
+                    tuple[ast.BoolExpr | None, ast.NumExpr | None], self._from_tree(c[3])
+                )
+            return ast.NumAggregate(
+                span=self._span(node),
+                kind="sum",
+                comp=ast.NumComprehension(
+                    span=self._span(node),
+                    term=num_term,
+                    var=num_var,
+                    domain_set=num_domain,
+                    where=arg_num_where,
+                    else_term=arg_num_else_term,
+                ),
+                from_comp_arg=True,
+            )
+        if data == "comp_arg_bool":
+            bool_term = cast(ast.BoolExpr, self._from_tree(c[0]))
+            bool_var = self._name(c[1])
+            bool_domain = self._name(c[2])
+            arg_bool_where: ast.BoolExpr | None = None
+            arg_bool_else_term: ast.BoolExpr | None = None
+            if len(c) == 4:
+                arg_bool_where, arg_bool_else_term = cast(
+                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[3])
+                )
+            return ast.BoolAggregate(
+                span=self._span(node),
+                kind="any",
+                comp=ast.BoolComprehension(
+                    span=self._span(node),
+                    term=bool_term,
+                    var=bool_var,
+                    domain_set=bool_domain,
+                    where=arg_bool_where,
+                    else_term=arg_bool_else_term,
+                ),
+                from_comp_arg=True,
+            )
 
         if data == "comp_count":
             var_ref = self._name(c[0])
@@ -579,6 +641,8 @@ class ASTBuilder:
                 else_expr=cast(ast.NumExpr, self._from_tree(c[2])),
             )
 
+        if data == "call_arg":
+            return cast(ast.Expr, self._from_tree(c[0]))
         if data == "arg_list":
             return [cast(ast.Expr, self._from_tree(ch)) for ch in c]
 

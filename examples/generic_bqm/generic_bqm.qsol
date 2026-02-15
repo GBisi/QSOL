@@ -1,3 +1,5 @@
+use stdlib.logic;
+
 // Generic BQM in QSOL (backend-v1/dimod friendly)
 //
 // This models the unconstrained binary quadratic objective:
@@ -33,10 +35,10 @@ problem GenericBQM {
 
   minimize
     C
-    + sum(if X.has(v) then L[v] else 0 for v in Vars)
+    + sum(L[v] * indicator(X.has(v)) for v in Vars)
     + sum(
         sum(
-          Q[i, j] * (if X.has(i) and X.has(j) then 1 else 0)
+          Q[i, j] * indicator(X.has(i) and X.has(j))
           for j in Vars
         )
         for i in Vars

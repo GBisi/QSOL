@@ -575,7 +575,7 @@ unknown AssignLike(A, B) {
     m : Mapping(A -> B);
   }
   view {
-    predicate is(a in A, b in B): Bool = m.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = m.is(a, b);
   }
 }
 """.strip()
@@ -672,10 +672,10 @@ problem StdlibLogic {
   set A;
   find S : Subset(A);
 
-  must exactly(1, sum(indicator(S.has(x)) for x in A));
-  must atleast(1, sum(indicator(S.has(x)) for x in A));
-  must atmost(2, sum(indicator(S.has(x)) for x in A));
-  must between(1, 2, sum(indicator(S.has(x)) for x in A));
+  must exactly(1, S.has(x) for x in A);
+  must atleast(1, S.has(x) for x in A);
+  must atmost(2, S.has(x) for x in A);
+  must between(1, 2, S.has(x) for x in A);
   minimize sum(indicator(S.has(x)) for x in A);
 }
 """

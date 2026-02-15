@@ -815,9 +815,7 @@ class UnknownElaborator:
                     span=call_span,
                 )
             )
-            if isinstance(member, ast.FunctionDef):
-                return ast.NumLit(span=call_span, value=0.0)
-            return ast.BoolLit(span=call_span, value=False)
+            return self._macro_fallback_expr(member, call_span)
 
         kind_key = "predicate" if isinstance(member, ast.PredicateDef) else "function"
         call_key = (scope_key, f"{kind_key}:{member.name}")
@@ -834,13 +832,19 @@ class UnknownElaborator:
                     help=[recursive_help],
                 )
             )
-            if isinstance(member, ast.FunctionDef):
-                return ast.NumLit(span=call_span, value=0.0)
-            return ast.BoolLit(span=call_span, value=False)
+            return self._macro_fallback_expr(member, call_span)
 
         value_subst: dict[str, ast.Expr] = {}
         for formal, arg in zip(member.formals, call_args, strict=False):
-            value_subst[formal.name] = arg
+            bound_arg = self._bind_macro_formal(
+                formal=formal,
+                arg=arg,
+                call_span=call_span,
+                call_descriptor=call_descriptor,
+            )
+            if bound_arg is None:
+                return self._macro_fallback_expr(member, call_span)
+            value_subst[formal.name] = bound_arg
 
         body = member.expr
         rewritten = self._rewrite_expr(
@@ -851,6 +855,142 @@ class UnknownElaborator:
             call_stack=(*call_stack, call_key),
         )
         return rewritten
+
+    def _bind_macro_formal(
+        self,
+        *,
+        formal: ast.PredicateFormal,
+        arg: ast.Expr,
+        call_span: Span,
+        call_descriptor: str,
+    ) -> ast.Expr | None:
+        if formal.kind != "Comp":
+            if self._is_comp_style_arg(arg):
+                self._diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2101",
+                        message=(
+                            f"{call_descriptor} formal `{formal.name}` does not accept "
+                            "comprehension-style arguments"
+                        ),
+                        span=call_span,
+                        help=[
+                            "Use a regular expression argument, or annotate the formal as `Comp(Bool)`/`Comp(Real)`."
+                        ],
+                    )
+                )
+                return None
+            return arg
+
+        comp_kind = formal.type_arg
+        if comp_kind not in {"Bool", "Real"}:
+            self._diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2101",
+                    message=f"invalid `Comp` formal type for `{formal.name}`",
+                    span=formal.span,
+                    help=["Use `Comp(Bool)` or `Comp(Real)`."],
+                )
+            )
+            return None
+
+        if not self._is_comp_style_arg(arg):
+            self._diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2101",
+                    message=(
+                        f"{call_descriptor} formal `{formal.name}` expects a comprehension-style argument"
+                    ),
+                    span=call_span,
+                    help=[
+                        "Pass an argument like `term for x in X where cond else alt`.",
+                    ],
+                )
+            )
+            return None
+
+        if comp_kind == "Real":
+            return self._comp_arg_to_real(arg)
+        return self._comp_arg_to_bool(arg)
+
+    def _is_comp_style_arg(self, arg: ast.Expr) -> bool:
+        return (
+            isinstance(arg, ast.NumAggregate)
+            and arg.from_comp_arg
+            and isinstance(arg.comp, ast.NumComprehension)
+        ) or (
+            isinstance(arg, ast.BoolAggregate)
+            and arg.from_comp_arg
+            and isinstance(arg.comp, ast.BoolComprehension)
+        )
+
+    def _comp_arg_to_real(self, arg: ast.Expr) -> ast.NumExpr:
+        if isinstance(arg, ast.NumAggregate) and isinstance(arg.comp, ast.NumComprehension):
+            return ast.NumAggregate(span=arg.span, kind="sum", comp=arg.comp)
+        if isinstance(arg, ast.BoolAggregate) and isinstance(arg.comp, ast.BoolComprehension):
+            comp = arg.comp
+            return ast.NumAggregate(
+                span=arg.span,
+                kind="sum",
+                comp=ast.NumComprehension(
+                    span=comp.span,
+                    term=self._bool_to_num(comp.term),
+                    var=comp.var,
+                    domain_set=comp.domain_set,
+                    where=comp.where,
+                    else_term=(
+                        self._bool_to_num(comp.else_term) if comp.else_term is not None else None
+                    ),
+                ),
+            )
+        return ast.NumLit(span=arg.span, value=0.0)
+
+    def _comp_arg_to_bool(self, arg: ast.Expr) -> ast.BoolExpr:
+        if isinstance(arg, ast.BoolAggregate) and isinstance(arg.comp, ast.BoolComprehension):
+            return ast.BoolAggregate(span=arg.span, kind="any", comp=arg.comp)
+        if isinstance(arg, ast.NumAggregate) and isinstance(arg.comp, ast.NumComprehension):
+            comp = arg.comp
+            return ast.BoolAggregate(
+                span=arg.span,
+                kind="any",
+                comp=ast.BoolComprehension(
+                    span=comp.span,
+                    term=self._num_to_bool(comp.term),
+                    var=comp.var,
+                    domain_set=comp.domain_set,
+                    where=comp.where,
+                    else_term=(
+                        self._num_to_bool(comp.else_term) if comp.else_term is not None else None
+                    ),
+                ),
+            )
+        return ast.BoolLit(span=arg.span, value=False)
+
+    def _bool_to_num(self, expr: ast.BoolExpr) -> ast.NumExpr:
+        return ast.IfThenElse(
+            span=expr.span,
+            cond=expr,
+            then_expr=ast.NumLit(span=expr.span, value=1.0),
+            else_expr=ast.NumLit(span=expr.span, value=0.0),
+        )
+
+    def _num_to_bool(self, expr: ast.NumExpr) -> ast.BoolExpr:
+        return ast.Compare(
+            span=expr.span,
+            op="!=",
+            left=expr,
+            right=ast.NumLit(span=expr.span, value=0.0),
+        )
+
+    def _macro_fallback_expr(
+        self, member: ast.PredicateDef | ast.FunctionDef, span: Span
+    ) -> ast.Expr:
+        if isinstance(member, ast.FunctionDef):
+            return ast.NumLit(span=span, value=0.0)
+        return ast.BoolLit(span=span, value=False)
 
     def _view_member(
         self, unknown_def: ast.UnknownDef, name: str

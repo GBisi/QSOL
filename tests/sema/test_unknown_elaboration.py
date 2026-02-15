@@ -17,7 +17,7 @@ unknown InjectiveMapping(A, B) {
     must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
   }
   view {
-    predicate is(a in A, b in B): Bool = f.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);
   }
 }
 
@@ -26,7 +26,7 @@ unknown PermLike(A) {
     inj : InjectiveMapping(A, A);
   }
   view {
-    predicate is(a in A, b in A): Bool = inj.is(a, b);
+    predicate is(a: Elem(A), b: Elem(A)): Bool = inj.is(a, b);
   }
 }
 
@@ -83,7 +83,7 @@ def test_unknown_elaboration_reports_find_arity_mismatch_and_keeps_original_find
 unknown OneArg(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 
 problem Demo {
@@ -182,7 +182,7 @@ def test_unknown_elaboration_resolves_alias_collisions_for_generated_find_names(
 unknown Wrap(A) {
   rep { inner : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = inner.has(x); }
+  view { predicate has(x: Elem(A)): Bool = inner.has(x); }
 }
 
 problem P {
@@ -212,8 +212,8 @@ unknown Fancy(T) {
     must size(T) >= 0;
   }
   view {
-    predicate has(x in T): Bool = base.has(x);
-    predicate alias(x in T): Bool = has(x);
+    predicate has(x: Elem(T)): Bool = base.has(x);
+    predicate alias(x: Elem(T)): Bool = has(x);
   }
 }
 
@@ -244,7 +244,7 @@ def test_unknown_elaboration_reports_unknown_method_and_predicate_arity_issues()
 unknown U(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 
 problem Demo {
@@ -268,7 +268,7 @@ def test_unknown_elaboration_reports_recursive_view_predicate_expansion() -> Non
 unknown Loop(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate p(x in A): Bool = p(x); }
+  view { predicate p(x: Elem(A)): Bool = p(x); }
 }
 
 problem Demo {
@@ -289,8 +289,8 @@ problem Demo {
 def test_unknown_elaboration_expands_top_level_predicates_and_functions() -> None:
     program = parse_to_ast(
         """
-predicate iff(a, b): Bool = a and b or not a and not b;
-function indicator(b): Real = if b then 1 else 0;
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+function indicator(b: Bool): Real = if b then 1 else 0;
 
 problem Demo {
   param Flag : Bool;
@@ -313,14 +313,14 @@ problem Demo {
 def test_unknown_elaboration_expands_view_functions_and_global_calls() -> None:
     program = parse_to_ast(
         """
-function add1(x): Real = x + 1;
+function add1(x: Real): Real = x + 1;
 
 unknown Fancy(A) {
   rep { s : Subset(A); }
   laws { must true; }
   view {
-    function score(x in A): Real = add1(if s.has(x) then 1 else 0);
-    predicate ok(x in A): Bool = score(x) >= 0;
+    function score(x: Elem(A)): Real = add1(if s.has(x) then 1 else 0);
+    predicate ok(x: Elem(A)): Bool = score(x) >= 0;
   }
 }
 
@@ -346,8 +346,8 @@ problem Demo {
 def test_unknown_elaboration_reports_recursive_top_level_macro_expansion() -> None:
     program = parse_to_ast(
         """
-predicate p(x): Bool = q(x);
-predicate q(x): Bool = p(x);
+predicate p(x: Bool): Bool = q(x);
+predicate q(x: Bool): Bool = p(x);
 
 problem Demo {
   must p(true);
@@ -358,5 +358,89 @@ problem Demo {
     elaborated = elaborate_unknowns(program)
     assert any(
         diag.code == "QSOL2101" and "recursive macro expansion detected" in diag.message
+        for diag in elaborated.diagnostics
+    )
+
+
+def test_unknown_elaboration_comp_real_formal_accepts_bool_comprehension_args() -> None:
+    program = parse_to_ast(
+        """
+predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
+
+problem Demo {
+  set A;
+  find S : Subset(A);
+  must atleast(1, S.has(x) for x in A);
+}
+""",
+        filename="elab_comp_real.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert not any(diag.is_error for diag in elaborated.diagnostics)
+
+    problem = next(item for item in elaborated.program.items if isinstance(item, ast.ProblemDef))
+    constraint = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Constraint))
+    assert isinstance(constraint.expr, ast.Compare)
+    assert isinstance(constraint.expr.left, ast.NumAggregate)
+    assert isinstance(constraint.expr.left.comp, ast.NumComprehension)
+    assert isinstance(constraint.expr.left.comp.term, ast.IfThenElse)
+
+
+def test_unknown_elaboration_comp_bool_formal_accepts_numeric_comprehension_args() -> None:
+    program = parse_to_ast(
+        """
+predicate any_positive(terms: Comp(Bool)): Bool = terms;
+
+problem Demo {
+  set A;
+  param Score[A] : Real = 1;
+  must any_positive(Score[x] for x in A);
+}
+""",
+        filename="elab_comp_bool.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert not any(diag.is_error for diag in elaborated.diagnostics)
+
+    problem = next(item for item in elaborated.program.items if isinstance(item, ast.ProblemDef))
+    constraint = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Constraint))
+    assert isinstance(constraint.expr, ast.BoolAggregate)
+    assert isinstance(constraint.expr.comp.term, ast.Compare)
+
+
+def test_unknown_elaboration_rejects_comp_arg_for_non_comp_formal() -> None:
+    program = parse_to_ast(
+        """
+predicate nonneg(x: Real): Bool = x >= 0;
+
+problem Demo {
+  set A;
+  find S : Subset(A);
+  must nonneg(S.has(x) for x in A);
+}
+""",
+        filename="elab_non_comp_bad.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert any(
+        diag.code == "QSOL2101" and "does not accept comprehension-style arguments" in diag.message
+        for diag in elaborated.diagnostics
+    )
+
+
+def test_unknown_elaboration_rejects_non_comprehension_for_comp_formal() -> None:
+    program = parse_to_ast(
+        """
+predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
+
+problem Demo {
+  must atleast(1, 1);
+}
+""",
+        filename="elab_comp_missing.qsol",
+    )
+    elaborated = elaborate_unknowns(program)
+    assert any(
+        diag.code == "QSOL2101" and "expects a comprehension-style argument" in diag.message
         for diag in elaborated.diagnostics
     )

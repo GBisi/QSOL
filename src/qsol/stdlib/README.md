@@ -35,7 +35,7 @@ Exports:
 - `unknown InjectiveMapping(A, B)`
 
 View methods:
-- `is(a in A, b in B) -> Bool`
+- `is(a: Elem(A), b: Elem(B)) -> Bool`
 
 Semantics:
 - uses internal `Mapping(A -> B)`
@@ -48,7 +48,7 @@ Exports:
 - `unknown SurjectiveMapping(A, B)`
 
 View methods:
-- `is(a in A, b in B) -> Bool`
+- `is(a: Elem(A), b: Elem(B)) -> Bool`
 
 Semantics:
 - uses internal `Mapping(A -> B)`
@@ -65,7 +65,7 @@ Exports:
 - `unknown BijectiveMapping(A, B)`
 
 View methods:
-- `is(a in A, b in B) -> Bool`
+- `is(a: Elem(A), b: Elem(B)) -> Bool`
 
 Semantics:
 - composes one injective and one surjective mapping over the same domains
@@ -80,7 +80,7 @@ Exports:
 - `unknown Permutation(A)`
 
 View methods:
-- `is(a in A, b in A) -> Bool`
+- `is(a: Elem(A), b: Elem(A)) -> Bool`
 
 Semantics:
 - a bijection from `A` to `A`
@@ -88,20 +88,21 @@ Semantics:
 ### `stdlib.logic`
 
 Exports:
-- `function indicator(b): Real`
-- `predicate exactly(k, n): Bool`
-- `predicate atleast(k, n): Bool`
-- `predicate atmost(k, n): Bool`
-- `predicate between(lo, hi, n): Bool`
-- `predicate iff(a, b): Bool`
-- `predicate xor(a, b): Bool`
+- `function indicator(b: Bool): Real`
+- `predicate exactly(k: Real, terms: Comp(Real)): Bool`
+- `predicate atleast(k: Real, terms: Comp(Real)): Bool`
+- `predicate atmost(k: Real, terms: Comp(Real)): Bool`
+- `predicate between(lo: Real, hi: Real, terms: Comp(Real)): Bool`
+- `predicate iff(a: Bool, b: Bool): Bool`
+- `predicate xor(a: Bool, b: Bool): Bool`
 
 Semantics:
 - frontend macro helpers for common boolean/count expressions
 - no backend primitive changes; helpers expand before lowering/backend stages
 - `iff(a, b)` is logical equivalence (`(a => b) and (b => a)`)
 - `xor(a, b)` is exclusive-or (`(a or b) and not (a and b)`)
-- `between(lo, hi, n)` is inclusive
+- `between(lo, hi, terms)` is inclusive
+- Counting helpers take comprehension-style arguments, e.g. `atleast(1, S.has(x) for x in A)`
 
 ## 4. Usage Examples
 
@@ -139,7 +140,7 @@ use stdlib.logic;
 problem Demo {
   set A;
   find S : Subset(A);
-  must exactly(1, sum(indicator(S.has(x)) for x in A));
+  must exactly(1, S.has(x) for x in A);
   minimize sum(indicator(S.has(x)) for x in A);
 }
 ```

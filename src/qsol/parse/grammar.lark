@@ -80,7 +80,12 @@ formal_param: NAME
 predicate_def: "predicate" NAME "(" [pred_formals] ")" ":" "Bool" "=" bool_expr
 function_def: "function" NAME "(" [pred_formals] ")" ":" "Real" "=" num_expr
 pred_formals: pred_formal ("," pred_formal)*
-pred_formal: NAME ["in" NAME]
+pred_formal: NAME ":" pred_formal_type
+pred_formal_type: "Bool"
+                | "Real"
+                | "Elem" "(" NAME ")"
+                | "Comp" "(" pred_formal_comp_type ")"
+pred_formal_comp_type: "Bool" | "Real"
 
 // -----------------------
 // Declarations
@@ -249,7 +254,12 @@ if_expr: "if" bool_expr "then" num_expr "else" num_expr
 ?atom: NAME
      | literal
 
-arg_list: expr ("," expr)*
+arg_list: call_arg ("," call_arg)*
+call_arg: comp_arg_num
+        | comp_arg_bool
+        | expr
+comp_arg_num: num_expr "for" NAME "in" NAME comp_tail_num?
+comp_arg_bool: bool_expr "for" NAME "in" NAME comp_tail_bool?
 ?expr: bool_expr | num_expr
 
 literal: BOOL

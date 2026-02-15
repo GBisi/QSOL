@@ -23,6 +23,8 @@ Assign tasks to workers with:
 Model (`examples/tutorials/assignment_balance.qsol`):
 
 ```qsol
+use stdlib.logic;
+
 problem WorkerAssignment {
   set Workers;
   set Tasks;
@@ -32,7 +34,7 @@ problem WorkerAssignment {
   find Assign : Mapping(Tasks -> Workers);
 
   must forall w in Workers:
-    sum(if Assign.is(t, w) then 1 else 0 for t in Tasks) <= 2;
+    atmost(2, Assign.is(t, w) for t in Tasks);
 
   minimize sum(
     sum(if Assign.is(t, w) then Cost[w, t] else 0 for w in Workers)

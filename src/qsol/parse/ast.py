@@ -119,7 +119,8 @@ class Objective(ProblemStmt):
 @dataclass(frozen=True, slots=True)
 class PredicateFormal(Node):
     name: str
-    in_set: str | None
+    kind: str
+    type_arg: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,12 +291,14 @@ class CountComprehension(Node):
 class NumAggregate(NumExpr):
     kind: str
     comp: NumComprehension | CountComprehension
+    from_comp_arg: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class BoolAggregate(BoolExpr):
     kind: str
     comp: BoolComprehension
+    from_comp_arg: bool = False
 
 
 TypedMap = dict[int, str]

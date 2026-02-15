@@ -52,8 +52,8 @@ unknown U(A) {
     must true;
   }
   view {
-    predicate has(x in A): Bool = inner.has(x);
-    function indicator(x in A): Real = if inner.has(x) then 1 else 0;
+    predicate has(x: Elem(A)): Bool = inner.has(x);
+    function indicator(x: Elem(A)): Real = if inner.has(x) then 1 else 0;
   }
 }
 ```
@@ -61,8 +61,8 @@ unknown U(A) {
 Top-level reusable macros use the same typed declaration syntax:
 
 ```qsol
-predicate iff(a, b): Bool = a and b or not a and not b;
-function indicator(b): Real = if b then 1 else 0;
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+function indicator(b: Bool): Real = if b then 1 else 0;
 ```
 
 ## 3. Declarations Inside `problem`
@@ -171,12 +171,27 @@ size(V)
 ```qsol
 S.has(x)
 Assign.is(w, t)
-exactly(1, sum(indicator(S.has(x)) for x in X))
+exactly(1, S.has(x) for x in X)
 
 Cost[w, t]
 C
 size(V)
 ```
+
+Macro formal types:
+- `Bool`
+- `Real`
+- `Elem(SetName)`
+- `Comp(Bool)`
+- `Comp(Real)`
+
+Comprehension-style call arguments are written as:
+
+```qsol
+f(term for x in X where cond else alt)
+```
+
+`Comp(Real)` formals consume these as numeric aggregate inputs; `Comp(Bool)` formals consume them as boolean aggregate inputs.
 
 ## 6. Quantifiers
 
@@ -217,12 +232,14 @@ all(term for x in X where cond else alt)
 ## 8. Minimal Complete Example
 
 ```qsol
+use stdlib.logic;
+
 problem ExactKSubset {
   set Items;
 
   find Pick : Subset(Items);
 
-  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
+  must exactly(2, Pick.has(i) for i in Items);
   minimize sum(if Pick.has(i) then 1 else 0 for i in Items);
 }
 ```
@@ -263,6 +280,20 @@ must forall x in A: (true => S.has(x));
 
 - `Subset.has` expects one argument.
 - `Mapping.is` expects two arguments.
+
+### 9.4 Legacy macro formal syntax
+
+Invalid:
+
+```qsol
+predicate has(x in A): Bool = true;
+```
+
+Valid:
+
+```qsol
+predicate has(x: Elem(A)): Bool = true;
+```
 
 ## 10. Grammar Source
 

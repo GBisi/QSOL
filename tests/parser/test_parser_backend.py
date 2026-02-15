@@ -35,7 +35,7 @@ unknown U(A) {
   }
 
   view {
-    predicate has(x in A): Bool = m.has(x);
+    predicate has(x: Elem(A)): Bool = m.has(x);
 
   }
 }
@@ -57,7 +57,7 @@ unknown MappingLike(A, B) {
     must forall x in A: f.has(x);
   }
   view {
-    predicate has(x in A): Bool = f.has(x);
+    predicate has(x: Elem(A)): Bool = f.has(x);
   }
 }
 """

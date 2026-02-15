@@ -36,7 +36,7 @@ problem P {
 unknown FromImporter(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 """,
     )
@@ -46,7 +46,7 @@ unknown FromImporter(A) {
 unknown FromCwd(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 """,
     )
@@ -83,7 +83,7 @@ problem P {
 unknown Base(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 """,
     )
@@ -136,8 +136,8 @@ problem P {
     _write(
         tmp_path / "mylib" / "logic.qsol",
         """
-predicate iff(a, b): Bool = a and b or not a and not b;
-function indicator(b): Real = if b then 1 else 0;
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+function indicator(b: Bool): Real = if b then 1 else 0;
 """,
     )
 
@@ -192,7 +192,7 @@ use mylib.b;
 unknown AType(X) {
   rep { s : Subset(X); }
   laws { must true; }
-  view { predicate has(x in X): Bool = s.has(x); }
+  view { predicate has(x: Elem(X)): Bool = s.has(x); }
 }
 """,
     )
@@ -203,7 +203,7 @@ use mylib.a;
 unknown BType(X) {
   rep { s : Subset(X); }
   laws { must true; }
-  view { predicate has(x in X): Bool = s.has(x); }
+  view { predicate has(x: Elem(X)): Bool = s.has(x); }
 }
 """,
     )
@@ -262,7 +262,7 @@ problem P {
 unknown Shared(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 """,
     )
@@ -293,7 +293,7 @@ problem P {
 unknown Broken(A) {
   rep { s : Subset(A); }
   laws { must true; }
-  view { predicate has(x in A): Bool = s.has(x); }
+  view { predicate has(x: Elem(A)): Bool = s.has(x); }
 }
 """,
     )

@@ -37,8 +37,8 @@ problem P {
 
 def test_parse_top_level_predicate_and_function_definitions() -> None:
     text = """
-predicate iff(a, b): Bool = a and b or not a and not b;
-function indicator(b): Real = if b then 1 else 0;
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+function indicator(b: Bool): Real = if b then 1 else 0;
 
 problem P {
   param Flag : Bool;
@@ -174,6 +174,42 @@ problem P {
         assert exc.diagnostic.code == "QSOL1001"
     else:
         raise AssertionError("expected parse failure")
+
+
+def test_parse_rejects_legacy_in_set_formal_syntax() -> None:
+    text = """
+predicate has(x in A): Bool = true;
+problem P {
+  set A;
+  must true;
+}
+"""
+    try:
+        parse_to_ast(text, filename="legacy_in_set_bad.qsol")
+    except ParseFailure as exc:
+        assert exc.diagnostic.code == "QSOL1001"
+    else:
+        raise AssertionError("expected parse failure")
+
+
+def test_parse_comprehension_style_call_argument() -> None:
+    text = """
+predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
+
+problem P {
+  set X;
+  find S : Subset(X);
+  must atleast(1, S.has(x) for x in X where true else false);
+}
+"""
+    program = parse_to_ast(text, filename="comp_arg_call.qsol")
+    problem = program.items[1]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[2]
+    assert isinstance(constraint, ast.Constraint)
+    assert isinstance(constraint.expr, ast.FuncCall)
+    assert isinstance(constraint.expr.args[1], ast.BoolAggregate)
+    assert constraint.expr.args[1].from_comp_arg is True
 
 
 def test_parse_missing_semicolon_produces_help() -> None:

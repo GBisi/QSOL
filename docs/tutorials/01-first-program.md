@@ -7,13 +7,15 @@ Goal: write and run a minimal QSOL model end to end with explicit runtime target
 Create `first_program.qsol`:
 
 ```qsol
+use stdlib.logic;
+
 problem FirstProgram {
   set Items;
   param Value[Items] : Real = 1;
 
   find Pick : Subset(Items);
 
-  must sum(if Pick.has(i) then 1 else 0 for i in Items) = 2;
+  must exactly(2, Pick.has(i) for i in Items);
   maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items);
 }
 ```

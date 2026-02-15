@@ -1,8 +1,9 @@
-function indicator(b): Real = if b then 1 else 0;
+function indicator(b: Bool): Real = if b then 1 else 0;
 
-predicate exactly(k, n): Bool = n = k;
-predicate atleast(k, n): Bool = n >= k;
-predicate atmost(k, n): Bool = n <= k;
-predicate between(lo, hi, n): Bool = (lo <= n) and (n <= hi);
-predicate iff(a, b): Bool = a and b or not a and not b;
-predicate xor(a, b): Bool = a and not b or not a and b;
+predicate exactly(k: Real, terms: Comp(Real)): Bool = terms = k;
+predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
+predicate atmost(k: Real, terms: Comp(Real)): Bool = terms <= k;
+predicate between(lo: Real, hi: Real, terms: Comp(Real)): Bool =
+  (lo <= terms) and (terms <= hi);
+predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
+predicate xor(a: Bool, b: Bool): Bool = a and not b or not a and b;

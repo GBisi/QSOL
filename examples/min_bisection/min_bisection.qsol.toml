@@ -23,4 +23,4 @@ e2 = "v3"
 e3 = "v4"
 
 [scenarios.baseline.params]
-PenaltyA = 20
+PenaltyA = 5
