@@ -46,6 +46,10 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 code="QSOL3001",
                 message="instance problem does not match any compiled problem",
                 span=kernel.span,
+                help=[
+                    "Set `problem` in the instance JSON to one of the compiled problem names.",
+                    "Run `qsol compile --lower --json` to inspect compiled problem names.",
+                ],
             )
         )
         return InstanceResult(ground_ir=None, diagnostics=diagnostics)
@@ -69,6 +73,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                         code="QSOL2201",
                         message=f"missing set values for `{decl.name}`",
                         span=decl.span,
+                        help=[f"Add `sets.{decl.name}` as a JSON array in the instance payload."],
                     )
                 )
                 continue
@@ -79,6 +84,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                         code="QSOL2201",
                         message=f"set `{decl.name}` must be a JSON array",
                         span=decl.span,
+                        help=[
+                            f'Replace `sets.{decl.name}` with an array value, e.g. `["a1", "a2"]`.'
+                        ],
                     )
                 )
                 continue
@@ -97,6 +105,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                         code="QSOL2201",
                         message=f"missing value for param `{pdecl.name}`",
                         span=pdecl.span,
+                        help=[
+                            f"Provide `params.{pdecl.name}` in the instance JSON or declare a default in the model."
+                        ],
                     )
                 )
                 continue
@@ -112,6 +123,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                                 code="QSOL2201",
                                 message=f"param `{pdecl.name}` expects indexed object",
                                 span=pdecl.span,
+                                help=[
+                                    "Use nested JSON objects keyed by index set elements for indexed params."
+                                ],
                             )
                         )
                         continue
@@ -123,6 +137,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                             code="QSOL2201",
                             message=f"param `{pdecl.name}` shape does not match index sets",
                             span=pdecl.span,
+                            help=[
+                                "Ensure object keys exactly match declared index set elements at each dimension."
+                            ],
                         )
                     )
                     continue
@@ -136,6 +153,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                             code="QSOL2201",
                             message=f"missing set values for `{pdecl.elem_set}` used by `{pdecl.name}`",
                             span=pdecl.span,
+                            help=[
+                                f"Add `sets.{pdecl.elem_set}` to the instance payload before using `{pdecl.name}`."
+                            ],
                         )
                     )
                     continue
@@ -155,6 +175,9 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                                 f"`{pdecl.elem_set}`"
                             ),
                             span=pdecl.span,
+                            help=[
+                                f"Restrict values of `{pdecl.name}` to members declared in set `{pdecl.elem_set}`."
+                            ],
                         )
                     )
                     continue
@@ -604,6 +627,7 @@ def _fold_size_call(
                 code="QSOL2101",
                 message="size() expects exactly one set identifier argument",
                 span=call.span,
+                help=["Use `size(SetName)` with exactly one declared set identifier."],
             )
         )
         return fallback
@@ -616,6 +640,7 @@ def _fold_size_call(
                 code="QSOL2101",
                 message="size() expects a declared set identifier",
                 span=call.span,
+                help=["Pass a declared set name, e.g. `size(V)`."],
             )
         )
         return fallback
@@ -633,6 +658,7 @@ def _fold_size_call(
             code="QSOL2101",
             message=f"size() expects a declared set identifier, got `{arg.name}`",
             span=arg.span,
+            help=["Use a set declared in the active problem scope."],
         )
     )
     return fallback

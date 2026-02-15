@@ -134,3 +134,6 @@ def test_run_errors_when_inferred_instance_is_missing(tmp_path: Path) -> None:
     result = runner.invoke(app, ["run", str(source_path), "--sampler", "exact"])
 
     assert result.exit_code != 0
+    assert "error[QSOL4002]" in result.stdout
+    assert "default instance was not found" in result.stdout
+    assert "--> " in result.stdout

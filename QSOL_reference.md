@@ -333,6 +333,20 @@ Common diagnostic codes:
 - `QSOL2101`: type rule violation
 - `QSOL2201`: instance data or indexing/shape issue
 - `QSOL3001`: unsupported backend shape or validation/backend limitation
+- `QSOL4001`: invalid CLI flag combination
+- `QSOL4002`: missing inferred instance file for `run`/`compile`
+- `QSOL4003`: model or payload file read failure
+- `QSOL4004`: instance JSON load/validation failure before compilation
+- `QSOL4005`: runtime preparation/artifact loading failure
+- `QSOL5001`: sampler runtime failure
+
+CLI diagnostics are rendered in rustc-style format by default:
+
+- header: `error[CODE]: message`
+- location: `--> file:line:col`
+- source excerpt with highlighted spans
+- contextual `= note:` and `= help:` hints
+- final summary with error/warning/info totals
 
 Use CLI commands progressively:
 - `compile --parse` to validate syntax

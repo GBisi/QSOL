@@ -1081,4 +1081,40 @@ class DimodCodegen:
             code="QSOL3001",
             message=message,
             span=span,
+            help=self._help_for_backend_message(message),
         )
+
+    def _help_for_backend_message(self, message: str) -> list[str]:
+        if "unsupported unknown kind" in message:
+            return ["Backend v1 currently supports only `Subset` and `Mapping` unknown kinds."]
+        if "unsupported hard constraint shape" in message:
+            return [
+                "Rewrite the hard constraint into comparisons/boolean forms supported by backend v1."
+            ]
+        if "unsupported soft constraint" in message:
+            return ["Simplify soft constraints to backend-supported boolean expressions."]
+        if "unsupported objective expression" in message:
+            return ["Use numeric objective forms that lower to linear/quadratic expressions."]
+        if "unknown set" in message and "quantifier" in message:
+            return [
+                "Ensure quantifier domain sets are declared and instantiated in the instance JSON."
+            ]
+        if "infeasible constant constraint" in message:
+            return [
+                "This constant comparison is always false. Adjust constants or constraint operator."
+            ]
+        if "division by zero" in message:
+            return ["Avoid zero divisors in expressions, or guard the division with a condition."]
+        if "unknown index" in message and "for param" in message:
+            return [
+                "Ensure parameter index keys match declared set members in the instance payload."
+            ]
+        if "unknown variable" in message:
+            return ["Check unknown declarations and method calls map to declared find variables."]
+        if "not supported in backend v1" in message:
+            return [
+                "Model is valid but unsupported by backend v1; rewrite using currently supported forms."
+            ]
+        if "unsupported comparison operator" in message:
+            return ["Use one of `=`, `!=`, `<`, `<=`, `>`, `>=` in comparisons."]
+        return []

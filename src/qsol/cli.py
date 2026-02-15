@@ -17,6 +17,14 @@ from rich.table import Table
 
 from qsol.compiler.options import CompileOptions
 from qsol.compiler.pipeline import compile_source
+from qsol.diag.cli_diagnostics import (
+    file_read_error,
+    invalid_flag_combination,
+    missing_artifact,
+    missing_instance_file,
+    runtime_prep_error,
+    runtime_sampling_error,
+)
 from qsol.diag.diagnostic import Diagnostic
 from qsol.diag.reporter import DiagnosticReporter
 from qsol.diag.source import SourceText
@@ -128,7 +136,9 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 
-def _print_diags(console: Console, source: SourceText, diagnostics: list[Diagnostic]) -> bool:
+def _print_diags(
+    console: Console, source: SourceText | None, diagnostics: list[Diagnostic]
+) -> bool:
     reporter = DiagnosticReporter(console=console)
     if diagnostics:
         for diag in diagnostics:
@@ -142,18 +152,17 @@ def _print_diags(console: Console, source: SourceText, diagnostics: list[Diagnos
     return any(d.is_error for d in diagnostics)
 
 
-def _resolve_instance_path(file: Path, instance: Path | None) -> Path:
+def _resolve_instance_path(
+    file: Path, instance: Path | None
+) -> tuple[Path | None, Diagnostic | None]:
     if instance is not None:
-        return instance
+        return instance, None
 
     inferred_instance = file.with_suffix(".instance.json")
     if inferred_instance.exists():
         LOGGER.info("Inferred instance file: %s", inferred_instance)
-        return inferred_instance
-
-    message = f"instance file not provided and default instance was not found: {inferred_instance}"
-    LOGGER.error(message)
-    raise typer.BadParameter(message)
+        return inferred_instance, None
+    return None, missing_instance_file(inferred_instance, model_path=file)
 
 
 def _resolve_outdir(file: Path, outdir: Path | None) -> Path:
@@ -254,6 +263,7 @@ def compile_cmd(
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
     log_level: LogLevel = typer.Option(LogLevel.info, "--log-level", "-l", help="Log level"),
 ) -> None:
+    console = Console(no_color=no_color)
     selected_modes = [
         mode
         for mode, enabled in (
@@ -264,11 +274,31 @@ def compile_cmd(
         if enabled
     ]
     if len(selected_modes) > 1:
-        raise typer.BadParameter("choose only one of --parse, --check, or --lower")
+        _print_diags(
+            console,
+            None,
+            [
+                invalid_flag_combination(
+                    "choose only one of --parse, --check, or --lower",
+                    file=file,
+                )
+            ],
+        )
+        raise typer.Exit(code=1)
 
     inspect_mode = selected_modes[0] if selected_modes else None
     if json_out and inspect_mode not in (CompileInspectMode.parse, CompileInspectMode.lower_):
-        raise typer.BadParameter("--json is only valid with --parse or --lower")
+        _print_diags(
+            console,
+            None,
+            [
+                invalid_flag_combination(
+                    "--json is only valid with --parse or --lower",
+                    file=file,
+                )
+            ],
+        )
+        raise typer.Exit(code=1)
 
     resolved_outdir: Path | None = None
     if inspect_mode is None:
@@ -286,10 +316,18 @@ def compile_cmd(
     else:
         LOGGER.info("Running compile on %s", file)
 
-    console = Console(no_color=no_color)
-    text = _read_file(file)
+    try:
+        text = _read_file(file)
+    except OSError as exc:
+        _print_diags(console, None, [file_read_error(file, exc)])
+        raise typer.Exit(code=1) from None
     if inspect_mode is None:
-        resolved_instance = _resolve_instance_path(file, instance)
+        resolved_instance, instance_diag = _resolve_instance_path(file, instance)
+        if instance_diag is not None:
+            _print_diags(console, None, [instance_diag])
+            raise typer.Exit(code=1)
+        if resolved_instance is None:  # pragma: no cover - guarded by diagnostic branch
+            raise typer.Exit(code=1)
         LOGGER.debug(
             "Compile options: instance=%s outdir=%s format=%s",
             resolved_instance,
@@ -340,7 +378,14 @@ def compile_cmd(
             console.print(Pretty(unit.lowered_ir_symbolic))
         return
 
-    if has_errors or unit.artifacts is None or resolved_outdir is None:
+    if has_errors:
+        raise typer.Exit(code=1)
+    if unit.artifacts is None or resolved_outdir is None:
+        _print_diags(
+            console,
+            source,
+            [missing_artifact("compilation did not produce expected artifacts", model_path=file)],
+        )
         raise typer.Exit(code=1)
 
     table = Table(title="Compilation Artifacts")
@@ -376,10 +421,16 @@ def run_cmd(
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI colors"),
     log_level: LogLevel = typer.Option(LogLevel.warning, "--log-level", "-l", help="Log level"),
 ) -> None:
+    console = Console(no_color=no_color)
     resolved_outdir = _resolve_outdir(file, out)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
 
-    resolved_instance = _resolve_instance_path(file, instance)
+    resolved_instance, instance_diag = _resolve_instance_path(file, instance)
+    if instance_diag is not None:
+        _print_diags(console, None, [instance_diag])
+        raise typer.Exit(code=1)
+    if resolved_instance is None:  # pragma: no cover - guarded by diagnostic branch
+        raise typer.Exit(code=1)
     LOGGER.info("Running solve flow on %s", file)
     LOGGER.debug(
         "Run options: instance=%s outdir=%s format=%s sampler=%s reads=%s seed=%s",
@@ -391,8 +442,11 @@ def run_cmd(
         seed,
     )
 
-    console = Console(no_color=no_color)
-    text = _read_file(file)
+    try:
+        text = _read_file(file)
+    except OSError as exc:
+        _print_diags(console, None, [file_read_error(file, exc)])
+        raise typer.Exit(code=1) from None
     unit = compile_source(
         text,
         options=CompileOptions(
@@ -404,25 +458,75 @@ def run_cmd(
     )
     source = SourceText(text, str(file))
     has_errors = _print_diags(console, source, unit.diagnostics)
-    if has_errors or unit.artifacts is None or unit.artifacts.bqm_path is None:
+    if has_errors:
+        raise typer.Exit(code=1)
+    if unit.artifacts is None or unit.artifacts.bqm_path is None:
+        _print_diags(
+            console,
+            source,
+            [
+                missing_artifact(
+                    "missing BQM artifact after compilation",
+                    model_path=file,
+                )
+            ],
+        )
         raise typer.Exit(code=1)
 
-    with Path(unit.artifacts.bqm_path).open("rb") as fp:
-        bqm = dimod.BinaryQuadraticModel.from_file(fp)
+    try:
+        with Path(unit.artifacts.bqm_path).open("rb") as fp:
+            bqm = dimod.BinaryQuadraticModel.from_file(fp)
+    except Exception as exc:
+        _print_diags(
+            console,
+            source,
+            [
+                runtime_prep_error(
+                    file,
+                    f"failed to load BQM artifact: {unit.artifacts.bqm_path}",
+                    notes=[str(exc)],
+                )
+            ],
+        )
+        raise typer.Exit(code=1) from None
     if unit.artifacts.varmap_path is None:
-        LOGGER.error("Missing varmap artifact")
+        _print_diags(
+            console,
+            source,
+            [missing_artifact("missing varmap artifact after compilation", model_path=file)],
+        )
         raise typer.Exit(code=1)
-    varmap = json.loads(Path(unit.artifacts.varmap_path).read_text(encoding="utf-8"))
+    try:
+        varmap = json.loads(Path(unit.artifacts.varmap_path).read_text(encoding="utf-8"))
+        if not isinstance(varmap, dict):
+            raise ValueError("varmap JSON payload must be an object")
+    except Exception as exc:
+        _print_diags(
+            console,
+            source,
+            [
+                runtime_prep_error(
+                    file,
+                    f"failed to load varmap artifact: {unit.artifacts.varmap_path}",
+                    notes=[str(exc)],
+                )
+            ],
+        )
+        raise typer.Exit(code=1) from None
 
-    if sampler == SamplerKind.exact:
-        LOGGER.info("Using exact solver")
-        sampleset = _sample_exact(bqm)
-    else:
-        sample_kwargs: dict[str, Any] = {"num_reads": num_reads}
-        if seed is not None:
-            sample_kwargs["seed"] = seed
-        LOGGER.info("Using simulated annealing sampler")
-        sampleset = _sample_sa(bqm, sample_kwargs)
+    try:
+        if sampler == SamplerKind.exact:
+            LOGGER.info("Using exact solver")
+            sampleset = _sample_exact(bqm)
+        else:
+            sample_kwargs: dict[str, Any] = {"num_reads": num_reads}
+            if seed is not None:
+                sample_kwargs["seed"] = seed
+            LOGGER.info("Using simulated annealing sampler")
+            sampleset = _sample_sa(bqm, sample_kwargs)
+    except Exception as exc:
+        _print_diags(console, source, [runtime_sampling_error(file, exc)])
+        raise typer.Exit(code=1) from None
 
     run_output_path = _write_run_output(
         outdir=resolved_outdir,

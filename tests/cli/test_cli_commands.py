@@ -113,6 +113,9 @@ def test_compile_parse_flag_reports_error_for_invalid_input(tmp_path: Path) -> N
     runner = CliRunner()
     result = runner.invoke(app, ["compile", str(invalid), "--parse", "--no-color"])
     assert result.exit_code == 1
+    assert "error[QSOL1001]" in result.stdout
+    assert "--> " in result.stdout
+    assert "expected one of:" in result.stdout
 
 
 def test_compile_stage_flags_are_mutually_exclusive(tmp_path: Path) -> None:
@@ -121,6 +124,8 @@ def test_compile_stage_flags_are_mutually_exclusive(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["compile", str(model), "--parse", "--check"])
     assert result.exit_code != 0
+    assert "error[QSOL4001]" in result.stdout
+    assert "choose only one of --parse, --check, or --lower" in result.stdout
 
 
 def test_compile_json_requires_parse_or_lower_flag(tmp_path: Path) -> None:
@@ -129,3 +134,5 @@ def test_compile_json_requires_parse_or_lower_flag(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["compile", str(model), "--check", "--json"])
     assert result.exit_code != 0
+    assert "error[QSOL4001]" in result.stdout
+    assert "--json is only valid with --parse or --lower" in result.stdout

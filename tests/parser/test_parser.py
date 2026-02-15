@@ -21,6 +21,8 @@ def test_parse_invalid_missing_separator() -> None:
         parse_to_ast(text, filename="bad.qsol")
     except ParseFailure as exc:
         assert exc.diagnostic.code == "QSOL1001"
+        assert exc.diagnostic.notes
+        assert any("expected one of:" in note for note in exc.diagnostic.notes)
     else:
         raise AssertionError("expected parse failure")
 
@@ -120,6 +122,23 @@ problem P {
         parse_to_ast(text, filename="indexed_param_paren_bad.qsol")
     except ParseFailure as exc:
         assert exc.diagnostic.code == "QSOL1001"
+        assert any("brackets" in item for item in exc.diagnostic.help)
+    else:
+        raise AssertionError("expected parse failure")
+
+
+def test_parse_missing_semicolon_produces_help() -> None:
+    text = """
+problem P {
+  set A
+  find S : Subset(A);
+}
+"""
+    try:
+        parse_to_ast(text, filename="missing_semicolon.qsol")
+    except ParseFailure as exc:
+        assert exc.diagnostic.code == "QSOL1001"
+        assert any("trailing `;`" in item for item in exc.diagnostic.help)
     else:
         raise AssertionError("expected parse failure")
 

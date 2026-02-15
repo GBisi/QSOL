@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from lark import Tree
 
@@ -10,6 +11,7 @@ from qsol.backend.export import export_artifacts
 from qsol.backend.instance import instantiate_ir as instantiate_ir_pass
 from qsol.backend.instance import load_instance
 from qsol.compiler.options import CompileOptions
+from qsol.diag.cli_diagnostics import instance_load_error
 from qsol.diag.diagnostic import Diagnostic
 from qsol.lower.desugar import desugar_program
 from qsol.lower.ir import BackendArtifacts, GroundIR, KernelIR
@@ -75,7 +77,11 @@ def compile_source(text: str, *, options: CompileOptions) -> CompilationUnit:
 
     if options.instance_path is not None and unit.lowered_ir_symbolic is not None:
         LOGGER.debug("Loading instance from %s", options.instance_path)
-        instance = load_instance(options.instance_path)
+        try:
+            instance = load_instance(options.instance_path)
+        except Exception as exc:  # pragma: no cover - defensive guard for runtime IO/JSON failures
+            unit.diagnostics.append(instance_load_error(Path(options.instance_path), exc))
+            return unit
         inst_result = instantiate_ir_pass(unit.lowered_ir_symbolic, instance)
         unit.diagnostics.extend(inst_result.diagnostics)
         unit.ground_ir = inst_result.ground_ir

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, field
 
 from qsol.diag.diagnostic import Diagnostic, Severity
@@ -107,12 +108,20 @@ class TypeChecker:
             else:
                 symbol = scope.lookup(expr.name)
                 if symbol is None:
+                    candidates = sorted({*binders.keys(), *self._scope_names(scope)})
+                    suggestion = self._did_you_mean(expr.name, candidates)
+                    help_items = [
+                        "Declare the identifier in the problem scope or bind it in a quantifier/comprehension."
+                    ]
+                    if suggestion is not None:
+                        help_items.append(f"Did you mean `{suggestion}`?")
                     diagnostics.append(
                         Diagnostic(
                             severity=Severity.ERROR,
                             code="QSOL2001",
                             message=f"unknown identifier `{expr.name}`",
                             span=expr.span,
+                            help=help_items,
                         )
                     )
                     out = UNKNOWN
@@ -225,12 +234,17 @@ class TypeChecker:
             if not isinstance(body_ty, type(BOOL)):
                 diagnostics.append(self._type_err(expr.expr.span, "quantifier body must be Bool"))
             if self._lookup_set(scope, expr.domain_set) is None:
+                suggestion = self._did_you_mean(expr.domain_set, self._set_names(scope))
+                help_items = [f"Declare set `{expr.domain_set}` before using it in quantifiers."]
+                if suggestion is not None:
+                    help_items.append(f"Did you mean `{suggestion}`?")
                 diagnostics.append(
                     Diagnostic(
                         severity=Severity.ERROR,
                         code="QSOL2001",
                         message=f"unknown set `{expr.domain_set}` in quantifier",
                         span=expr.span,
+                        help=help_items,
                     )
                 )
             out = BOOL
@@ -470,7 +484,56 @@ class TypeChecker:
         return False
 
     def _type_err(self, span: Span, message: str) -> Diagnostic:
-        return Diagnostic(severity=Severity.ERROR, code="QSOL2101", message=message, span=span)
+        return Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2101",
+            message=message,
+            span=span,
+            help=self._help_for_type_message(message),
+        )
+
+    def _help_for_type_message(self, message: str) -> list[str]:
+        if message == "size() expects exactly one argument":
+            return ["Use `size(SetName)` with one declared set identifier."]
+        if message.startswith("size() expects a declared set identifier"):
+            return ["Pass a declared set name, for example `size(V)`."]
+        if message == "boolean operator requires Bool operands":
+            return ["Convert both operands to Bool expressions before using boolean operators."]
+        if message == "comparison requires numeric operands":
+            return ["Use numeric operands on both sides of `<`, `<=`, `>`, and `>=`."]
+        if message.startswith("param call `") and "expects" in message:
+            return ["Pass one argument per declared index dimension of the parameter."]
+        if message.startswith("scalar param `"):
+            return ["Reference scalar params as bare names, not as calls."]
+        if message == "constraint expression must be Bool":
+            return ["`must`, `should`, and `nice` constraints require Bool expressions."]
+        if message == "objective expression must be numeric":
+            return ["`minimize` and `maximize` require numeric expressions."]
+        if message == "arithmetic requires numeric operands":
+            return ["Ensure all operands are numeric (`Real`/`Int`) before arithmetic."]
+        if message.startswith("expected element of"):
+            return ["Use a value that belongs to the expected set domain."]
+        return []
+
+    def _scope_names(self, scope: Scope) -> list[str]:
+        names: set[str] = set()
+        cur: Scope | None = scope
+        while cur is not None:
+            names.update(cur.symbols.keys())
+            cur = cur.parent
+        return sorted(names)
+
+    def _set_names(self, scope: Scope) -> list[str]:
+        names: set[str] = set()
+        cur: Scope | None = scope
+        while cur is not None:
+            names.update(name for name, sym in cur.symbols.items() if sym.kind == SymbolKind.SET)
+            cur = cur.parent
+        return sorted(names)
+
+    def _did_you_mean(self, name: str, candidates: list[str]) -> str | None:
+        matches = difflib.get_close_matches(name, candidates, n=1, cutoff=0.75)
+        return matches[0] if matches else None
 
     def _repr_type(self, ty: Type) -> str:
         if isinstance(ty, type(BOOL)):

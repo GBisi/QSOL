@@ -107,13 +107,36 @@ uv run qsol compile model.qsol -i model.instance.json -o outdir/model
 
 ## 6. Diagnosing Common Errors
 
+QSOL CLI diagnostics are rustc-style by default:
+
+```text
+error[QSOL2201]: missing set values for `Items`
+  --> model.qsol:2:3
+   |
+  2 |   set Items;
+   |   ^^^^^^^^^
+   = help: Add `sets.Items` as a JSON array in the instance payload.
+aborting due to 1 error(s), 0 warning(s), 0 info message(s)
+```
+
 - `QSOL1001`: parse grammar mismatch
   - Often missing semicolons or malformed comprehensions
 - `QSOL2001`: unknown set/identifier/unknown type reference
 - `QSOL2101`: invalid types or method arity
 - `QSOL2201`: instance schema/shape mismatch
 - `QSOL3001`: backend unsupported expression/unknown kind
+- `QSOL400x`: CLI/runtime-preparation issues (invalid flags, missing files, artifact load errors)
+- `QSOL500x`: sampler/runtime execution failures
 
 For backend errors, inspect both:
 - CLI diagnostic output
 - `outdir/<model>/explain.json`
+
+Run-specific examples:
+
+- Missing inferred instance (`run` without `--instance` and no `<model>.instance.json`):
+  - emits `QSOL4002` with a suggestion to create the default instance file or pass `--instance`.
+- Corrupt/missing artifacts after compile:
+  - emits `QSOL4005` with guidance to regenerate artifacts.
+- Sampler crashes or rejects payload:
+  - emits `QSOL5001` and suggests retrying with `--sampler exact`.

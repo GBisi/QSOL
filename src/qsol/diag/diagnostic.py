@@ -13,11 +13,19 @@ class Severity(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class DiagnosticLabel:
+    span: Span
+    message: str | None = None
+    is_primary: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Diagnostic:
     severity: Severity
     code: str
     message: str
     span: Span
+    labels: list[DiagnosticLabel] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     help: list[str] = field(default_factory=list)
 

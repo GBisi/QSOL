@@ -26,6 +26,35 @@ Backend behavior note:
 - `must` constraints enforce hard feasibility; `should` and `nice` are soft-only weighted penalties.
 - Hard `!=` comparisons are supported for backend-supported numeric expressions using the same `1e-6` tolerance band policy as boolean-context comparisons.
 
+## Diagnostics UX
+
+`compile` and `run` now emit rustc-style diagnostics by default:
+
+- `error[CODE]: message`
+- `--> file:line:col`
+- source excerpt with caret highlights
+- contextual `= note:` and `= help:` lines
+- final summary line with error/warning/info counts
+
+Example:
+
+```text
+error[QSOL2101]: size() expects a declared set identifier
+  --> model.qsol:4:13
+   |
+  4 |   must size(3) = 1;
+   |             ^
+   = help: Pass a declared set name, for example `size(V)`.
+aborting due to 1 error(s), 0 warning(s), 0 info message(s)
+```
+
+Diagnostic code families:
+- `QSOL1xxx`: parser diagnostics
+- `QSOL2xxx`: semantic/type/instance schema diagnostics
+- `QSOL3xxx`: backend support/validation diagnostics
+- `QSOL4xxx`: CLI/runtime preparation diagnostics (flags, file IO, artifact loading)
+- `QSOL5xxx`: sampler runtime diagnostics
+
 ## Install
 
 ```bash

@@ -19,7 +19,8 @@ problem MinBisection {
   // Instead of division by 2, we can equivalently sum 2 for each vertex on the side, and require that to equal N.
 
   must
-    sum(if Side.has(v) then 2 else 0 for v in V) = size(V);
+    //sum(if Side.has(v) then 2 else 0 for v in V) = size(V);
+    count(v in Side) * 2 = size(V);
 
   // Minimize number of edges crossing the cut:
   // an edge contributes 1 iff endpoints are on different sides.

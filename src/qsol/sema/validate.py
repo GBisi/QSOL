@@ -15,6 +15,10 @@ def validate_program(program: ast.Program) -> list[Diagnostic]:
                         code="QSOL3001",
                         message=f"unknown `{item.name}` has empty rep block",
                         span=item.span,
+                        help=[
+                            "Add at least one representative declaration in `rep { ... }`.",
+                            "Empty representations are accepted but usually indicate incomplete modeling.",
+                        ],
                     )
                 )
             for law in item.laws_block:
@@ -25,6 +29,9 @@ def validate_program(program: ast.Program) -> list[Diagnostic]:
                             code="QSOL2101",
                             message="laws block accepts only `must` constraints",
                             span=law.span,
+                            help=[
+                                "Replace `should`/`nice` with `must` inside `laws { ... }` blocks."
+                            ],
                         )
                     )
     return diagnostics
