@@ -27,7 +27,7 @@ use stdlib.logic;
     *   Commonly used with boolean comprehensions: `exactly(1, S.has(x) for x in X)`.
 
 *   **`atleast(k: Real, terms: Comp(Real)): Bool`**
-    *   Returns true if shear sum of `terms` is `>= k`.
+    *   Returns true if the sum of `terms` is `>= k`.
 
 *   **`atmost(k: Real, terms: Comp(Real)): Bool`**
     *   Returns true if the sum of `terms` is `<= k`.

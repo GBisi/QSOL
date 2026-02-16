@@ -311,7 +311,7 @@ Source (.qsol)  ➡️  Parse  ➡️  Sema  ➡️  Lower  ➡️  Ground  ➡�
 5.  **Backend**: Translates the grounded model into the solver's native format. For example, the `dimod-cqm-v1` backend produces a Constrained Quadratic Model (CQM) compatible with D-Wave solvers.
 6.  **Runtime**: The component that actually executes the compiled model on a solver and returns results.
 
-> For full details on the pipeline and intermediate representations (KIR, GIR), see [Compiler Architecture](docs/COMPILER.md). For backend specifics, see [Backend Reference](docs/BACKEND.md).
+> For full details on the pipeline and intermediate representations (KIR, GIR), see [Compiler Architecture](docs/COMPILER.md). For backend specifics, see [Backend Reference](docs/BACKEND.md). For a complete list of supported and unsupported expression patterns, see [Backend V1 Limits](docs/BACKEND_V1_LIMITS.md).
 
 ### Runtimes
 

@@ -5,11 +5,11 @@ Each item includes an acceptance note to make progress measurable.
 
 ## Now
 
-- [ ] Stabilize onboarding and documentation accuracy.
+- [x] Stabilize onboarding and documentation accuracy.
   Acceptance: README quickstart commands run as written, links resolve, and docs are consistent with current CLI behavior.
-- [ ] Keep backend-v1 boundaries explicit and discoverable.
+- [x] Keep backend-v1 boundaries explicit and discoverable.
   Acceptance: unsupported-shape expectations are clearly documented and aligned with `QSOL3001` diagnostics.
-- [ ] Improve artifact interpretation guidance for first-time users.
+- [x] Improve artifact interpretation guidance for first-time users.
   Acceptance: tutorials and top-level docs clearly explain `model.bqm`, exports, `varmap.json`, `explain.json`, and `run.json`.
 
 ## Next

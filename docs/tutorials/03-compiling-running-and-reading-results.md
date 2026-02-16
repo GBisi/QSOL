@@ -227,7 +227,7 @@ Scenario/default plugin specs and CLI plugin specs are merged with exact-string 
 - `QSOL2001`: unknown symbol/module/import path
 - `QSOL2101`: type/arity mismatch, import cycles, or invalid imported top-level items
 - `QSOL2201`: scenario payload schema/shape mismatch after materialization
-- `QSOL3001`: backend unsupported language shape
+- `QSOL3001`: backend unsupported language shape. See [Backend V1 Limits](../BACKEND_V1_LIMITS.md) for supported and unsupported patterns.
 - `QSOL4002`: config not found/ambiguous discovery
 - `QSOL4004`: config TOML load/validation failure
 - `QSOL4006`: runtime not resolved

@@ -11,7 +11,7 @@ QSOL (Quantum/Quadratic Specification-oriented Optimisation Language) is a high-
 Ensure you have QSOL installed. You can verify the installation by running:
 
 ```bash
-qsol --help
+uv run qsol --help
 ```
 
 ## 3. Your First Model
@@ -25,14 +25,14 @@ problem MyFirstModel {
     // 1. Define Sets representing your data
     set Items;
 
-    // 2. Define Paramters (optional data values)
+    // 2. Define Parameters (optional data values)
     param Weights[Items] : Real;
 
     // 3. Define the Unknown you want to find
     // Here we want to find a subset of Items
     find Picked : Subset(Items);
 
-    // 4. Define Constaints
+    // 4. Define Constraints
     // We must pick at least one item
     must count(i for i in Items where Picked.has(i)) >= 1;
 
@@ -51,16 +51,18 @@ Save the following as `model.qsol.toml`:
 # model.qsol.toml
 schema_version = "1"
 
+[entrypoint]
+scenario = "default"
+runtime = "local-dimod"
+
 [scenarios.default]
+problem = "MyFirstModel"
+
 [scenarios.default.sets]
 Items = ["apple", "banana", "cherry"]
 
 [scenarios.default.params]
 Weights = { apple = 2.5, banana = 1.0, cherry = 3.0 }
-
-[scenarios.default.execution]
-runtime = "local-dimod"
-backend = "dimod-cqm-v1"
 ```
 
 ## 5. Compiling and Running
@@ -68,7 +70,7 @@ backend = "dimod-cqm-v1"
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.
 
 ```bash
-qsol solve model.qsol
+uv run qsol solve model.qsol
 ```
 
 By default, this will use the `local-dimod` runtime and `dimod-cqm-v1` backend, which runs a classical Simulated Annealing solver locally on your machine.

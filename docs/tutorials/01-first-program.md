@@ -116,12 +116,25 @@ uv run qsol solve \
 
 This also writes `run.json`.
 
-## 7. Quick Troubleshooting
+## 7. Reading Your Results
+
+After `solve` completes, check the output directory (`outdir/first_program/`):
+
+- **`run.json`** — The primary result file. Contains `energy` (objective value), `solution` (decoded high-level assignments like `Pick.has(i2)`), `is_feasible` (whether all hard constraints are satisfied), and `sample` (raw 0/1 variable values).
+- **`varmap.json`** — Maps each high-level QSOL variable name (e.g., `Pick.has(i1)`) to the solver's internal integer index. Useful for debugging or cross-checking raw samples.
+- **`explain.json`** — Compiler diagnostics (warnings, info) with source-level spans. Check this if a constraint behaves unexpectedly.
+- **`capability_report.json`** — Shows which model features (e.g., "quadratic constraints") the backend supports. Useful when `targets check` reports issues.
+- **`model.cqm` / `model.bqm`** — Binary serialized solver models. Load in Python with `dimod` for advanced inspection.
+- **`qubo.json`** — (If `--format qubo` was used) The flattened QUBO in JSON format (linear/quadratic terms).
+
+> For a full description of all artifacts, see [Compiler Architecture — Output Directory](../COMPILER.md#2-output-directory-structure).
+
+## 8. Quick Troubleshooting
 
 - `QSOL1001`: syntax issue (often missing semicolon).
 - `QSOL2101`: type issue (method call target/arity mismatch).
 - `QSOL2201`: scenario payload shape mismatch.
-- `QSOL3001`: backend-lowering limitation for valid language shape.
+- `QSOL3001`: backend-lowering limitation for valid language shape. See [Backend V1 Limits](../BACKEND_V1_LIMITS.md) for supported and unsupported patterns.
 - `QSOL4006`: runtime not resolved from CLI or config `entrypoint.runtime` / `execution.runtime`.
 - `QSOL4007`: unknown runtime/backend id.
 - `QSOL4008`: incompatible runtime/backend pair.

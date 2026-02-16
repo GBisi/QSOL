@@ -25,6 +25,7 @@ Welcome to the QSOL documentation. Start here to find the right guide for your n
 | [CLI Reference](CLI.md) | All `qsol` commands and options |
 | [Compiler](COMPILER.md) | Compilation pipeline: frontend → grounding → backend |
 | [Backend](BACKEND.md) | `dimod-cqm-v1` backend: variable mapping, constraints, objectives |
+| [Backend V1 Limits](BACKEND_V1_LIMITS.md) | Supported and unsupported expression patterns for the v1 backend |
 | [Runtimes](RUNTIMES.md) | Available runtimes and solver options |
 
 ## Extensibility

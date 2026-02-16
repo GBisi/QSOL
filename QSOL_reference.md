@@ -119,7 +119,6 @@ param TeamLeader : Elem(Workers);
 // Later in qsol.toml:
 // TeamLeader = "Alice"
 ```
-```
 
 ### 4.3. Unknowns (`find`)
 
@@ -170,7 +169,6 @@ maximize TotalFun;
 
 > [!NOTE]
 > Only one objective function is allowed per problem.
-```
 
 ---
 
@@ -430,7 +428,15 @@ Bob   = { T1 = 20.0, T2 = 20.0 }
 
 ---
 
-## 10. Extensibility
+## 10. Backend Limitations
+
+The default `dimod-cqm-v1` backend supports linear and quadratic expressions over binary variables. If your model uses unsupported patterns (e.g., cubic terms, division by variables), the compiler emits a `QSOL3001` diagnostic.
+
+> For a complete list of supported and unsupported patterns, see [Backend V1 Limits](docs/BACKEND_V1_LIMITS.md).
+
+---
+
+## 11. Extensibility
 
 QSOL is designed to be extensible.
 *   **Plugin Architecture**: You can write Python plugins to add new **Backends** (compile to new formats) or **Runtimes** (execute on new hardware).

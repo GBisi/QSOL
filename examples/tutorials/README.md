@@ -8,6 +8,8 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `first_program.qsol.toml`
 - `assignment_balance.qsol`
 - `assignment_balance.qsol.toml`
+- `graph_coloring.qsol`
+- `graph_coloring.qsol.toml`
 
 ## Run
 
@@ -43,6 +45,15 @@ uv run qsol solve \
   --config examples/tutorials/assignment_balance.qsol.toml \
   --runtime local-dimod \
   --out outdir/assignment_balance \
+  --runtime-option sampler=exact
+```
+
+```bash
+uv run qsol solve \
+  examples/tutorials/graph_coloring.qsol \
+  --config examples/tutorials/graph_coloring.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/graph_coloring \
   --runtime-option sampler=exact
 ```
 

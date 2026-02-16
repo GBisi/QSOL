@@ -15,7 +15,7 @@ If the CLI help opens, you are ready to start.
 
 ### [01 — Your First QSOL Program](01-first-program.md)
 
-Write a minimal QSOL model (`Subset` + constraint + objective), configure it with a TOML scenario, and walk through the full workflow: `inspect parse` → `inspect check` → `inspect lower` → `targets check` → `build` → `solve`. Includes a quick troubleshooting guide for common diagnostics.
+Write a minimal QSOL model (`Subset` + constraint + objective), configure it with a TOML scenario, and walk through the full workflow: `inspect parse` → `inspect check` → `inspect lower` → `targets check` → `build` → `solve`. Learn how to read the generated artifacts (`run.json`, `varmap.json`, `explain.json`). Includes a quick troubleshooting guide for common diagnostics.
 
 ### [02 — Writing Your Own Model](02-writing-your-own-model.md)
 
