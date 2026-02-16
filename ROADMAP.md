@@ -26,12 +26,26 @@ Each item includes an acceptance note to make progress measurable.
   Acceptance: new failure modes include stable codes, spans, and concrete `help` text.
 - [ ] Expand end-to-end examples for realistic optimization tasks.
   Acceptance: at least one additional production-style example includes model, instance, and equivalence/behavior checks.
+- [ ] Custom weights for constraints.
+  Acceptance: `must` constraints accept an optional weight parameter (e.g. `must(expr, weight: 5.0)`); weighted constraints are propagated through sema, lowering, and backend; docs and tests cover weighted vs. hard constraints.
+- [ ] Explainable constraints — richer constraint metadata for debugging and insight.
+  Acceptance: constraints can carry user-supplied labels/descriptions; `explain.json` output includes constraint names, weights, and satisfaction status; docs explain how to annotate and interpret constraints.
+- [ ] Parameter validation and preconditions on instances.
+  Acceptance: models can declare preconditions on parameters (e.g. `require size(V) % 2 == 0`, `require U[e] != W[e]`, `require U[e] in V`); violations produce clear diagnostics at instance-load time with span and message; grammar, sema, and tests cover `require` declarations.
+- [ ] Selective imports.
+  Acceptance: `use` syntax supports named imports (e.g. `from stdlib use exactly, atmost`); unused-import diagnostics are emitted; grammar, sema, docs, and tests are updated.
 
 ## Later
 
 - [ ] Expand language/runtime capabilities beyond current backend-v1 limits.
   Acceptance: feature rollout is staged across grammar, sema, lower, backend, tests, and docs with no regressions.
+- [ ] Gate-based quantum backend support beyond QAOA.
+  Acceptance: at least one gate-based formulation (e.g. VQE or Grover-based) is supported as an alternative backend; architecture docs describe the gate model mapping; integration tests validate correctness against known solutions.
+- [ ] Additional runtime integrations.
+  Acceptance: at least one new runtime beyond the current set is supported (e.g. Azure Quantum, Amazon Braket, or a classical solver); runtime selection is configurable; integration tests and docs cover setup and usage.
 - [ ] Explore broader backend/runtime integration options.
   Acceptance: architecture decisions are documented with tradeoffs and validated by integration tests.
+- [ ] Managing multiple objective functions.
+  Acceptance: models can declare more than one `minimize`/`maximize` objective; multi-objective strategy (weighted sum, Pareto, lexicographic) is configurable; sema, lowering, backend, docs, and tests are updated.
 - [ ] Strengthen tooling ecosystem for authoring and review workflows.
   Acceptance: editor/tooling improvements are documented and verified against current language features.

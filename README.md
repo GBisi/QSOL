@@ -181,10 +181,12 @@ After running `qsol solve`, the compiler produces an output directory (default: 
 
 | Artifact | Description |
 | :--- | :--- |
-| `model.json` | The compiled model in a backend-specific format (e.g., the CQM representation). |
-| `capabilities.json` | A report of model capabilities and whether the selected backend supports them. |
-| `run.json` | The execution results: best energy, raw variable assignments, and decoded solution. |
-| `solutions.json` | (Optional) Additional solutions if `--solutions N` was requested. |
+| `model.cqm`, `model.bqm` | The compiled model in binary format (Constraint Quadratic Model / Binary Quadratic Model). |
+| `varmap.json` | Mapping from high-level variable names (e.g., `ColorOf.is(n1, Red)`) to low-level solver indices. |
+| `explain.json` | Compiler diagnostics (warnings, errors) mapped to source code locations. |
+| `capability_report.json` | Report of required model capabilities and backend support status. |
+| `run.json` | Execution results: best energy, raw sample, and decoded high-level solution. |
+| `qubo.json` | (Optional) The model in flattened QUBO format (JSON) if requested. |
 
 The `run.json` contains the decoded, human-readable solution:
 

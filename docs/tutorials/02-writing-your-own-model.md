@@ -109,6 +109,8 @@ To reduce unsupported diagnostics:
 - Validate early with `targets check` on concrete scenarios.
 - Custom unknowns in `find` are supported through frontend elaboration into primitive finds and generated constraints.
 
+> For a complete list of unsupported patterns, see [Backend V1 Limits](../../docs/BACKEND_V1_LIMITS.md).
+
 ## 6. Incremental Extensions
 
 Try one at a time and rerun `inspect check` and `targets check`:

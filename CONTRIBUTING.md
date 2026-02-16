@@ -22,7 +22,7 @@ uv run pre-commit install
 
 ## Development Workflow
 
-1. Create a branch using the `codex/*` naming convention.
+1. Create a branch using the `feature/*` naming convention.
 2. Make focused changes scoped to one intent.
 3. If user-visible behavior changes, update required documentation and tests.
 4. Run mandatory quality gates before completion.
@@ -31,7 +31,7 @@ uv run pre-commit install
 Example branch creation:
 
 ```bash
-git checkout -b codex/<short-topic>
+git checkout -b feature/<short-topic>
 ```
 
 ## Mandatory Quality Gates
@@ -52,10 +52,14 @@ These same gates run automatically in CI via GitHub Actions on every push and pu
 
 | Change type | Required docs updates | Required tests updates |
 | --- | --- | --- |
-| CLI flags/defaults/output/behavior | `README.md`, `docs/tutorials/03-compiling-running-and-reading-results.md` | `tests/cli/` |
-| Language syntax/semantic behavior | `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, relevant `docs/tutorials/` | Parser/sema/lower/backend/cli tests under `tests/` |
-| Backend artifact/schema/output interpretation | `README.md`, `docs/tutorials/03-compiling-running-and-reading-results.md` | `tests/backend/` and `tests/cli/` |
-| Internal refactor (no user-visible behavior) | Docs optional; update `docs/CODEBASE.md` if architecture meaningfully changes | Affected tests as needed |
+| CLI flags/defaults/output/behavior | `docs/CLI.md`, `README.md`, `docs/tutorials/03-...` | `tests/cli/` |
+| Language syntax/semantic behavior | `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, relevant `docs/tutorials/`, `docs/TUTORIAL.md` | Parser/sema/lower/backend/cli tests under `tests/` |
+| Backend artifact/schema/output | `docs/BACKEND.md`, `docs/COMPILER.md`, `README.md`, `docs/tutorials/03-...` | `tests/backend/`, `tests/cli/` |
+| Runtime behavior/options/new runtime | `docs/RUNTIMES.md`, `docs/CLI.md`, `docs/tutorials/03-...` | `tests/cli/`, runtime tests |
+| Plugin system/loading/entry-points | `docs/PLUGINS.md`, `docs/CUSTOM_RUNTIME.md` | Plugin-related tests |
+| Stdlib modules (new/changed) | `docs/STDLIB.md`, `docs/EXTENDING_QSOL.md` if patterns change | Stdlib and integration tests |
+| Custom unknowns/macros/modules | `docs/EXTENDING_QSOL.md`, `docs/tutorials/04-...`, `QSOL_reference.md` | Elaboration/sema/integration tests |
+| Internal refactor (no user-visible behavior) | Docs optional; update `docs/CODEBASE.md` if architecture changes | Affected tests as needed |
 | Docs-only changes | Changed docs only | Test changes optional unless behavior statements change |
 
 ## Vision Coherence Checklist

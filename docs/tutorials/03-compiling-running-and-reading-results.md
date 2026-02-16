@@ -149,22 +149,42 @@ Solve terminal output:
   optional metadata (`num_occurrences`, `probability`, `status`, `scenario_energies`) when present.
 - `Selected Assignments` still summarizes the best solution assignment meanings.
 
-## 6. Output Directory Structure (`outdir/...`)
+## 6. Output Directory and Artifacts (`outdir/...`)
 
-Single-scenario outputs:
-- `capability_report.json`
-- `qsol.log`
-- `model.cqm`, `model.bqm`
-- `qubo.json` or `ising.json`
-- `varmap.json`
-- `explain.json`
-- `run.json` (solve)
-- `qaoa.qasm` (Qiskit QAOA only)
+When you run `build` or `solve`, QSOL generates several artifacts in the output directory.
 
-Multi-scenario outputs:
-- Per-scenario files under `outdir/scenarios/<scenario_name>/...`
-- Top-level aggregate `run.json` for multi-scenario solve
-- Top-level summary file (`capability_report.json` for check/solve, `build_summary.json` for build)
+### Key Files
+
+#### `run.json`
+The primary result file. Contains:
+- `energy`: The objective value of the best solution found.
+- `solution`: The decoded high-level solution (e.g., `ColorOf: { N1: Red, ... }`).
+- `is_feasible`: Boolean indicating if all hard constraints were satisfied.
+- `sample`: The raw low-level variable assignments (0/1).
+
+#### `varmap.json`
+Maps your high-level QSOL variables to the solver's low-level indices.
+- Key: The high-level name (e.g., `ColorOf.is(n1, Red)`).
+- Value: The integer index used in the CQM/BQM.
+Useful for debugging raw solver outputs or understanding variable counts.
+
+#### `model.cqm` / `model.bqm`
+The compiled model in binary format (Python pickle of `dimod.ConstrainedQuadraticModel` or `dimod.BinaryQuadraticModel`).
+- **CQM**: Contains constraints and objectives.
+- **BQM**: If the backend supports it, a purely binary quadratic model (often used for annealing).
+You can load these in Python with `dimod.serialization.file.load` to inspect or run them manually.
+
+#### `explain.json`
+Contains compiler diagnostics (warnings, errors) mapped to specific lines in your source code. Use this to trace back why a constraint might be behaving unexpectedly or to see optimization hints.
+
+#### `capability_report.json`
+A report listing the QSOL features used by your model (e.g., "quadratic constraints", "inequality constraints") and confirming that the selected backend supports them.
+
+### Multi-Scenario Structure
+
+If you run with multiple scenarios, the output is organized hierarchically:
+- `outdir/run.json`: Aggregated results for all scenarios.
+- `outdir/scenarios/<scenario_name>/...`: Per-scenario artifacts (model, varmap, etc.).
 
 Multi-scenario aggregate run extensions include:
 - `selected_scenarios`

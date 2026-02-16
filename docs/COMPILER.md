@@ -33,8 +33,11 @@ When running `qsol build` or `qsol solve`, the compiler generates an output dire
 
 ### Standard Artifacts
 
-*   **`model.json`**: The compiled model in a backend-agnostic or backend-specific JSON format (depends on the backend). For `dimod-cqm-v1`, this might not be present if it uses opaque binary objects, but typically backends produce some representation here.
-*   **`capabilities.json`**: A report of the capabilities required by the model and whether the selected backend supports them.
+*   **`model.cqm` / `model.bqm`**: The compiled Constrained Quadratic Model (CQM) and Binary Quadratic Model (BQM) in binary format (Python pickle of dimod objects).
+*   **`varmap.json`**: A mapping from human-readable variable names (e.g., `ColorOf.is(n1, Red)`) to the backend's internal integer indices.
+*   **`explain.json`**: A list of diagnostics generated during compilation, mapped to source locations.
+*   **`qubo.json` / `ising.json`**: The flattened optimization problem in JSON format (linear/quadratic terms), useful for debugging or portability.
+*   **`capability_report.json`**: A report of the capabilities required by the model and whether the selected backend supports them.
 *   **`run.json`** (for `solve`): The results of the execution, including:
     *   **energy**: The objective value of the best solution.
     *   **sample**: The raw variable assignments.

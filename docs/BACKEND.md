@@ -57,3 +57,5 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 
 *   **Higher-Order Logic**: Complex nested quantifiers or non-linear expressions that cannot be reduced to quadratic forms may be unsupported or require significant auxiliary variables.
 *   **Integer/Real Variables**: Native integer or continuous variables are not currently supported; all unknowns must be reducable to binary decisions (Sets/Mappings).
+
+> For a complete list of unsupported patterns and workarounds, see [Backend V1 Limits](BACKEND_V1_LIMITS.md).
