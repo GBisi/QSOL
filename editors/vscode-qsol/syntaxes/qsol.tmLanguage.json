@@ -126,6 +126,14 @@
           }
         },
         {
+          "name": "meta.definition.function.qsol",
+          "match": "\\b(function)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.control.function.qsol" },
+            "2": { "name": "entity.name.function.predicate.qsol" }
+          }
+        },
+        {
           "name": "meta.declaration.set.qsol",
           "match": "\\b(set)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
@@ -252,11 +260,11 @@
       ]
     },
     "functions": {
-      "name": "entity.name.function.qsol",
+      "name": "entity.name.function.predicate.qsol",
       "match": "(?<!\\.)\\b(?!(sum|count|any|all|if|then|else|forall|exists|for|in|problem|unknown|set|param|find|rep|laws|view|predicate|must|should|nice|minimize|maximize|Subset|Mapping|Bool|Real|Int|true|false)\\b)([A-Za-z_][A-Za-z0-9_]*)\\b(?=\\s*\\()",
       "captures": {
         "2": {
-          "name": "entity.name.function.qsol"
+          "name": "entity.name.function.predicate.qsol"
         }
       }
     },
