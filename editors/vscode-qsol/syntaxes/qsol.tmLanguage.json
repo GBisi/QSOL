@@ -163,12 +163,12 @@
         },
         {
           "name": "meta.declaration.findlike.qsol",
-          "match": "(^|[;{]\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*:\\s*(Subset|Mapping)\\s*\\(",
+          "match": "(?:^|[;{])\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*:\\s*(Subset|Mapping)\\s*\\(",
           "captures": {
-            "2": {
+            "1": {
               "name": "string.unquoted.qsol"
             },
-            "3": {
+            "2": {
               "name": "entity.name.type.set.qsol"
             }
           }

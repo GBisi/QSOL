@@ -57,10 +57,6 @@ Semantics:
 
 ### `stdlib.bijective_mapping`
 
-Imports:
-- `stdlib.injective_mapping`
-- `stdlib.surjective_mapping`
-
 Exports:
 - `unknown BijectiveMapping(A, B)`
 
@@ -68,8 +64,10 @@ View methods:
 - `is(a: Elem(A), b: Elem(B)) -> Bool`
 
 Semantics:
-- composes one injective and one surjective mapping over the same domains
-- enforces pointwise equality between their `is(a, b)` relations
+- uses internal `Mapping(A -> B)`
+- enforces injectivity and surjectivity directly:
+  `forall b in B: count(a for a in A where f.is(a, b)) <= 1`
+  `forall b in B: count(a for a in A where f.is(a, b)) >= 1`
 
 ### `stdlib.permutation`
 

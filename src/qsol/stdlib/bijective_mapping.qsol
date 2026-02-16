@@ -1,15 +1,12 @@
-use stdlib.injective_mapping;
-use stdlib.surjective_mapping;
-
 unknown BijectiveMapping(A, B) {
   rep {
-    inj : InjectiveMapping(A, B);
-    sur : SurjectiveMapping(A, B);
+    f : Mapping(A -> B);
   }
   laws {
-    must forall a in A: forall b in B: inj.is(a, b) = sur.is(a, b);
+    must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
+    must forall b in B: count(a for a in A where f.is(a, b)) >= 1;
   }
   view {
-    predicate is(a: Elem(A), b: Elem(B)): Bool = inj.is(a, b);
+    predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);
   }
 }

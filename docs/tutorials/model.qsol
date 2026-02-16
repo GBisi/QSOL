@@ -1,0 +1,7 @@
+problem MyFirstModel {
+    set Items;
+    param Weights[Items] : Real;
+    find Picked : Subset(Items);
+    must count(i for i in Items where Picked.has(i)) >= 1;
+    minimize sum(Weights[i] for i in Items where Picked.has(i));
+}

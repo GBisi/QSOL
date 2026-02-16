@@ -75,8 +75,8 @@ Import path reminder:
 
 ## 4. Type Rules to Remember
 
-- `predicate` return type must be `Bool`.
-- `function` return type is `Real` in the current release.
+- `predicate` return type is always `Bool`. The `: Bool` annotation is optional.
+- `function` return type is `Real` in the current release. The `: Real` annotation is optional.
 - Formal argument types must be explicit (`Bool`, `Real`, `Elem(SetName)`, `Comp(Bool)`, `Comp(Real)`).
 - `Comp(...)` parameters take comprehension-style call arguments.
 

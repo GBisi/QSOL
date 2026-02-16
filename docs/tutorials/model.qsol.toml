@@ -1,0 +1,12 @@
+schema_version = "1"
+
+[scenarios.default]
+[scenarios.default.sets]
+Items = ["apple", "banana", "cherry"]
+
+[scenarios.default.params]
+Weights = { apple = 2.5, banana = 1.0, cherry = 3.0 }
+
+[scenarios.default.execution]
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"

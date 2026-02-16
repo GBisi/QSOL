@@ -1,0 +1,33 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "triangle"
+runtime = "local-dimod"
+
+# --- Scenario 1: A simple triangle (3 nodes, all connected) ---
+[scenarios.triangle]
+problem = "GraphColoring"
+
+[scenarios.triangle.sets]
+Nodes = ["N1", "N2", "N3"]
+Colors = ["Red", "Green", "Blue"]
+
+[scenarios.triangle.params.Edge]
+N1 = { N1=0.0, N2=1.0, N3=1.0 }
+N2 = { N1=1.0, N2=0.0, N3=1.0 }
+N3 = { N1=1.0, N2=1.0, N3=0.0 }
+
+# --- Scenario 2: A 5-node cycle (pentagon) ---
+[scenarios.pentagon]
+problem = "GraphColoring"
+
+[scenarios.pentagon.sets]
+Nodes = ["N1", "N2", "N3", "N4", "N5"]
+Colors = ["Red", "Green", "Blue"]
+
+[scenarios.pentagon.params.Edge]
+N1 = { N1=0.0, N2=1.0, N3=0.0, N4=0.0, N5=1.0 }
+N2 = { N1=1.0, N2=0.0, N3=1.0, N4=0.0, N5=0.0 }
+N3 = { N1=0.0, N2=1.0, N3=0.0, N4=1.0, N5=0.0 }
+N4 = { N1=0.0, N2=0.0, N3=1.0, N4=0.0, N5=1.0 }
+N5 = { N1=1.0, N2=0.0, N3=0.0, N4=1.0, N5=0.0 }

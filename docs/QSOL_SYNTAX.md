@@ -65,6 +65,13 @@ predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
 function indicator(b: Bool): Real = if b then 1 else 0;
 ```
 
+The return type annotation (`: Bool` / `: Real`) is optional since it is implied by the keyword:
+
+```qsol
+predicate iff(a: Bool, b: Bool) = a and b or not a and not b;
+function indicator(b: Bool) = if b then 1 else 0;
+```
+
 ## 3. Declarations Inside `problem`
 
 ### 3.1 Sets

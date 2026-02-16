@@ -4,6 +4,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Callable, Mapping, cast
 
@@ -83,12 +84,17 @@ def root_callback(ctx: typer.Context) -> None:
         return
 
     console = Console()
+    try:
+        qsol_version = version("qsol")
+    except Exception:
+        qsol_version = "unknown"
+
     console.print(
         Panel(
             (
-                "[bold cyan]Welcome to QSOL[/bold cyan]\n\n"
-                "[white]QSOL compiles declarative models to CQM IR, checks target support, "
-                "and runs pluggable runtimes.[/white]"
+                f"[bold cyan]Welcome to QSOL v{qsol_version}[/bold cyan]\n\n"
+                "[white]The Quantum SOlver Language (QSOL) compiler and runtime environment.\n"
+                "Compile declarative models to CQM IR, check target support, and execute on pluggable runtimes.[/white]"
             ),
             title="[bold green]QSOL CLI[/bold green]",
             border_style="bright_blue",
@@ -96,27 +102,29 @@ def root_callback(ctx: typer.Context) -> None:
         )
     )
 
-    quickstart = Table(title="Quick Start", show_header=True, header_style="bold magenta")
-    quickstart.add_column("Workflow", style="bold yellow")
-    quickstart.add_column("Command", style="green")
+    quickstart = Table(
+        title="Quick Start", show_header=True, header_style="bold magenta", expand=True
+    )
+    quickstart.add_column("Workflow", style="bold yellow", ratio=1)
+    quickstart.add_column("Command", style="green", ratio=2)
     quickstart.add_row(
         "Inspect frontend parse",
         "qsol inspect parse model.qsol --json",
     )
     quickstart.add_row(
         "Check target compatibility",
-        ("qsol targets check model.qsol -c model.qsol.toml --runtime local-dimod"),
+        "qsol targets check model.qsol -c model.qsol.toml --runtime local-dimod",
     )
     quickstart.add_row(
         "Build artifacts",
-        ("qsol build model.qsol -c model.qsol.toml --runtime local-dimod -o outdir/model"),
+        "qsol build model.qsol -c model.qsol.toml --runtime local-dimod -o outdir/model",
     )
     quickstart.add_row(
         "Solve",
-        ("qsol solve model.qsol -c model.qsol.toml --runtime local-dimod"),
+        "qsol solve model.qsol -c model.qsol.toml --runtime local-dimod",
     )
     console.print(quickstart)
-    console.print("[dim]Use `qsol -h` for full command help.[/dim]")
+    console.print("[dim]Use `qsol --help` for full command documentation.[/dim]")
 
 
 def _configure_logging(level: LogLevel, *, log_file: Path | None = None) -> None:

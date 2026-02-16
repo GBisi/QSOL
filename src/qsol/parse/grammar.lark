@@ -77,8 +77,8 @@ view_stmt: predicate_def
 formal_params: formal_param ("," formal_param)*
 formal_param: NAME
 
-predicate_def: "predicate" NAME "(" [pred_formals] ")" ":" "Bool" "=" bool_expr
-function_def: "function" NAME "(" [pred_formals] ")" ":" "Real" "=" num_expr
+predicate_def: "predicate" NAME "(" [pred_formals] ")" [":" "Bool"] "=" bool_expr
+function_def: "function" NAME "(" [pred_formals] ")" [":" "Real"] "=" num_expr
 pred_formals: pred_formal ("," pred_formal)*
 pred_formal: NAME ":" pred_formal_type
 pred_formal_type: "Bool"

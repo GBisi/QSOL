@@ -274,3 +274,70 @@ problem P {
     assert rhs.comp.var == "x"
     assert rhs.comp.domain_set == "X"
     assert rhs.comp.where is not None
+
+
+def test_parse_predicate_and_function_without_return_type() -> None:
+    text = """
+predicate iff(a: Bool, b: Bool) = a and b or not a and not b;
+function indicator(b: Bool) = if b then 1 else 0;
+
+problem P {
+  param Flag : Bool;
+  must iff(Flag, true);
+  minimize indicator(Flag);
+}
+"""
+    program = parse_to_ast(text, filename="optional_return_type.qsol")
+    assert len(program.items) == 3
+    assert isinstance(program.items[0], ast.PredicateDef)
+    assert program.items[0].name == "iff"
+    assert isinstance(program.items[1], ast.FunctionDef)
+    assert program.items[1].name == "indicator"
+    assert isinstance(program.items[2], ast.ProblemDef)
+
+
+def test_parse_predicate_and_function_mixed_return_type_styles() -> None:
+    text = """
+predicate with_type(a: Bool): Bool = a;
+predicate without_type(a: Bool) = a;
+function with_type_f(x: Real): Real = x + 1;
+function without_type_f(x: Real) = x + 1;
+
+problem P {
+  must true;
+  minimize 0;
+}
+"""
+    program = parse_to_ast(text, filename="mixed_return_type.qsol")
+    assert len(program.items) == 5
+    assert isinstance(program.items[0], ast.PredicateDef)
+    assert isinstance(program.items[1], ast.PredicateDef)
+    assert isinstance(program.items[2], ast.FunctionDef)
+    assert isinstance(program.items[3], ast.FunctionDef)
+
+
+def test_parse_view_predicate_and_function_without_return_type() -> None:
+    text = """
+unknown U(A) {
+  rep { s : Subset(A); }
+  laws { must true; }
+  view {
+    predicate has(x: Elem(A)) = s.has(x);
+    function score(x: Elem(A)) = if s.has(x) then 1 else 0;
+  }
+}
+
+problem P {
+  set A;
+  find S : U(A);
+  must true;
+  minimize 0;
+}
+"""
+    program = parse_to_ast(text, filename="view_optional_return_type.qsol")
+    assert len(program.items) == 2
+    unknown = program.items[0]
+    assert isinstance(unknown, ast.UnknownDef)
+    assert len(unknown.view_block) == 2
+    assert isinstance(unknown.view_block[0], ast.PredicateDef)
+    assert isinstance(unknown.view_block[1], ast.FunctionDef)

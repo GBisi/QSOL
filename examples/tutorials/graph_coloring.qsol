@@ -1,0 +1,33 @@
+use stdlib.logic;
+
+// Predicate: true if n1 and n2 can both have color c (no edge, or at most one has it)
+predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
+    Edge[n1, n2] * (indicator(ColorOf.is(n1, c)) + indicator(ColorOf.is(n2, c))) <= 1;
+
+// Function: count same-color conflicts on an edge (0 if no edge)
+function edge_conflicts(n1: Elem(Nodes), n2: Elem(Nodes)) =
+    sum(if ColorOf.is(n1, c) and ColorOf.is(n2, c) then Edge[n1, n2] else 0 for c in Colors);
+
+// Graph Coloring Problem
+// Goal: Assign a color to each node such that no two adjacent nodes share the same color.
+
+problem GraphColoring {
+    // 1. Sets
+    set Nodes;
+    set Colors;
+
+    // 2. Parameters: Adjacency matrix (1.0 if edge exists, 0.0 otherwise)
+    param Edge[Nodes, Nodes] : Real = 0.0;
+
+    // 3. Unknowns: assign exactly one color to each node
+    find ColorOf : Mapping(Nodes -> Colors);
+
+    // 4. Constraint: connected nodes must not share a color
+    must forall n1 in Nodes:
+        forall n2 in Nodes:
+            forall c in Colors:
+                can_coexist(n1, n2, c);
+
+    // 5. Objective: minimize total conflicts
+    minimize sum(sum(edge_conflicts(n1, n2) for n2 in Nodes) for n1 in Nodes);
+}
