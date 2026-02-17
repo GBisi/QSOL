@@ -198,7 +198,9 @@ Operate on `Real` or `Int` types.
     *   `count(x in S where predicate)`: Count matching elements.
     *   `size(Set)`: The number of elements in a set.
 *   **Conditional**:
-    *   `if condition then val_true else val_false`
+    *   `if condition then val_true else val_false` — works for both numeric and boolean branches.
+    *   Numeric: `if cond then 1 else 0` (returns `Real`)
+    *   Boolean: `if cond then true else false` (returns `Bool`)
 
 ### 5.3. Interaction with Unknowns
 

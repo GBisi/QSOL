@@ -253,6 +253,13 @@ class IfThenElse(NumExpr):
 
 
 @dataclass(frozen=True, slots=True)
+class BoolIfThenElse(BoolExpr):
+    cond: BoolExpr
+    then_expr: BoolExpr
+    else_expr: BoolExpr
+
+
+@dataclass(frozen=True, slots=True)
 class Quantifier(BoolExpr):
     kind: str
     var: str

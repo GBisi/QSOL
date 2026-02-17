@@ -138,6 +138,13 @@ class KIfThenElse(KNumExpr):
 
 
 @dataclass(frozen=True, slots=True)
+class KBoolIfThenElse(KBoolExpr):
+    cond: KBoolExpr
+    then_expr: KBoolExpr
+    else_expr: KBoolExpr
+
+
+@dataclass(frozen=True, slots=True)
 class KQuantifier(KBoolExpr):
     kind: str
     var: str

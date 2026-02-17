@@ -60,6 +60,13 @@ def _collect_expr_capabilities(expr: ir.KExpr, capabilities: set[str]) -> None:
         _collect_expr_capabilities(expr.else_expr, capabilities)
         return
 
+    if isinstance(expr, ir.KBoolIfThenElse):
+        capabilities.add("constraint.bool_if_then_else.v1")
+        _collect_expr_capabilities(expr.cond, capabilities)
+        _collect_expr_capabilities(expr.then_expr, capabilities)
+        _collect_expr_capabilities(expr.else_expr, capabilities)
+        return
+
     if isinstance(expr, ir.KSum):
         capabilities.add("objective.sum.v1")
         _collect_expr_capabilities(expr.comp.term, capabilities)

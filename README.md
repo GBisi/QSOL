@@ -52,9 +52,9 @@ Let's solve a classic! We want to assign a color to every node in a graph such t
 ```qsol
 use stdlib.logic;
 
-// Predicate: true if n1 and n2 can both have color c (no edge, or at most one has it)
+// Predicate: if an edge exists, both endpoints must not share color c
 predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
-    Edge[n1, n2] * (indicator(ColorOf.is(n1, c)) + indicator(ColorOf.is(n2, c))) <= 1;
+    if Edge[n1, n2] = 1.0 then not (ColorOf.is(n1, c) and ColorOf.is(n2, c)) else true;
 
 // Function: count same-color conflicts on an edge (0 if no edge)
 function edge_conflicts(n1: Elem(Nodes), n2: Elem(Nodes)) =
@@ -83,8 +83,8 @@ problem GraphColoring {
 *   `find ColorOf : Mapping(Nodes -> Colors)` — the **unknown**: "find a mapping that assigns exactly one color to each node".
 *   `indicator(b)` is a function from `stdlib.logic` that converts a boolean to a number: `1` if true, `0` if false. This lets you use logical conditions inside arithmetic expressions.
 *   `can_coexist(n1, n2, c)` — a custom **predicate** that encodes: *"nodes n1 and n2 may both be assigned color c"*. Here's how it works:
-    *   `indicator(ColorOf.is(n1, c)) + indicator(ColorOf.is(n2, c))` sums to `0`, `1`, or `2` depending on how many of the two nodes have color `c`.
-    *   Multiplying by `Edge[n1, n2]` makes the expression `0` when there is no edge (trivially `<= 1`), and preserves the sum when there is an edge — enforcing that at most one endpoint has color `c`.
+    *   The `if Edge[n1, n2] = 1.0 then ... else true` conditional checks whether an edge exists. If it does, it enforces the boolean constraint; otherwise `true` (trivially satisfied).
+    *   `not (ColorOf.is(n1, c) and ColorOf.is(n2, c))` directly expresses: "it is not the case that both endpoints have color `c`". This is a **bool if-else** — the branches return `Bool` instead of numbers.
 *   `edge_conflicts(n1, n2)` — a custom **function** that counts how many colors both nodes share on an edge. Reused as the `minimize` objective.
 *   `predicate` and `function` are **macros** — the compiler inlines them at every call site, so they can reference problem-scoped names like `Edge`, `ColorOf`, and `Colors`.
 

@@ -191,6 +191,7 @@ else_clause_bool: "else" bool_expr
           | comparison
           | bool_call
           | bool_aggregate          // STRICT: only any/all here
+          | bool_if_expr
           | bool_name
           | BOOL
 
@@ -246,6 +247,8 @@ num_call.1: call_expr
 num_name.2: NAME
 
 if_expr: "if" bool_expr "then" num_expr "else" num_expr
+
+bool_if_expr: "if" bool_expr "then" bool_expr "else" bool_expr
 
 // -----------------------
 // Atoms, literals, args

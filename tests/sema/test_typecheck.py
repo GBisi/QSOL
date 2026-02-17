@@ -229,3 +229,28 @@ problem P {
         d.code == "QSOL2101" and "unknown function/predicate `missing_macro`" in d.message
         for d in unit.diagnostics
     )
+
+
+def test_bool_if_else_returns_bool() -> None:
+    text = """
+problem P {
+  set A;
+  find S : Subset(A);
+  must forall x in A: if S.has(x) then true else false;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="bool_if_else.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_bool_if_else_in_constraint_with_logic() -> None:
+    text = """
+problem P {
+  set A;
+  param Flag : Bool;
+  find S : Subset(A);
+  must forall x in A: if Flag then S.has(x) else not S.has(x);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="bool_if_else_logic.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)

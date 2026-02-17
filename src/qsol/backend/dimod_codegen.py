@@ -471,6 +471,19 @@ class DimodCodegen:
                 )
                 return None
             return indicator
+        if isinstance(expr, ir.KBoolIfThenElse):
+            cond = self._bool_expr(problem, expr.cond, binaries, diagnostics, env, cqm=cqm)
+            tval = self._bool_expr(problem, expr.then_expr, binaries, diagnostics, env, cqm=cqm)
+            eval_ = self._bool_expr(problem, expr.else_expr, binaries, diagnostics, env, cqm=cqm)
+            if cond is None or tval is None or eval_ is None:
+                return None
+            try:
+                return cond * tval + (1 - cond) * eval_
+            except TypeError:
+                diagnostics.append(
+                    self._unsupported(expr.span, "unsupported conditional boolean expression")
+                )
+                return None
 
         return self._bool_atom(problem, expr, binaries, diagnostics, env)
 

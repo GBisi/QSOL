@@ -18,7 +18,8 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 
 *   **On Parameters**: Fully supported (resolved at compile time).
 *   **On Variables**: Supported via linearization, but costly.
-    *   `if BoolVar then expr1 else expr2` becomes `BoolVar * expr1 + (1 - BoolVar) * expr2`.
+    *   **Numeric branches**: `if BoolVar then expr1 else expr2` becomes `BoolVar * expr1 + (1 - BoolVar) * expr2`.
+    *   **Boolean branches**: `if BoolVar then boolA else boolB` uses the same linearization pattern.
     *   Ensure the resulting expression stays quadratic.
 
 ## 4. Unsupported Shapes (`QSOL3001`)

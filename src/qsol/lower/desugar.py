@@ -103,6 +103,13 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
             domain_set=comp.domain_set,
             expr=body_all,
         )
+    if isinstance(expr, ast.BoolIfThenElse):
+        return replace(
+            expr,
+            cond=_desugar_bool(expr.cond),
+            then_expr=_desugar_bool(expr.then_expr),
+            else_expr=_desugar_bool(expr.else_expr),
+        )
     if isinstance(expr, ast.FuncCall):
         return replace(expr, args=[_desugar_expr(a) for a in expr.args])
     if isinstance(expr, ast.MethodCall):

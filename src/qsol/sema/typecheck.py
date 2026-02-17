@@ -266,6 +266,21 @@ class TypeChecker:
                 out = UNKNOWN
             else:
                 out = promoted
+        elif isinstance(expr, ast.BoolIfThenElse):
+            cond = self._expr_type(expr.cond, scope, binders, diagnostics, tmap)
+            then_ty = self._expr_type(expr.then_expr, scope, binders, diagnostics, tmap)
+            else_ty = self._expr_type(expr.else_expr, scope, binders, diagnostics, tmap)
+            if not isinstance(cond, type(BOOL)):
+                diagnostics.append(self._type_err(expr.cond.span, "if condition must be Bool"))
+            if not isinstance(then_ty, type(BOOL)):
+                diagnostics.append(
+                    self._type_err(expr.then_expr.span, "if-then branch must be Bool")
+                )
+            if not isinstance(else_ty, type(BOOL)):
+                diagnostics.append(
+                    self._type_err(expr.else_expr.span, "if-else branch must be Bool")
+                )
+            out = BOOL
         elif isinstance(expr, ast.Quantifier):
             binder_ty = ElemOfType(set_name=expr.domain_set)
             body_scope = dict(binders)

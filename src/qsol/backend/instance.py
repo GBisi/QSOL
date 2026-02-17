@@ -598,6 +598,34 @@ def _fold_size_in_expr(
                 )
             ),
         )
+    if isinstance(expr, ir.KBoolIfThenElse):
+        return replace(
+            expr,
+            cond=_as_kbool(
+                _fold_size_in_expr(
+                    expr.cond,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            then_expr=_as_kbool(
+                _fold_size_in_expr(
+                    expr.then_expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+            else_expr=_as_kbool(
+                _fold_size_in_expr(
+                    expr.else_expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
     if isinstance(expr, ir.KQuantifier):
         return replace(
             expr,

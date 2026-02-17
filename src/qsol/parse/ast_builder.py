@@ -641,6 +641,14 @@ class ASTBuilder:
                 else_expr=cast(ast.NumExpr, self._from_tree(c[2])),
             )
 
+        if data == "bool_if_expr":
+            return ast.BoolIfThenElse(
+                span=self._span(node),
+                cond=cast(ast.BoolExpr, self._from_tree(c[0])),
+                then_expr=cast(ast.BoolExpr, self._from_tree(c[1])),
+                else_expr=cast(ast.BoolExpr, self._from_tree(c[2])),
+            )
+
         if data == "call_arg":
             return cast(ast.Expr, self._from_tree(c[0]))
         if data == "arg_list":

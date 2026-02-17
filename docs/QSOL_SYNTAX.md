@@ -148,6 +148,8 @@ x < y
 x <= y
 x > y
 x >= y
+
+if cond then bool_a else bool_b
 ```
 
 Compare tolerance notes in boolean contexts (`if`, soft constraints, nested formulas) and hard `!=` constraints:
@@ -169,7 +171,7 @@ x + y
 x - y
 x * y
 x / y
-if cond then a else b
+if cond then num_a else num_b
 size(V)
 ```
 

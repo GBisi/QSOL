@@ -1,8 +1,8 @@
 use stdlib.logic;
 
-// Predicate: true if n1 and n2 can both have color c (no edge, or at most one has it)
+// Predicate: if an edge exists, both endpoints must not share color c
 predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
-    Edge[n1, n2] * (indicator(ColorOf.is(n1, c)) + indicator(ColorOf.is(n2, c))) <= 1;
+    if Edge[n1, n2] = 1.0 then not (ColorOf.is(n1, c) and ColorOf.is(n2, c)) else true;
 
 // Function: count same-color conflicts on an edge (0 if no edge)
 function edge_conflicts(n1: Elem(Nodes), n2: Elem(Nodes)) =

@@ -562,6 +562,40 @@ class UnknownElaborator:
                     ),
                 ),
             )
+        if isinstance(expr, ast.BoolIfThenElse):
+            return replace(
+                expr,
+                cond=cast(
+                    ast.BoolExpr,
+                    self._rewrite_expr(
+                        expr.cond,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    ),
+                ),
+                then_expr=cast(
+                    ast.BoolExpr,
+                    self._rewrite_expr(
+                        expr.then_expr,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    ),
+                ),
+                else_expr=cast(
+                    ast.BoolExpr,
+                    self._rewrite_expr(
+                        expr.else_expr,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    ),
+                ),
+            )
         if isinstance(expr, ast.Quantifier):
             return replace(
                 expr,

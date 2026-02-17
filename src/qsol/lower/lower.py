@@ -128,6 +128,13 @@ def _lower_bool(expr: ast.BoolExpr) -> ir.KBoolExpr:
             domain_set=expr.domain_set,
             expr=_lower_bool(expr.expr),
         )
+    if isinstance(expr, ast.BoolIfThenElse):
+        return ir.KBoolIfThenElse(
+            span=expr.span,
+            cond=_lower_bool(expr.cond),
+            then_expr=_lower_bool(expr.then_expr),
+            else_expr=_lower_bool(expr.else_expr),
+        )
     if isinstance(expr, ast.NameRef):
         return ir.KName(span=expr.span, name=expr.name)
     raise TypeError(f"Unsupported bool expression: {type(expr)}")
