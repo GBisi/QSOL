@@ -11,9 +11,11 @@ from qsol.sema.types import (
     BOOL,
     REAL,
     UNKNOWN,
+    CompType,
     ElemOfType,
     IntRangeType,
     ParamType,
+    SetType,
     Type,
     UnknownInstanceType,
     UnknownType,
@@ -39,7 +41,22 @@ class TypeChecker:
                 if scope is None:
                     continue
                 for stmt in item.stmts:
-                    if isinstance(stmt, ast.Constraint):
+                    if isinstance(stmt, ast.SetDecl) and isinstance(stmt.expr, ast.RangeSetExpr):
+                        self._scenario_const_int_type(
+                            stmt.expr.lo, scope, {}, diagnostics, typed.types
+                        )
+                        self._scenario_const_int_type(
+                            stmt.expr.hi, scope, {}, diagnostics, typed.types
+                        )
+                    elif isinstance(stmt, ast.FindDecl):
+                        if isinstance(stmt.decision_type, ast.IntDecisionType):
+                            self._scenario_const_int_type(
+                                stmt.decision_type.lo, scope, {}, diagnostics, typed.types
+                            )
+                            self._scenario_const_int_type(
+                                stmt.decision_type.hi, scope, {}, diagnostics, typed.types
+                            )
+                    elif isinstance(stmt, ast.Constraint):
                         expr_ty = self._expr_type(stmt.expr, scope, {}, diagnostics, typed.types)
                         if not isinstance(expr_ty, type(BOOL)):
                             diagnostics.append(
@@ -126,11 +143,7 @@ class TypeChecker:
                     )
                     out = UNKNOWN
                 else:
-                    if (
-                        symbol.kind == SymbolKind.PARAM
-                        and isinstance(symbol.type, ParamType)
-                        and not symbol.type.indices
-                    ):
+                    if isinstance(symbol.type, ParamType) and not symbol.type.indices:
                         out = symbol.type.elem
                     else:
                         out = symbol.type
@@ -180,7 +193,7 @@ class TypeChecker:
                 symbol = scope.lookup(expr.name)
                 if (
                     symbol is not None
-                    and symbol.kind == SymbolKind.PARAM
+                    and symbol.kind in {SymbolKind.PARAM, SymbolKind.FIND}
                     and isinstance(symbol.type, ParamType)
                 ):
                     out = self._param_call_type(
@@ -200,25 +213,25 @@ class TypeChecker:
                 symbol = scope.lookup(expr.name)
                 if (
                     symbol is not None
-                    and symbol.kind == SymbolKind.PARAM
+                    and symbol.kind in {SymbolKind.PARAM, SymbolKind.FIND}
                     and isinstance(symbol.type, ParamType)
                 ):
                     if symbol.type.indices:
+                        label = "param" if symbol.kind == SymbolKind.PARAM else "value"
                         for arg in expr.args:
                             self._expr_type(arg, scope, binders, diagnostics, tmap)
                         diagnostics.append(
                             self._type_err(
                                 expr.span,
-                                (
-                                    f"indexed param `{expr.name}` must use bracket access "
-                                    f"`{expr.name}[...]`"
-                                ),
+                                f"indexed {label} `{expr.name}` must use bracket access "
+                                f"`{expr.name}[...]`",
                             )
                         )
                         out = symbol.type.elem
                     else:
+                        label = "param" if symbol.kind == SymbolKind.PARAM else "value"
                         out = self._param_call_type(
-                            expr, symbol.type, scope, binders, diagnostics, tmap
+                            expr, symbol.type, scope, binders, diagnostics, tmap, label=label
                         )
                 else:
                     for arg in expr.args:
@@ -282,7 +295,7 @@ class TypeChecker:
                 )
             out = BOOL
         elif isinstance(expr, ast.Quantifier):
-            binder_ty = ElemOfType(set_name=expr.domain_set)
+            binder_ty = self._binder_type(scope, expr.domain_set)
             body_scope = dict(binders)
             body_scope[expr.var] = binder_ty
             body_ty = self._expr_type(expr.expr, scope, body_scope, diagnostics, tmap)
@@ -304,7 +317,7 @@ class TypeChecker:
                 )
             out = BOOL
         elif isinstance(expr, ast.BoolAggregate):
-            binder_ty = ElemOfType(set_name=expr.comp.domain_set)
+            binder_ty = self._binder_type(scope, expr.comp.domain_set)
             inner = dict(binders)
             inner[expr.comp.var] = binder_ty
             term_ty = self._expr_type(expr.comp.term, scope, inner, diagnostics, tmap)
@@ -325,11 +338,41 @@ class TypeChecker:
                         self._type_err(expr.comp.else_term.span, "else term must be Bool")
                     )
             out = BOOL
+        elif isinstance(expr, ast.BoolComprehension):
+            binder_ty = self._binder_type(scope, expr.domain_set)
+            body_scope = dict(binders)
+            body_scope[expr.var] = binder_ty
+            term_ty = self._expr_type(expr.term, scope, body_scope, diagnostics, tmap)
+            if not isinstance(term_ty, type(BOOL)):
+                diagnostics.append(
+                    self._type_err(expr.term.span, "comprehension term must be Bool")
+                )
+
+            if expr.where is not None:
+                where_ty = self._expr_type(expr.where, scope, body_scope, diagnostics, tmap)
+                if not isinstance(where_ty, type(BOOL)):
+                    diagnostics.append(self._type_err(expr.where.span, "where clause must be Bool"))
+
+            if self._lookup_set(scope, expr.domain_set) is None:
+                suggestion = self._did_you_mean(expr.domain_set, self._set_names(scope))
+                help_items = [f"Declare set `{expr.domain_set}` before using it."]
+                if suggestion is not None:
+                    help_items.append(f"Did you mean `{suggestion}`?")
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2001",
+                        message=f"unknown set `{expr.domain_set}` in comprehension",
+                        span=expr.span,
+                        help=help_items,
+                    )
+                )
+            out = CompType(elem_type=BOOL)
         elif isinstance(expr, ast.NumAggregate):
+            binder_ty = self._binder_type(scope, expr.comp.domain_set)
+            inner = dict(binders)
+            inner[expr.comp.var] = binder_ty
             if isinstance(expr.comp, ast.NumComprehension):
-                binder_ty = ElemOfType(set_name=expr.comp.domain_set)
-                inner = dict(binders)
-                inner[expr.comp.var] = binder_ty
                 term_ty = self._expr_type(expr.comp.term, scope, inner, diagnostics, tmap)
                 if not is_numeric(term_ty):
                     diagnostics.append(
@@ -349,16 +392,10 @@ class TypeChecker:
                         )
                 out = REAL if expr.kind == "sum" else IntRangeType(0, 2**31 - 1)
             else:
-                binder_ty = ElemOfType(set_name=expr.comp.domain_set)
-                inner = dict(binders)
-                inner[expr.comp.var] = binder_ty
                 if expr.comp.var_ref != expr.comp.var:
                     diagnostics.append(
-                        Diagnostic(
-                            severity=Severity.ERROR,
-                            code="QSOL2101",
-                            message="count binder and counted variable must match",
-                            span=expr.comp.span,
+                        self._type_err(
+                            expr.comp.span, "count binder and counted variable must match"
                         )
                     )
                 if expr.comp.where is not None:
@@ -436,13 +473,15 @@ class TypeChecker:
         binders: dict[str, Type],
         diagnostics: list[Diagnostic],
         tmap: dict[int, str],
+        *,
+        label: str = "param",
     ) -> Type:
         expected_arity = len(ptype.indices)
         if expected_arity == 0:
             diagnostics.append(
                 self._type_err(
                     expr.span,
-                    f"scalar param `{expr.name}` must be referenced as `{expr.name}` (bare name)",
+                    f"scalar {label} `{expr.name}` must be referenced as `{expr.name}` (bare name)",
                 )
             )
             for arg in expr.args:
@@ -509,6 +548,59 @@ class TypeChecker:
             return None
         return sym
 
+    def _binder_type(self, scope: Scope, set_name: str) -> ElemOfType:
+        sym = self._lookup_set(scope, set_name)
+        numeric_kind = (
+            sym.type.numeric_kind if sym is not None and isinstance(sym.type, SetType) else None
+        )
+        return ElemOfType(set_name=set_name, numeric_kind=numeric_kind)
+
+    def _scenario_const_int_type(
+        self,
+        expr: ast.NumExpr,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        ty = self._expr_type(expr, scope, binders, diagnostics, tmap)
+        if not is_numeric(ty):
+            diagnostics.append(
+                self._type_err(expr.span, "integer bounds must be scenario-time numeric constants")
+            )
+        if not self._is_scenario_const_expr(expr, scope):
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    "integer bounds may use literals, scalar params, size(Set), and arithmetic only",
+                )
+            )
+        return ty
+
+    def _is_scenario_const_expr(self, expr: ast.Expr, scope: Scope) -> bool:
+        if isinstance(expr, ast.NumLit):
+            return True
+        if isinstance(expr, ast.NameRef):
+            symbol = scope.lookup(expr.name)
+            return (
+                symbol is not None
+                and symbol.kind == SymbolKind.PARAM
+                and isinstance(symbol.type, ParamType)
+                and not symbol.type.indices
+                and is_numeric(symbol.type.elem)
+            )
+        if isinstance(expr, ast.FuncCall) and expr.name == "size" and len(expr.args) == 1:
+            arg = expr.args[0]
+            symbol = scope.lookup(arg.name) if isinstance(arg, ast.NameRef) else None
+            return symbol is not None and symbol.kind == SymbolKind.SET
+        if isinstance(expr, (ast.Add, ast.Sub, ast.Mul, ast.Div)):
+            return self._is_scenario_const_expr(expr.left, scope) and self._is_scenario_const_expr(
+                expr.right, scope
+            )
+        if isinstance(expr, ast.Neg):
+            return self._is_scenario_const_expr(expr.expr, scope)
+        return False
+
     def _literal_type(self, lit: ast.Literal) -> Type:
         if isinstance(lit.value, bool):
             return BOOL
@@ -558,10 +650,14 @@ class TypeChecker:
             return ["Use numeric operands on both sides of `<`, `<=`, `>`, and `>=`."]
         if message.startswith("param call `") and "expects" in message:
             return ["Pass one argument per declared index dimension of the parameter."]
-        if message.startswith("indexed param `") and "must use bracket access" in message:
+        if (
+            message.startswith("indexed value `") or message.startswith("indexed param `")
+        ) and "must use bracket access" in message:
             return ["Use bracket syntax for indexed params, for example `Cost[i, j]`."]
         if message.startswith("indexed access `") and "requires a declared parameter" in message:
             return ["Use indexed access only with declared parameters."]
+        if message.startswith("scalar value `"):
+            return ["Reference scalar params and scalar decisions as bare names, not as calls."]
         if message.startswith("scalar param `"):
             return ["Reference scalar params as bare names, not as calls."]
         if message.startswith("unknown function/predicate `"):
@@ -606,7 +702,8 @@ class TypeChecker:
         if isinstance(ty, IntRangeType):
             return f"Int[{ty.lo}..{ty.hi}]"
         if isinstance(ty, ElemOfType):
-            return f"ElemOf({ty.set_name})"
+            suffix = f",{ty.numeric_kind}" if ty.numeric_kind is not None else ""
+            return f"ElemOf({ty.set_name}{suffix})"
         if isinstance(ty, ParamType):
             return "Param"
         if isinstance(ty, UnknownInstanceType):

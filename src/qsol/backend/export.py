@@ -5,6 +5,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import dimod
+
 from qsol.backend.dimod_codegen import CodegenResult
 from qsol.lower.ir import BackendArtifacts
 
@@ -67,11 +69,7 @@ def export_artifacts(
         encoding="utf-8",
     )
 
-    stats: dict[str, float | int] = {
-        "num_variables": int(len(codegen_result.bqm.variables)),
-        "num_interactions": int(len(codegen_result.bqm.quadratic)),
-        "num_constraints": int(len(codegen_result.cqm.constraints)),
-    }
+    stats = dimod_model_stats(cqm=codegen_result.cqm, bqm=codegen_result.bqm)
 
     LOGGER.info("Artifacts exported to %s", out)
     return BackendArtifacts(
@@ -82,6 +80,33 @@ def export_artifacts(
         explain_path=str(explain_path),
         stats=stats,
     )
+
+
+def dimod_model_stats(
+    *,
+    cqm: dimod.ConstrainedQuadraticModel,
+    bqm: dimod.BinaryQuadraticModel,
+) -> dict[str, float | int]:
+    cqm_binary = 0
+    cqm_integer = 0
+    for variable in cqm.variables:
+        vartype = cqm.vartype(variable)
+        if vartype == dimod.BINARY:
+            cqm_binary += 1
+        elif vartype == dimod.INTEGER:
+            cqm_integer += 1
+
+    converted_bqm_variables = int(len(bqm.variables))
+    converted_bqm_interactions = int(len(bqm.quadratic))
+    return {
+        "cqm_binary_variables": cqm_binary,
+        "cqm_integer_variables": cqm_integer,
+        "converted_bqm_variables": converted_bqm_variables,
+        "converted_bqm_interactions": converted_bqm_interactions,
+        "num_variables": converted_bqm_variables,
+        "num_interactions": converted_bqm_interactions,
+        "num_constraints": int(len(cqm.constraints)),
+    }
 
 
 def _to_qubo_json(bqm: Any) -> dict[str, object]:

@@ -79,7 +79,12 @@ function indicator(b: Bool) = if b then 1 else 0;
 ```qsol
 set Workers;
 set Tasks;
+set Positions = Range(1, size(Workers));
 ```
+
+`Range(lo, hi)` defines a derived integer set. It is inclusive, has no `step`
+argument, and is evaluated during grounding after scenario sets and scalar params
+are available. Scenario data must not supply values for derived sets.
 
 ### 3.2 Params
 
@@ -104,10 +109,22 @@ Usage notes:
 find Pick : Subset(Workers);
 find Assign : Mapping(Workers -> Tasks);
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
+find Enabled : Bool;
+find Makespan : Int[0 .. 100];
+find Load[Workers] : Int[0 .. size(Tasks)];
 ```
 
 `find` supports primitive unknowns (`Subset`, `Mapping`) and user-defined unknowns.
 Custom unknown finds are elaborated in frontend into primitive finds plus generated constraints.
+
+Scalar decisions are also valid:
+- `Bool` creates a binary scalar decision usable in boolean expressions.
+- `Int[lo .. hi]` creates a native bounded integer CQM variable usable in numeric expressions.
+- Indexed scalar decisions use bracket access, for example `Load[w]`.
+
+`Int` bounds must be scenario-time integer constants: integer literals, numeric scalar
+params, `size(Set)`, and arithmetic over those forms. Unknown-dependent bounds are
+rejected.
 
 ## 4. Constraints and Objectives
 
@@ -185,6 +202,7 @@ exactly(1, S.has(x) for x in X)
 Cost[w, t]
 C
 size(V)
+Load[w]
 ```
 
 Macro formal types:
@@ -245,10 +263,13 @@ use stdlib.logic;
 
 problem ExactKSubset {
   set Items;
+  set Positions = Range(1, size(Items));
 
   find Pick : Subset(Items);
+  find Count : Int[0 .. size(Items)];
 
-  must exactly(2, Pick.has(i) for i in Items);
+  must Count = sum(if Pick.has(i) then 1 else 0 for i in Items);
+  must Count = 2;
   minimize sum(if Pick.has(i) then 1 else 0 for i in Items);
 }
 ```

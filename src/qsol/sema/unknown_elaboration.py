@@ -96,6 +96,9 @@ class UnknownElaborator:
         for stmt in problem.stmts:
             if not isinstance(stmt, ast.FindDecl):
                 continue
+            if not isinstance(stmt.decision_type, ast.UnknownDecisionType):
+                find_replacements[id(stmt)] = [stmt]
+                continue
             if stmt.unknown_type.kind in {"Subset", "Mapping"}:
                 find_replacements[id(stmt)] = [stmt]
                 continue
@@ -654,11 +657,50 @@ class UnknownElaborator:
                     ),
                 ),
             )
+        if isinstance(expr, ast.BoolComprehension):
+            return replace(
+                expr,
+                term=cast(
+                    ast.BoolExpr,
+                    self._rewrite_expr(
+                        expr.term,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    ),
+                ),
+                domain_set=set_subst.get(expr.domain_set, expr.domain_set),
+                where=cast(
+                    ast.BoolExpr | None,
+                    self._rewrite_expr(
+                        expr.where,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    )
+                    if expr.where is not None
+                    else None,
+                ),
+                else_term=cast(
+                    ast.BoolExpr | None,
+                    self._rewrite_expr(
+                        expr.else_term,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    )
+                    if expr.else_term is not None
+                    else None,
+                ),
+            )
+
         if isinstance(expr, ast.NumAggregate):
             num_comp = expr.comp
-            rewritten_num_comp: ast.NumComprehension | ast.CountComprehension
             if isinstance(num_comp, ast.NumComprehension):
-                rewritten_num_comp = replace(
+                rewritten_num_comp: ast.NumComprehension | ast.CountComprehension = replace(
                     num_comp,
                     term=cast(
                         ast.NumExpr,
@@ -785,6 +827,30 @@ class UnknownElaborator:
         set_subst: dict[str, str],
         call_stack: tuple[tuple[str, str], ...],
     ) -> ast.BoolExpr:
+        if predicate.name == "any" and len(call_args) == 1:
+            arg = call_args[0]
+            if isinstance(arg, ast.BoolComprehension):
+                # any(P(x) for x in S) -> sum(if P(x) then 1 else 0 for x in S) >= 1
+                count_expr = self._bool_comp_to_count(arg, call_span, invert=False)
+                return ast.Compare(
+                    span=call_span,
+                    op=">=",
+                    left=count_expr,
+                    right=ast.NumLit(span=call_span, value=1.0),
+                )
+        if predicate.name == "all" and len(call_args) == 1:
+            arg = call_args[0]
+            # all(P(x) for x in S) -> sum(if not P(x) then 1 else 0 for x in S) == 0
+            # "count number of falses, ensure it is 0"
+            if isinstance(arg, ast.BoolComprehension):
+                count_expr = self._bool_comp_to_count(arg, call_span, invert=True)
+                return ast.Compare(
+                    span=call_span,
+                    op="=",
+                    left=count_expr,
+                    right=ast.NumLit(span=call_span, value=0.0),
+                )
+
         rewritten = self._inline_macro_call(
             member=predicate,
             scope_key="__global__",
@@ -809,6 +875,11 @@ class UnknownElaborator:
         set_subst: dict[str, str],
         call_stack: tuple[tuple[str, str], ...],
     ) -> ast.NumExpr:
+        if function.name == "count" and len(call_args) == 1:
+            arg = call_args[0]
+            if isinstance(arg, ast.BoolComprehension):
+                return self._bool_comp_to_count(arg, call_span, invert=False)
+
         rewritten = self._inline_macro_call(
             member=function,
             scope_key="__global__",
@@ -822,6 +893,48 @@ class UnknownElaborator:
             call_stack=call_stack,
         )
         return cast(ast.NumExpr, rewritten)
+
+    def _bool_comp_to_count(
+        self, comp: ast.BoolComprehension, span: Span, *, invert: bool
+    ) -> ast.NumAggregate:
+        # invert=True means we want to count cases where term is FALSE.
+        # used for `all(P)` -> `count(not P) == 0`.
+        term = comp.term
+        if invert:
+            term = ast.Not(span=term.span, expr=term)
+
+        # if term then 1 else 0
+        num_term = ast.IfThenElse(
+            span=term.span,
+            cond=term,
+            then_expr=ast.NumLit(span=term.span, value=1.0),
+            else_expr=ast.NumLit(span=term.span, value=0.0),
+        )
+
+        else_term: ast.NumExpr | None = None
+        if comp.else_term is not None:
+            et = comp.else_term
+            if invert:
+                et = ast.Not(span=et.span, expr=et)
+            else_term = ast.IfThenElse(
+                span=et.span,
+                cond=et,
+                then_expr=ast.NumLit(span=et.span, value=1.0),
+                else_expr=ast.NumLit(span=et.span, value=0.0),
+            )
+
+        return ast.NumAggregate(
+            span=span,
+            kind="sum",
+            comp=ast.NumComprehension(
+                span=span,
+                term=num_term,
+                var=comp.var,
+                domain_set=comp.domain_set,
+                where=comp.where,
+                else_term=else_term,
+            ),
+        )
 
     def _inline_macro_call(
         self,
@@ -955,69 +1068,26 @@ class UnknownElaborator:
             isinstance(arg, ast.NumAggregate)
             and arg.from_comp_arg
             and isinstance(arg.comp, ast.NumComprehension)
-        ) or (
-            isinstance(arg, ast.BoolAggregate)
-            and arg.from_comp_arg
-            and isinstance(arg.comp, ast.BoolComprehension)
-        )
+        ) or isinstance(arg, ast.BoolComprehension)
 
     def _comp_arg_to_real(self, arg: ast.Expr) -> ast.NumExpr:
+        if isinstance(arg, ast.BoolComprehension):
+            return self._bool_comp_to_count(arg, arg.span, invert=False)
         if isinstance(arg, ast.NumAggregate) and isinstance(arg.comp, ast.NumComprehension):
-            return ast.NumAggregate(span=arg.span, kind="sum", comp=arg.comp)
-        if isinstance(arg, ast.BoolAggregate) and isinstance(arg.comp, ast.BoolComprehension):
-            comp = arg.comp
-            return ast.NumAggregate(
-                span=arg.span,
-                kind="sum",
-                comp=ast.NumComprehension(
-                    span=comp.span,
-                    term=self._bool_to_num(comp.term),
-                    var=comp.var,
-                    domain_set=comp.domain_set,
-                    where=comp.where,
-                    else_term=(
-                        self._bool_to_num(comp.else_term) if comp.else_term is not None else None
-                    ),
-                ),
-            )
+            return arg
         return ast.NumLit(span=arg.span, value=0.0)
 
     def _comp_arg_to_bool(self, arg: ast.Expr) -> ast.BoolExpr:
-        if isinstance(arg, ast.BoolAggregate) and isinstance(arg.comp, ast.BoolComprehension):
-            return ast.BoolAggregate(span=arg.span, kind="any", comp=arg.comp)
+        if isinstance(arg, ast.BoolComprehension):
+            return cast(ast.BoolExpr, arg)
         if isinstance(arg, ast.NumAggregate) and isinstance(arg.comp, ast.NumComprehension):
-            comp = arg.comp
-            return ast.BoolAggregate(
+            return ast.Compare(
                 span=arg.span,
-                kind="any",
-                comp=ast.BoolComprehension(
-                    span=comp.span,
-                    term=self._num_to_bool(comp.term),
-                    var=comp.var,
-                    domain_set=comp.domain_set,
-                    where=comp.where,
-                    else_term=(
-                        self._num_to_bool(comp.else_term) if comp.else_term is not None else None
-                    ),
-                ),
+                op="!=",
+                left=arg,
+                right=ast.NumLit(span=arg.span, value=0.0),
             )
         return ast.BoolLit(span=arg.span, value=False)
-
-    def _bool_to_num(self, expr: ast.BoolExpr) -> ast.NumExpr:
-        return ast.IfThenElse(
-            span=expr.span,
-            cond=expr,
-            then_expr=ast.NumLit(span=expr.span, value=1.0),
-            else_expr=ast.NumLit(span=expr.span, value=0.0),
-        )
-
-    def _num_to_bool(self, expr: ast.NumExpr) -> ast.BoolExpr:
-        return ast.Compare(
-            span=expr.span,
-            op="!=",
-            left=expr,
-            right=ast.NumLit(span=expr.span, value=0.0),
-        )
 
     def _macro_fallback_expr(
         self, member: ast.PredicateDef | ast.FunctionDef, span: Span

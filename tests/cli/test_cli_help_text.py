@@ -40,9 +40,11 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert "Parse a QSOL model and print AST output." in inspect_help.stdout
     assert "Run frontend checks (parse/resolve/typecheck/validate)." in inspect_help.stdout
     assert "Lower a QSOL model to symbolic kernel IR." in inspect_help.stdout
+    assert "Estimate grounded model size without writing artifacts." in inspect_help.stdout
     assert "Alias for `inspect parse`." in inspect_help.stdout
     assert "Alias for `inspect check`." in inspect_help.stdout
     assert "Alias for `inspect lower`." in inspect_help.stdout
+    assert "Alias for `inspect estimate`." in inspect_help.stdout
 
     targets_help = runner.invoke(app, ["targets", "-h"], env=env)
     assert targets_help.exit_code == 0
@@ -91,6 +93,7 @@ def test_qsol_subcommand_help_includes_descriptions_and_arguments() -> None:
     assert _has_option(plain_check_help, "--scen")
     assert _has_option(plain_check_help, "--all-s")
     assert _has_option(plain_check_help, "--fail")
+    assert _has_option(plain_check_help, "--estimate")
 
 
 def test_argparse_cli_help_texts_are_useful() -> None:

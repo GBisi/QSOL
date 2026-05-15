@@ -10,6 +10,10 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `assignment_balance.qsol.toml`
 - `graph_coloring.qsol`
 - `graph_coloring.qsol.toml`
+- `minimum_graph_coloring.qsol`
+- `minimum_graph_coloring.qsol.toml`
+- `scalar_bool_demo.qsol`
+- `scalar_bool_demo.qsol.toml`
 
 ## Run
 
@@ -57,6 +61,22 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol inspect estimate \
+  examples/tutorials/minimum_graph_coloring.qsol \
+  --config examples/tutorials/minimum_graph_coloring.qsol.toml \
+  --json
+```
+
+```bash
+uv run qsol solve \
+  examples/tutorials/scalar_bool_demo.qsol \
+  --config examples/tutorials/scalar_bool_demo.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/scalar_bool_demo \
+  --runtime-option sampler=exact
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -77,6 +97,12 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Workers`
   - `scenarios.baseline.params.Cost[worker][task]`
   - optional `entrypoint.runtime`
+- `minimum_graph_coloring.qsol.toml`
+  - `scenarios.triangle.sets.Nodes`
+  - `Colors` is a derived `Range(1, size(Nodes))` set and is not supplied in TOML.
+- `scalar_bool_demo.qsol.toml`
+  - `scenarios.default.sets.Machines`
+  - `scenarios.default.params.Capacity`
 
 ## Related
 

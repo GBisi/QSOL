@@ -1,10 +1,12 @@
+use stdlib.logic;
+
 unknown BijectiveMapping(A, B) {
   rep {
     f : Mapping(A -> B);
   }
   laws {
-    must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
-    must forall b in B: count(a for a in A where f.is(a, b)) >= 1;
+    must all(sum(1 for a in A where f.is(a, b)) <= 1 for b in B);
+    must all(sum(1 for a in A where f.is(a, b)) >= 1 for b in B);
   }
   view {
     predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);

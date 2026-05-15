@@ -254,3 +254,61 @@ problem P {
 """
     unit = compile_source(text, options=CompileOptions(filename="bool_if_else_logic.qsol"))
     assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_range_binder_supports_arithmetic_but_opaque_binder_rejects_it() -> None:
+    range_text = """
+problem P {
+  set V;
+  set Positions = Range(1, size(V));
+  must forall p in Positions: p + 1 <= size(V) + 1;
+}
+"""
+    opaque_text = """
+problem P {
+  set V;
+  must forall v in V: v + 1 <= size(V) + 1;
+}
+"""
+    range_unit = compile_source(range_text, options=CompileOptions(filename="range_math.qsol"))
+    opaque_unit = compile_source(opaque_text, options=CompileOptions(filename="opaque_math.qsol"))
+
+    assert not any(d.is_error for d in range_unit.diagnostics)
+    assert any(
+        d.code == "QSOL2101" and "arithmetic requires numeric operands" in d.message
+        for d in opaque_unit.diagnostics
+    )
+
+
+def test_scalar_decisions_typecheck_in_bool_numeric_and_indexed_contexts() -> None:
+    text = """
+problem P {
+  set Machines;
+  param Total : Int[0 .. 100];
+  find enabled : Bool;
+  find T : Int[0 .. Total];
+  find Load[Machines] : Int[0 .. Total];
+
+  must enabled;
+  must forall m in Machines: Load[m] <= T;
+  minimize T + sum(Load[m] for m in Machines);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="scalar_decisions.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_unknown_dependent_int_bounds_are_rejected() -> None:
+    text = """
+problem P {
+  set V;
+  find Chosen : Subset(V);
+  find T : Int[0 .. size(Chosen)];
+  minimize T;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="unknown_bound_bad.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "size() expects a declared set identifier" in d.message
+        for d in unit.diagnostics
+    )

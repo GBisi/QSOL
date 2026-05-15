@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from itertools import product
 from typing import Any, Callable, cast
 
 import dimod
@@ -24,6 +26,11 @@ def _new_cqm() -> dimod.ConstrainedQuadraticModel:
 def _new_binary(label: str) -> BinaryVar:
     ctor = cast(Callable[[str], BinaryVar], dimod.Binary)
     return ctor(label)
+
+
+def _new_integer(label: str, *, lower_bound: int, upper_bound: int) -> Any:
+    ctor = cast(Callable[..., Any], dimod.Integer)
+    return ctor(label, lower_bound=lower_bound, upper_bound=upper_bound)
 
 
 def _convert_cqm_to_bqm(
@@ -120,6 +127,24 @@ class DimodCodegen:
         diagnostics: list[Diagnostic],
     ) -> None:
         for find in sorted(problem.finds, key=lambda f: f.name):
+            if isinstance(find.decision_type, ir.KBoolDecisionType):
+                for label, meaning in self._scalar_labels(problem, find):
+                    binaries[label] = _new_binary(label)
+                    varmap[label] = meaning
+                continue
+
+            if isinstance(find.decision_type, ir.KIntDecisionType):
+                lo, hi = self._int_bounds(find.decision_type)
+                if lo is None or hi is None:
+                    diagnostics.append(
+                        self._unsupported(find.span, f"ungrounded Int domain for `{find.name}`")
+                    )
+                    continue
+                for label, meaning in self._scalar_labels(problem, find):
+                    binaries[label] = _new_integer(label, lower_bound=lo, upper_bound=hi)
+                    varmap[label] = meaning
+                continue
+
             kind = find.unknown_type.kind
             if kind == "Subset":
                 set_name = find.unknown_type.args[0]
@@ -129,7 +154,7 @@ class DimodCodegen:
                         self._unsupported(find.span, f"missing set `{set_name}` for subset")
                     )
                     continue
-                for elem in sorted(elems):
+                for elem in sorted(elems, key=str):
                     label = self._subset_label(find.name, elem)
                     binaries[label] = _new_binary(label)
                     varmap[label] = f"{find.name}.has({elem})"
@@ -140,9 +165,9 @@ class DimodCodegen:
                 if dom is None or cod is None:
                     diagnostics.append(self._unsupported(find.span, "missing set for mapping"))
                     continue
-                for a in sorted(dom):
+                for a in sorted(dom, key=str):
                     row = []
-                    for b in sorted(cod):
+                    for b in sorted(cod, key=str):
                         label = self._mapping_label(find.name, a, b)
                         binaries[label] = _new_binary(label)
                         row.append(binaries[label])
@@ -168,7 +193,7 @@ class DimodCodegen:
         cqm: dimod.ConstrainedQuadraticModel,
         binaries: dict[str, BinaryVar],
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> None:
         if isinstance(expr, ir.KQuantifier):
             vals = problem.set_values.get(expr.domain_set)
@@ -177,10 +202,35 @@ class DimodCodegen:
                     self._unsupported(expr.span, f"unknown set `{expr.domain_set}` in quantifier")
                 )
                 return
-            for value in sorted(vals):
+            if expr.kind == "forall":
+                for value in sorted(vals, key=str):
+                    next_env = dict(env)
+                    next_env[expr.var] = value
+                    self._emit_constraint(problem, expr.expr, cqm, binaries, diagnostics, next_env)
+                return
+
+            indicators = []
+            for value in sorted(vals, key=str):
                 next_env = dict(env)
                 next_env[expr.var] = value
-                self._emit_constraint(problem, expr.expr, cqm, binaries, diagnostics, next_env)
+                indicator = self._bool_expr(
+                    problem, expr.expr, binaries, diagnostics, next_env, cqm=cqm
+                )
+                if indicator is None:
+                    diagnostics.append(
+                        self._unsupported(expr.span, "unsupported exists quantifier body")
+                    )
+                    return
+                indicators.append(indicator)
+            self._add_numeric_constraint(
+                cqm,
+                lhs=sum(indicators, 0.0),
+                rhs=1.0,
+                op=">=",
+                label=self._constraint_label(expr.span),
+                span=expr.span,
+                diagnostics=diagnostics,
+            )
             return
 
         if isinstance(expr, ir.KAnd):
@@ -384,7 +434,7 @@ class DimodCodegen:
         expr: ir.KBoolExpr,
         binaries: dict[str, BinaryVar],
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
         cqm: dimod.ConstrainedQuadraticModel,
     ) -> Any | None:
         if isinstance(expr, ir.KQuantifier):
@@ -397,7 +447,7 @@ class DimodCodegen:
                 )
                 return None
             acc = 0.0
-            for value in sorted(vals):
+            for value in sorted(vals, key=str):
                 next_env = dict(env)
                 next_env[expr.var] = value
                 inner = self._soft_penalty(
@@ -431,7 +481,7 @@ class DimodCodegen:
         expr: ir.KBoolExpr,
         binaries: dict[str, BinaryVar],
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
         cqm: dimod.ConstrainedQuadraticModel,
     ) -> Any | None:
         if isinstance(expr, ir.KBoolLit):
@@ -833,9 +883,11 @@ class DimodCodegen:
         expr: ir.KExpr,
         binaries: dict[str, BinaryVar],
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> Any | None:
         if isinstance(expr, ir.KName):
+            if expr.name in binaries:
+                return binaries[expr.name]
             if expr.name in problem.params and not isinstance(problem.params[expr.name], dict):
                 val = problem.params[expr.name]
                 truth = self._bool_constant(val)
@@ -852,6 +904,12 @@ class DimodCodegen:
                 return None
             return binaries[label]
         if isinstance(expr, ir.KFuncCall):
+            label = self._indexed_scalar_label(problem, expr, diagnostics, env)
+            if label is not None:
+                if label not in binaries:
+                    diagnostics.append(self._unsupported(expr.span, f"unknown variable `{label}`"))
+                    return None
+                return binaries[label]
             value = self._bool_func_call(problem, expr, diagnostics, env)
             if value is None:
                 diagnostics.append(self._unsupported(expr.span, "unsupported function call atom"))
@@ -867,17 +925,19 @@ class DimodCodegen:
         expr: ir.KExpr,
         binaries: dict[str, BinaryVar],
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
         cqm: dimod.ConstrainedQuadraticModel,
     ) -> Any | None:
         if isinstance(expr, ir.KNumLit):
             return expr.value
         if isinstance(expr, ir.KName):
+            if expr.name in binaries:
+                return binaries[expr.name]
             if expr.name in env:
                 bound_value = env[expr.name]
                 try:
-                    return float(bound_value)
-                except ValueError:
+                    return float(cast(Any, bound_value))
+                except (TypeError, ValueError):
                     diagnostics.append(
                         self._unsupported(
                             expr.span, f"non-numeric binder `{expr.name}` in numeric context"
@@ -895,6 +955,12 @@ class DimodCodegen:
         if isinstance(expr, ir.KMethodCall):
             return self._bool_atom(problem, expr, binaries, diagnostics, env)
         if isinstance(expr, ir.KFuncCall):
+            label = self._indexed_scalar_label(problem, expr, diagnostics, env)
+            if label is not None:
+                if label not in binaries:
+                    diagnostics.append(self._unsupported(expr.span, f"unknown variable `{label}`"))
+                    return None
+                return binaries[label]
             num_value = self._num_func_call(problem, expr, diagnostics, env)
             if num_value is None:
                 diagnostics.append(
@@ -961,7 +1027,7 @@ class DimodCodegen:
                 )
                 return None
             acc = 0.0
-            for val in sorted(vals):
+            for val in sorted(vals, key=str):
                 next_env = dict(env)
                 next_env[expr.comp.var] = val
                 term = self._num_expr(
@@ -987,8 +1053,11 @@ class DimodCodegen:
         problem: ir.GroundProblem,
         expr: ir.KFuncCall,
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> float | None:
+        label = self._indexed_scalar_label(problem, expr, diagnostics, env)
+        if label is not None:
+            return None
         value = self._param_call_value(problem, expr, diagnostics, env)
         if value is None:
             return None
@@ -1002,8 +1071,11 @@ class DimodCodegen:
         problem: ir.GroundProblem,
         expr: ir.KFuncCall,
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> float | None:
+        label = self._indexed_scalar_label(problem, expr, diagnostics, env)
+        if label is not None:
+            return None
         value = self._param_call_value(problem, expr, diagnostics, env)
         if value is None:
             return None
@@ -1018,7 +1090,7 @@ class DimodCodegen:
         problem: ir.GroundProblem,
         expr: ir.KFuncCall,
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> object | None:
         if expr.name not in problem.params:
             return None
@@ -1040,7 +1112,7 @@ class DimodCodegen:
         problem: ir.GroundProblem,
         expr: ir.KMethodCall,
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> str | None:
         if not isinstance(expr.target, ir.KName):
             return None
@@ -1056,16 +1128,72 @@ class DimodCodegen:
             return self._mapping_label(target, a, b)
         return None
 
+    def _int_bounds(self, decision_type: ir.KIntDecisionType) -> tuple[int | None, int | None]:
+        if not isinstance(decision_type.lo, ir.KNumLit) or not isinstance(
+            decision_type.hi, ir.KNumLit
+        ):
+            return None, None
+        lo = int(decision_type.lo.value)
+        hi = int(decision_type.hi.value)
+        return lo, hi
+
+    def _scalar_labels(
+        self, problem: ir.GroundProblem, find: ir.KFindDecl
+    ) -> list[tuple[str, str]]:
+        if not find.indices:
+            return [(find.name, find.name)]
+
+        domains: list[list[object]] = []
+        for index_name in find.indices:
+            values = problem.set_values.get(index_name)
+            if values is None:
+                return []
+            domains.append(list(values))
+
+        labels: list[tuple[str, str]] = []
+        for tuple_values in product(*domains):
+            key = ",".join(str(value) for value in tuple_values)
+            label = f"{find.name}[{key}]"
+            meaning = f"{find.name}[{key}]"
+            labels.append((label, meaning))
+        return labels
+
+    def _indexed_scalar_label(
+        self,
+        problem: ir.GroundProblem,
+        expr: ir.KFuncCall,
+        diagnostics: list[Diagnostic],
+        env: Mapping[str, object],
+    ) -> str | None:
+        find = next((candidate for candidate in problem.finds if candidate.name == expr.name), None)
+        if find is None or isinstance(find.decision_type, ir.KUnknownDecisionType):
+            return None
+        if len(expr.args) != len(find.indices):
+            diagnostics.append(
+                self._unsupported(
+                    expr.span,
+                    f"scalar decision `{expr.name}` expects {len(find.indices)} index argument(s)",
+                )
+            )
+            return None
+        keys: list[str] = []
+        for arg in expr.args:
+            key = self._resolve_name_arg(problem, arg, diagnostics, env)
+            if key is None:
+                return None
+            keys.append(key)
+        return f"{expr.name}[{','.join(keys)}]"
+
     def _resolve_name_arg(
         self,
         problem: ir.GroundProblem,
         expr: ir.KExpr,
         diagnostics: list[Diagnostic],
-        env: dict[str, str],
+        env: Mapping[str, object],
     ) -> str | None:
         if isinstance(expr, ir.KName):
             if expr.name in env:
-                return env[expr.name]
+                return str(env[expr.name])
             if expr.name in problem.params and not isinstance(problem.params[expr.name], dict):
                 return str(problem.params[expr.name])
             return expr.name
@@ -1078,10 +1206,10 @@ class DimodCodegen:
             return str(value)
         return None
 
-    def _subset_label(self, name: str, elem: str) -> str:
+    def _subset_label(self, name: str, elem: object) -> str:
         return f"{name}.has[{elem}]"
 
-    def _mapping_label(self, name: str, a: str, b: str) -> str:
+    def _mapping_label(self, name: str, a: object, b: object) -> str:
         return f"{name}.is[{a},{b}]"
 
     def _constraint_label(self, span: Span) -> str:

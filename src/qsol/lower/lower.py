@@ -18,7 +18,14 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
 
         for stmt in item.stmts:
             if isinstance(stmt, ast.SetDecl):
-                sets.append(ir.KSetDecl(span=stmt.span, name=stmt.name))
+                set_expr: ir.KSetExpr | None = None
+                if isinstance(stmt.expr, ast.RangeSetExpr):
+                    set_expr = ir.KRangeSetExpr(
+                        span=stmt.expr.span,
+                        lo=_lower_num(stmt.expr.lo),
+                        hi=_lower_num(stmt.expr.hi),
+                    )
+                sets.append(ir.KSetDecl(span=stmt.span, name=stmt.name, expr=set_expr))
             elif isinstance(stmt, ast.ParamDecl):
                 scalar_kind = (
                     stmt.value_type.kind
@@ -42,7 +49,12 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                 )
             elif isinstance(stmt, ast.FindDecl):
                 finds.append(
-                    ir.KFindDecl(span=stmt.span, name=stmt.name, unknown_type=stmt.unknown_type)
+                    ir.KFindDecl(
+                        span=stmt.span,
+                        name=stmt.name,
+                        indices=tuple(stmt.indices),
+                        decision_type=_lower_decision_type(stmt.decision_type),
+                    )
                 )
             elif isinstance(stmt, ast.Constraint):
                 constraints.append(
@@ -66,6 +78,23 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
         )
 
     return ir.KernelIR(span=program.span, problems=tuple(problems))
+
+
+def _lower_decision_type(decision_type: ast.DecisionType) -> ir.KDecisionType:
+    if isinstance(decision_type, ast.UnknownDecisionType):
+        return ir.KUnknownDecisionType(
+            span=decision_type.span, unknown_type=decision_type.unknown_type
+        )
+    if isinstance(decision_type, ast.BoolDecisionType):
+        return ir.KBoolDecisionType(span=decision_type.span)
+    if isinstance(decision_type, ast.IntDecisionType):
+        return ir.KIntDecisionType(
+            span=decision_type.span,
+            lo=_lower_num(decision_type.lo),
+            hi=_lower_num(decision_type.hi),
+            encoding=decision_type.encoding,
+        )
+    raise TypeError(f"Unsupported decision type: {type(decision_type)}")
 
 
 def _lower_expr(expr: ast.Expr) -> ir.KExpr:
@@ -128,6 +157,7 @@ def _lower_bool(expr: ast.BoolExpr) -> ir.KBoolExpr:
             domain_set=expr.domain_set,
             expr=_lower_bool(expr.expr),
         )
+
     if isinstance(expr, ast.BoolIfThenElse):
         return ir.KBoolIfThenElse(
             span=expr.span,

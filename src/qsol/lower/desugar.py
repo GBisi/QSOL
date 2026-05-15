@@ -58,9 +58,8 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
         else_term = _desugar_bool(comp.else_term) if comp.else_term is not None else None
 
         if expr.kind == "any":
-            body: ast.BoolExpr
             if where is None and else_term is None:
-                body = term
+                body: ast.BoolExpr = term
             elif where is not None and else_term is None:
                 body = ast.And(span=expr.span, left=where, right=term)
             elif where is not None and else_term is not None:
@@ -81,9 +80,8 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
                 expr=body,
             )
 
-        body_all: ast.BoolExpr
         if where is None and else_term is None:
-            body_all = term
+            body_all: ast.BoolExpr = term
         elif where is not None and else_term is None:
             body_all = ast.Implies(span=expr.span, left=where, right=term)
         elif where is not None and else_term is not None:
@@ -141,16 +139,18 @@ def _desugar_num(expr: ast.NumExpr) -> ast.NumExpr:
         if expr.kind == "count":
             comp = expr.comp
             assert isinstance(comp, ast.CountComprehension)
-            one = ast.NumLit(span=comp.span, value=1)
-            ncomp = ast.NumComprehension(
-                span=comp.span,
-                term=one,
-                var=comp.var,
-                domain_set=comp.domain_set,
-                where=comp.where,
-                else_term=None,
+            expr = ast.NumAggregate(
+                span=expr.span,
+                kind="sum",
+                comp=ast.NumComprehension(
+                    span=comp.span,
+                    term=ast.NumLit(span=comp.span, value=1),
+                    var=comp.var,
+                    domain_set=comp.domain_set,
+                    where=comp.where,
+                    else_term=None,
+                ),
             )
-            expr = ast.NumAggregate(span=expr.span, kind="sum", comp=ncomp)
 
         assert isinstance(expr.comp, ast.NumComprehension)
         comp = expr.comp

@@ -7,9 +7,7 @@
 //
 // Notes:
 // - NEWLINE is ignored and has no semantic meaning.
-// - Aggregates are split by result type:
-//     bool_aggregate = any/all
-//     num_aggregate  = sum/count
+// - sum is the sole aggregate.
 // - Designed to work well with LALR + contextual lexer.
 //
 // References:
@@ -91,7 +89,10 @@ pred_formal_comp_type: "Bool" | "Real"
 // Declarations
 // -----------------------
 
-set_decl: "set" NAME
+set_decl: "set" NAME set_initializer?
+set_initializer: "=" set_expr
+set_expr: range_set_expr
+range_set_expr: "Range" "(" num_expr "," num_expr ")"
 
 param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
 param_indexing: "[" name_list "]"
@@ -99,7 +100,15 @@ name_list: NAME ("," NAME)*
 
 param_default: "=" literal
 
-find_decl: "find" NAME ":" unknown_type
+find_decl: "find" NAME find_indexing? ":" decision_type
+find_indexing: "[" name_list "]"
+
+decision_type: unknown_type
+             | bool_decision_type
+             | int_decision_type
+
+bool_decision_type: "Bool"
+int_decision_type: "Int" "[" num_expr ".." num_expr "]"
 
 unknown_type: subset_type
             | mapping_type
@@ -207,7 +216,7 @@ bool_value: BOOL
           | "(" bool_expr ")"
 
 comp_op: "<" | "<=" | ">" | ">="
-eq_op: "=" | "!="
+eq_op: "==" | "=" | "!="
 
 // Predicates/templates/member calls
 call_expr: paren_call

@@ -1,0 +1,16 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "triangle"
+runtime = "local-dimod"
+
+[scenarios.triangle]
+problem = "MinimumGraphColoring"
+
+[scenarios.triangle.sets]
+Nodes = ["N1", "N2", "N3"]
+
+[scenarios.triangle.params.Edge]
+N1 = { N1=0.0, N2=1.0, N3=1.0 }
+N2 = { N1=1.0, N2=0.0, N3=1.0 }
+N3 = { N1=1.0, N2=1.0, N3=0.0 }

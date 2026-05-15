@@ -58,6 +58,17 @@ class ProblemStmt(Node):
 @dataclass(frozen=True, slots=True)
 class SetDecl(ProblemStmt):
     name: str
+    expr: SetExpr | None = None
+
+
+class SetExpr(Node):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class RangeSetExpr(SetExpr):
+    lo: NumExpr
+    hi: NumExpr
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,10 +102,55 @@ class UnknownTypeRef(Node):
     args: tuple[str, ...]
 
 
+class DecisionType(Node):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
+class UnknownDecisionType(DecisionType):
+    unknown_type: UnknownTypeRef
+
+
+@dataclass(frozen=True, slots=True)
+class BoolDecisionType(DecisionType):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class IntDecisionType(DecisionType):
+    lo: NumExpr
+    hi: NumExpr
+    encoding: str | None = None
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class FindDecl(ProblemStmt):
     name: str
-    unknown_type: UnknownTypeRef
+    indices: list[str]
+    decision_type: DecisionType
+
+    def __init__(
+        self,
+        span: Span,
+        name: str,
+        indices: list[str] | None = None,
+        decision_type: DecisionType | None = None,
+        unknown_type: UnknownTypeRef | None = None,
+    ) -> None:
+        if decision_type is None:
+            if unknown_type is None:
+                raise TypeError("FindDecl requires decision_type or unknown_type")
+            decision_type = UnknownDecisionType(span=unknown_type.span, unknown_type=unknown_type)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "indices", [] if indices is None else indices)
+        object.__setattr__(self, "decision_type", decision_type)
+
+    @property
+    def unknown_type(self) -> UnknownTypeRef:
+        if isinstance(self.decision_type, UnknownDecisionType):
+            return self.decision_type.unknown_type
+        raise AttributeError("scalar find declarations do not have unknown_type")
 
 
 @dataclass(frozen=True, slots=True)

@@ -19,7 +19,7 @@ The pipeline consists of the following stages:
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
 1.  **Loading**: Reads data from the TOML file.
 2.  **Binding**: Maps data values to model `set` and `param` declarations.
-3.  **Grounding**: Unrolls quantifiers (`forall`, `exists`) and expands data-dependent expressions, producing a Ground IR (GIR).
+3.  **Grounding**: Evaluates derived `Range` sets, materializes scalar/indexed params, resolves bounded scalar decision domains, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
 
 ### Backend / Targeting
 1.  **Target Selection**: Identifies the target runtime and backend (e.g., `local-dimod` + `dimod-cqm-v1`).
@@ -34,6 +34,8 @@ When running `qsol build` or `qsol solve`, the compiler generates an output dire
 ### Standard Artifacts
 
 *   **`model.cqm` / `model.bqm`**: The compiled Constrained Quadratic Model (CQM) and Binary Quadratic Model (BQM) in binary format (Python pickle of dimod objects).
+    *   The CQM is canonical and may contain native binary and integer variables.
+    *   The BQM is a converted binary view for runtimes/export formats that require it.
 *   **`varmap.json`**: A mapping from human-readable variable names (e.g., `ColorOf.is(n1, Red)`) to the backend's internal integer indices.
 *   **`explain.json`**: A list of diagnostics generated during compilation, mapped to source locations.
 *   **`qubo.json` / `ising.json`**: The flattened optimization problem in JSON format (linear/quadratic terms), useful for debugging or portability.
@@ -42,6 +44,7 @@ When running `qsol build` or `qsol solve`, the compiler generates an output dire
     *   **energy**: The objective value of the best solution.
     *   **sample**: The raw variable assignments.
     *   **selected_assignments**: A user-friendly list of active variables (e.g., `Picked.has(apple)`).
+    *   **scalars**: Decoded scalar `Bool`/`Int` decisions, including indexed scalar labels such as `Load[m1]`.
 *   **`solutions.json`** (optional): If multiple solutions are requested, they may be stored here.
 
 ## 3. Intermediate Representations (IR)
@@ -51,3 +54,5 @@ A symbolic representation where sets and parameters are still abstract names. Th
 
 ### Ground IR (GIR)
 A concrete representation where all sets are finite collections of values, and all expressions are fully expanded. This is the input to the backend plugins.
+
+Derived sets are recorded with their source (`Range`) and are not loaded from scenario data. Range members are native integers in GIR so range binders can participate in numeric expressions.

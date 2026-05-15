@@ -1,9 +1,25 @@
-function indicator(b: Bool): Real = if b then 1 else 0;
+// -----------------------
+// Aggregates & Quantifiers
+// -----------------------
 
+// Counts the number of elements in the comprehension that are true.
+// Note: This is a macro that expands to `sum(if p then 1 else 0)`.
+function count(p: Comp(Bool)): Real = 0.0;
+
+// Returns true if at least one element in the comprehension is true.
+// Note: This is a macro that expands to `count(p) >= 1`.
+predicate any(p: Comp(Bool)): Bool = true;
+
+// Returns true if all elements in the comprehension are true.
+// Note: This is a macro that expands to `count(not p) == 0`.
+predicate all(p: Comp(Bool)): Bool = true;
+
+function indicator(cond: Bool): Real = if cond then 1 else 0;
 predicate exactly(k: Real, terms: Comp(Real)): Bool = terms = k;
 predicate atleast(k: Real, terms: Comp(Real)): Bool = terms >= k;
 predicate atmost(k: Real, terms: Comp(Real)): Bool = terms <= k;
 predicate between(lo: Real, hi: Real, terms: Comp(Real)): Bool =
   (lo <= terms) and (terms <= hi);
+
 predicate iff(a: Bool, b: Bool): Bool = a and b or not a and not b;
-predicate xor(a: Bool, b: Bool): Bool = a and not b or not a and b;
+predicate xor(a: Bool, b: Bool): Bool = a and not b or b and not a;

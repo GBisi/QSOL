@@ -1,0 +1,18 @@
+predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
+    Edge[n1, n2] != 1.0 or not (ColorOf.is(n1, c) and ColorOf.is(n2, c));
+
+problem MinimumGraphColoring {
+    set Nodes;
+    set Colors = Range(1, size(Nodes));
+
+    param Edge[Nodes, Nodes] : Real = 0.0;
+
+    find ColorOf : Mapping(Nodes -> Colors);
+
+    must forall n1 in Nodes:
+        forall n2 in Nodes:
+            forall c in Colors:
+                can_coexist(n1, n2, c);
+
+    minimize sum(sum(if ColorOf.is(n, c) then c else 0 for c in Colors) for n in Nodes);
+}

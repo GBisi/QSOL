@@ -6,7 +6,13 @@ from pathlib import Path
 import dimod
 
 from qsol.backend.dimod_codegen import DimodCodegen
-from qsol.backend.instance import instantiate_ir, load_instance
+from qsol.backend.instance import (
+    _eval_int_expr,
+    _eval_num_expr,
+    instantiate_ir,
+    load_instance,
+    read_execution_config,
+)
 from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.parse import ast
@@ -65,14 +71,17 @@ def _contains_size_call(expr: ir.KExpr) -> bool:
             or _contains_size_call(expr.then_expr)
             or _contains_size_call(expr.else_expr)
         )
-    if isinstance(expr, ir.KQuantifier):
-        return _contains_size_call(expr.expr)
+
     if isinstance(expr, ir.KSum):
         return _contains_size_call(expr.comp.term)
     return False
 
 
 def test_load_instance_requires_object_payload(tmp_path: Path) -> None:
+    ok_path = tmp_path / "ok.json"
+    ok_path.write_text(json.dumps({"sets": {}}), encoding="utf-8")
+    assert load_instance(ok_path) == {"sets": {}}
+
     path = tmp_path / "bad.json"
     path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
     try:
@@ -81,6 +90,168 @@ def test_load_instance_requires_object_payload(tmp_path: Path) -> None:
         assert "instance payload must be a JSON object" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_instance_selection_execution_config_and_range_errors() -> None:
+    span = _span()
+    assert read_execution_config({}).runtime is None
+    assert (
+        read_execution_config(
+            {"execution": {"runtime": "local-dimod", "backend": "dimod-cqm-v1"}}
+        ).runtime
+        == "local-dimod"
+    )
+
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(
+                    ir.KSetDecl(
+                        span=span,
+                        name="Positions",
+                        expr=ir.KRangeSetExpr(
+                            span=span,
+                            lo=ir.KNumLit(span=span, value=3.0),
+                            hi=ir.KNumLit(span=span, value=1.0),
+                        ),
+                    ),
+                ),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    missing = instantiate_ir(kernel, {"problem": "Missing", "sets": {}, "params": {}})
+    assert missing.ground_ir is None
+    assert any(
+        diag.message == "instance problem does not match any compiled problem"
+        for diag in missing.diagnostics
+    )
+
+    bad_range = instantiate_ir(kernel, {"problem": "P", "sets": {}, "params": {}})
+    assert bad_range.ground_ir is None
+    assert any(
+        "Range lower bound exceeds upper bound" in diag.message for diag in bad_range.diagnostics
+    )
+
+
+def test_instance_bound_expression_error_branches() -> None:
+    span = _span()
+    diagnostics: list = []
+
+    assert (
+        _eval_int_expr(
+            ir.KNumLit(span=span, value=1.5),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KName(span=span, name="flag"),
+            set_sizes={},
+            params={"flag": True},
+            diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="size", args=(ir.KName(span=span, name="Missing"),)),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KAdd(
+                span=span,
+                left=ir.KNumLit(span=span, value=2.0),
+                right=ir.KNumLit(span=span, value=3.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 5.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KSub(
+                span=span,
+                left=ir.KNumLit(span=span, value=5.0),
+                right=ir.KNumLit(span=span, value=3.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 2.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KMul(
+                span=span,
+                left=ir.KNumLit(span=span, value=2.0),
+                right=ir.KNumLit(span=span, value=3.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 6.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KDiv(
+                span=span,
+                left=ir.KNumLit(span=span, value=1.0),
+                right=ir.KNumLit(span=span, value=0.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KNeg(span=span, expr=ir.KNumLit(span=span, value=4.0)),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == -4.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KCompare(
+                span=span,
+                op="=",
+                left=ir.KNumLit(span=span, value=1.0),
+                right=ir.KNumLit(span=span, value=1.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert any(
+        "integer bound expression must evaluate to an integer" in diag.message
+        for diag in diagnostics
+    )
+    assert any("division by zero in integer bound" in diag.message for diag in diagnostics)
 
 
 def test_instantiate_ir_emits_shape_and_missing_errors() -> None:
@@ -120,6 +291,54 @@ def test_instantiate_ir_emits_shape_and_missing_errors() -> None:
     assert result.ground_ir is None
     codes = [d.code for d in result.diagnostics]
     assert "QSOL2201" in codes
+
+    missing_kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="A"),),
+                params=(
+                    ir.KParamDecl(
+                        span=span,
+                        name="w",
+                        indices=("A",),
+                        scalar_kind="Real",
+                        elem_set=None,
+                        default=None,
+                    ),
+                ),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+    missing_param = instantiate_ir(
+        missing_kernel,
+        {
+            "problem": "P",
+            "sets": {"A": ["a1"]},
+            "params": {},
+        },
+    )
+    assert missing_param.ground_ir is None
+    assert any("missing value for param `w`" in diag.message for diag in missing_param.diagnostics)
+
+    scalar_for_indexed = instantiate_ir(
+        missing_kernel,
+        {
+            "problem": "P",
+            "sets": {"A": ["a1"]},
+            "params": {"w": 1.0},
+        },
+    )
+    assert scalar_for_indexed.ground_ir is None
+    assert any(
+        "param `w` expects indexed object" in diag.message
+        for diag in scalar_for_indexed.diagnostics
+    )
 
 
 def test_instantiate_ir_validates_and_normalizes_elem_params() -> None:
@@ -250,7 +469,6 @@ def test_dimod_codegen_covers_soft_and_compare_paths() -> None:
     span = _span()
     x = ir.KName(span=span, name="x")
     s_name = ir.KName(span=span, name="S")
-    has_x = ir.KMethodCall(span=span, target=s_name, name="has", args=(x,))
     has_a1 = ir.KMethodCall(
         span=span, target=s_name, name="has", args=(ir.KName(span=span, name="a1"),)
     )
@@ -277,25 +495,6 @@ def test_dimod_codegen_covers_soft_and_compare_paths() -> None:
             ir.KConstraint(
                 span=span,
                 kind=ast.ConstraintKind.MUST,
-                expr=ir.KQuantifier(
-                    span=span,
-                    kind="forall",
-                    var="x",
-                    domain_set="A",
-                    expr=ir.KAnd(
-                        span=span,
-                        left=has_x,
-                        right=ir.KImplies(
-                            span=span,
-                            left=has_x,
-                            right=ir.KNot(span=span, expr=ir.KBoolLit(span=span, value=False)),
-                        ),
-                    ),
-                ),
-            ),
-            ir.KConstraint(
-                span=span,
-                kind=ast.ConstraintKind.MUST,
                 expr=ir.KCompare(
                     span=span,
                     op="=",
@@ -317,17 +516,6 @@ def test_dimod_codegen_covers_soft_and_compare_paths() -> None:
                 span=span,
                 kind=ast.ConstraintKind.SHOULD,
                 expr=ir.KOr(span=span, left=has_a1, right=ir.KBoolLit(span=span, value=False)),
-            ),
-            ir.KConstraint(
-                span=span,
-                kind=ast.ConstraintKind.NICE,
-                expr=ir.KQuantifier(
-                    span=span,
-                    kind="exists",
-                    var="x",
-                    domain_set="A",
-                    expr=has_x,
-                ),
             ),
         ),
         objectives=(
@@ -406,14 +594,6 @@ def test_dimod_codegen_internal_error_paths() -> None:
     cqm = dimod.ConstrainedQuadraticModel()
 
     # Unknown set in soft quantifier.
-    bad_quant = ir.KQuantifier(
-        span=span,
-        kind="forall",
-        var="x",
-        domain_set="Missing",
-        expr=ir.KBoolLit(span=span, value=True),
-    )
-    assert codegen._soft_penalty(problem, bad_quant, binaries, diagnostics, env={}, cqm=cqm) is None
 
     # Unknown method variable label path.
     bad_method = ir.KMethodCall(
@@ -687,6 +867,182 @@ def test_dimod_codegen_treats_should_false_as_soft_only() -> None:
     result = DimodCodegen().compile(ir.GroundIR(span=span, problems=(problem,)))
     assert not any(diag.is_error for diag in result.diagnostics)
     assert len(result.cqm.constraints) == 0
+
+
+def test_dimod_codegen_scalar_decisions_quantifiers_and_stats() -> None:
+    span = _span()
+    i_name = ir.KName(span=span, name="i")
+    load_i = ir.KFuncCall(span=span, name="Load", args=(i_name,))
+    flag_i = ir.KFuncCall(span=span, name="Flag", args=(i_name,))
+    flag_one = ir.KFuncCall(span=span, name="Flag", args=(ir.KNumLit(span=span, value=1.0),))
+
+    problem = ir.GroundProblem(
+        span=span,
+        name="Scalar",
+        set_values={"A": [1, 2]},
+        params={},
+        finds=(
+            ir.KFindDecl(span=span, name="enabled", decision_type=ir.KBoolDecisionType(span=span)),
+            ir.KFindDecl(
+                span=span,
+                name="T",
+                decision_type=ir.KIntDecisionType(
+                    span=span,
+                    lo=ir.KNumLit(span=span, value=0.0),
+                    hi=ir.KNumLit(span=span, value=3.0),
+                ),
+            ),
+            ir.KFindDecl(
+                span=span,
+                name="Flag",
+                indices=("A",),
+                decision_type=ir.KBoolDecisionType(span=span),
+            ),
+            ir.KFindDecl(
+                span=span,
+                name="Load",
+                indices=("A",),
+                decision_type=ir.KIntDecisionType(
+                    span=span,
+                    lo=ir.KNumLit(span=span, value=0.0),
+                    hi=ir.KNumLit(span=span, value=3.0),
+                ),
+            ),
+        ),
+        constraints=(
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.MUST,
+                expr=ir.KQuantifier(
+                    span=span,
+                    kind="forall",
+                    var="i",
+                    domain_set="A",
+                    expr=ir.KCompare(span=span, op=">=", left=load_i, right=i_name),
+                ),
+            ),
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.MUST,
+                expr=ir.KQuantifier(
+                    span=span,
+                    kind="exists",
+                    var="i",
+                    domain_set="A",
+                    expr=flag_i,
+                ),
+            ),
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.MUST,
+                expr=ir.KImplies(
+                    span=span, left=ir.KName(span=span, name="enabled"), right=flag_one
+                ),
+            ),
+            ir.KConstraint(
+                span=span,
+                kind=ast.ConstraintKind.SHOULD,
+                expr=ir.KQuantifier(
+                    span=span,
+                    kind="forall",
+                    var="i",
+                    domain_set="A",
+                    expr=flag_i,
+                ),
+            ),
+        ),
+        objectives=(
+            ir.KObjective(
+                span=span,
+                kind=ast.ObjectiveKind.MINIMIZE,
+                expr=ir.KAdd(
+                    span=span,
+                    left=ir.KSum(
+                        span=span,
+                        comp=ir.KNumComprehension(
+                            span=span,
+                            term=load_i,
+                            var="i",
+                            domain_set="A",
+                        ),
+                    ),
+                    right=ir.KIfThenElse(
+                        span=span,
+                        cond=flag_one,
+                        then_expr=ir.KName(span=span, name="T"),
+                        else_expr=ir.KNumLit(span=span, value=0.0),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    result = DimodCodegen().compile(ir.GroundIR(span=span, problems=(problem,)))
+
+    assert not any(diag.is_error for diag in result.diagnostics)
+    assert result.cqm.vartype("enabled") == dimod.BINARY
+    assert result.cqm.vartype("T") == dimod.INTEGER
+    assert result.cqm.vartype("Load[1]") == dimod.INTEGER
+    assert result.varmap["Flag[1]"] == "Flag[1]"
+    assert len(result.cqm.constraints) >= 4
+
+
+def test_dimod_codegen_reports_scalar_branch_errors() -> None:
+    span = _span()
+    codegen = DimodCodegen()
+    codegen._label_counter = 0
+    diagnostics: list = []
+    cqm = dimod.ConstrainedQuadraticModel()
+    problem = ir.GroundProblem(
+        span=span,
+        name="BadScalar",
+        set_values={},
+        params={},
+        finds=(
+            ir.KFindDecl(
+                span=span,
+                name="x",
+                decision_type=ir.KIntDecisionType(
+                    span=span,
+                    lo=ir.KName(span=span, name="lo"),
+                    hi=ir.KNumLit(span=span, value=3.0),
+                ),
+            ),
+        ),
+        constraints=(),
+        objectives=(),
+    )
+
+    codegen._declare_find_variables(problem, cqm, {}, {}, diagnostics)
+    assert any("ungrounded Int domain" in diag.message for diag in diagnostics)
+
+    bad_call = ir.KFuncCall(
+        span=span,
+        name="Load",
+        args=(ir.KName(span=span, name="x"), ir.KName(span=span, name="y")),
+    )
+    indexed_problem = ir.GroundProblem(
+        span=span,
+        name="Indexed",
+        set_values={"A": ["a1"]},
+        params={},
+        finds=(
+            ir.KFindDecl(
+                span=span,
+                name="Load",
+                indices=("A",),
+                decision_type=ir.KIntDecisionType(
+                    span=span,
+                    lo=ir.KNumLit(span=span, value=0.0),
+                    hi=ir.KNumLit(span=span, value=1.0),
+                ),
+            ),
+        ),
+        constraints=(),
+        objectives=(),
+    )
+    assert codegen._indexed_scalar_label(indexed_problem, bad_call, diagnostics, env={}) is None
+    assert any("expects 1 index argument" in diag.message for diag in diagnostics)
 
 
 def test_dimod_codegen_reports_infeasible_constant_hard_not_equal() -> None:

@@ -12,7 +12,7 @@ def test_compile_emits_artifacts(tmp_path: Path) -> None:
 problem Simple {
   set A;
   find S : Subset(A);
-  must forall x in A: S.has(x);
+  must sum(if not S.has(x) then 1 else 0 for x in A) == 0;
   minimize sum( if S.has(x) then 1 else 0 for x in A );
 }
 """
@@ -413,6 +413,94 @@ Start = "v1"
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
     assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_range_sets_and_scalar_decisions(tmp_path: Path) -> None:
+    source = """
+problem ScalarDecisions {
+  set Machines;
+  set Positions = Range(1, size(Machines));
+  param Total : Int[0 .. 100];
+  find enabled : Bool;
+  find T : Int[0 .. Total];
+  find Load[Machines] : Int[0 .. Total];
+
+  must enabled;
+  must forall p in Positions: p <= size(Machines);
+  must forall m in Machines: Load[m] <= T;
+  minimize T + sum(Load[m] for m in Machines);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ScalarDecisions"
+
+[scenarios.baseline.sets]
+Machines = ["m1", "m2"]
+
+[scenarios.baseline.params]
+Total = 5
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="scalar_decisions.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.ground_ir is not None
+    assert unit.ground_ir.problems[0].set_values["Positions"] == [1, 2]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_derived_range_set_rejects_scenario_values(tmp_path: Path) -> None:
+    source = """
+problem DerivedSet {
+  set V;
+  set Positions = Range(1, size(V));
+  find S : Subset(V);
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "DerivedSet"
+
+[scenarios.baseline.sets]
+V = ["v1", "v2"]
+Positions = [1, 2]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="derived_set_bad.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out"),
+            output_format="qubo",
+        ),
+    )
+
+    assert any(
+        diag.code == "QSOL4201" and "must not be supplied" in diag.message
+        for diag in unit.diagnostics
+    )
 
 
 def test_compile_supports_hard_not_equal_constraint(tmp_path: Path) -> None:

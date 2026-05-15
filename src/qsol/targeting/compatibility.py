@@ -12,6 +12,12 @@ def extract_required_capabilities(ground: ir.GroundIR) -> set[str]:
     capabilities: set[str] = set()
     for problem in ground.problems:
         for find in problem.finds:
+            if isinstance(find.decision_type, ir.KBoolDecisionType):
+                capabilities.add("decision.scalar.bool.v1")
+                continue
+            if isinstance(find.decision_type, ir.KIntDecisionType):
+                capabilities.add("decision.scalar.int.v1")
+                continue
             kind = find.unknown_type.kind
             if kind == "Subset":
                 capabilities.add("unknown.subset.v1")
@@ -45,14 +51,6 @@ def _collect_expr_capabilities(expr: ir.KExpr, capabilities: set[str]) -> None:
         _collect_expr_capabilities(expr.right, capabilities)
         return
 
-    if isinstance(expr, ir.KQuantifier):
-        if expr.kind == "forall":
-            capabilities.add("constraint.quantifier.forall.v1")
-        elif expr.kind == "exists":
-            capabilities.add("constraint.quantifier.exists.v1")
-        _collect_expr_capabilities(expr.expr, capabilities)
-        return
-
     if isinstance(expr, ir.KIfThenElse):
         capabilities.add("objective.if_then_else.v1")
         _collect_expr_capabilities(expr.cond, capabilities)
@@ -70,6 +68,16 @@ def _collect_expr_capabilities(expr: ir.KExpr, capabilities: set[str]) -> None:
     if isinstance(expr, ir.KSum):
         capabilities.add("objective.sum.v1")
         _collect_expr_capabilities(expr.comp.term, capabilities)
+        return
+
+    if isinstance(expr, ir.KQuantifier):
+        capability = (
+            "constraint.quantifier.forall.v1"
+            if expr.kind == "forall"
+            else "constraint.quantifier.exists.v1"
+        )
+        capabilities.add(capability)
+        _collect_expr_capabilities(expr.expr, capabilities)
         return
 
     if isinstance(expr, ir.KAnd):

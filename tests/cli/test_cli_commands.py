@@ -159,6 +159,69 @@ def test_targets_check_writes_capability_report(tmp_path: Path) -> None:
     assert report["selection"]["backend"] == "dimod-cqm-v1"
 
 
+def test_inspect_estimate_and_targets_check_estimate(tmp_path: Path) -> None:
+    model = tmp_path / "scalar.qsol"
+    model.write_text(
+        """
+problem Scalar {
+  set V;
+  set Positions = Range(1, size(V));
+  param Total : Int[0 .. 10];
+  find enabled : Bool;
+  find Load[V] : Int[0 .. Total];
+  must enabled;
+  minimize sum(Load[v] for v in V);
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "scalar.qsol.toml"
+    config.write_text(
+        """
+schema_version = "1"
+
+[scenarios.base]
+problem = "Scalar"
+
+[scenarios.base.sets]
+V = ["v1", "v2"]
+
+[scenarios.base.params]
+Total = 5
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    estimate_result = runner.invoke(
+        app,
+        ["inspect", "estimate", str(model), "-c", str(config), "--json", "-n"],
+    )
+    assert estimate_result.exit_code == 0
+    estimate_payload = json.loads(estimate_result.stdout)
+    assert estimate_payload[0]["sets"]["Positions"]["derived"] is True
+    assert estimate_payload[0]["backend"]["cqm_integer_variables"] == 2
+
+    check_result = runner.invoke(
+        app,
+        [
+            "targets",
+            "check",
+            str(model),
+            "-c",
+            str(config),
+            "-u",
+            "local-dimod",
+            "--estimate",
+            "-n",
+        ],
+    )
+    assert check_result.exit_code == 0
+    assert "Estimate" in check_result.stdout
+    assert "CQM Integer Variables" in check_result.stdout
+
+
 def test_targets_check_uses_config_execution_defaults(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)

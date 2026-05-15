@@ -70,7 +70,13 @@ class Resolver:
     ) -> None:
         for stmt in problem.stmts:
             if isinstance(stmt, ast.SetDecl):
-                symbol = Symbol(stmt.name, SymbolKind.SET, SetType(stmt.name), stmt.span)
+                numeric_kind = "Int" if isinstance(stmt.expr, ast.RangeSetExpr) else None
+                symbol = Symbol(
+                    stmt.name,
+                    SymbolKind.SET,
+                    SetType(stmt.name, numeric_kind=numeric_kind),
+                    stmt.span,
+                )
                 existing = scope.symbols.get(stmt.name)
                 if existing is not None:
                     diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
@@ -107,7 +113,60 @@ class Resolver:
                     scope.define(Symbol(stmt.name, SymbolKind.PARAM, ptype, stmt.span))
 
             elif isinstance(stmt, ast.FindDecl):
+                index_types: list[SetType] = []
+                for index_name in stmt.indices:
+                    set_symbol = scope.lookup(index_name)
+                    if (
+                        set_symbol is None
+                        or set_symbol.kind != SymbolKind.SET
+                        or not isinstance(set_symbol.type, SetType)
+                    ):
+                        suggestion = self._did_you_mean(index_name, self._set_candidates(scope))
+                        help_items = ["Find indices must reference declared sets."]
+                        if suggestion is not None:
+                            help_items.append(f"Did you mean `{suggestion}`?")
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2001",
+                                message=f"unknown set `{index_name}` in find indexing",
+                                span=stmt.span,
+                                help=help_items,
+                            )
+                        )
+                    else:
+                        index_types.append(set_symbol.type)
+
+                if isinstance(stmt.decision_type, ast.BoolDecisionType):
+                    find_type: Type = (
+                        ParamType(indices=tuple(index_types), elem=BOOL) if index_types else BOOL
+                    )
+                    self._define_find(scope, stmt, find_type, diagnostics)
+                    continue
+
+                if isinstance(stmt.decision_type, ast.IntDecisionType):
+                    # Concrete bounds are validated and attached during grounding.
+                    find_type = (
+                        ParamType(
+                            indices=tuple(index_types), elem=IntRangeType(-(2**31), 2**31 - 1)
+                        )
+                        if index_types
+                        else IntRangeType(-(2**31), 2**31 - 1)
+                    )
+                    self._define_find(scope, stmt, find_type, diagnostics)
+                    continue
+
                 unknown_ref = stmt.unknown_type
+                if stmt.indices:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2001",
+                            message="unknown-valued find declarations cannot be indexed",
+                            span=stmt.span,
+                            help=["Use `find X : Subset(A)` or `find X[A] : Bool/Int[...]`."],
+                        )
+                    )
                 if unknown_ref.kind == "Subset":
                     target = unknown_ref.args[0]
                     set_symbol = scope.lookup(target)
@@ -168,11 +227,7 @@ class Resolver:
                 inst_type = UnknownInstanceType(
                     ref=UnknownTypeRef(name=unknown_ref.kind, args=tuple(unknown_ref.args))
                 )
-                existing = scope.symbols.get(stmt.name)
-                if existing is not None:
-                    diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
-                else:
-                    scope.define(Symbol(stmt.name, SymbolKind.FIND, inst_type, stmt.span))
+                self._define_find(scope, stmt, inst_type, diagnostics)
 
     def _scalar_to_type(self, scalar: ast.ScalarTypeRef) -> Type:
         if scalar.kind == "Bool":
@@ -184,6 +239,19 @@ class Resolver:
             hi = scalar.hi if scalar.hi is not None else 2**31 - 1
             return IntRangeType(lo=lo, hi=hi)
         return REAL
+
+    def _define_find(
+        self,
+        scope: Scope,
+        stmt: ast.FindDecl,
+        find_type: Type,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        existing = scope.symbols.get(stmt.name)
+        if existing is not None:
+            diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
+        else:
+            scope.define(Symbol(stmt.name, SymbolKind.FIND, find_type, stmt.span))
 
     def _param_value_to_type(
         self,

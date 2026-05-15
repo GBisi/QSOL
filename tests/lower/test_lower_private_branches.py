@@ -91,19 +91,5 @@ def test_private_lower_helpers_cover_remaining_expression_branches() -> None:
     )
     assert isinstance(_lower_num(cast(ast.NumExpr, ast.NameRef(span=span, name="n"))), ir.KName)
 
-    not_desugared_count = ast.NumAggregate(
-        span=span,
-        kind="count",
-        comp=ast.CountComprehension(
-            span=span,
-            var_ref="x",
-            var="x",
-            domain_set="A",
-            where=None,
-            else_term=None,
-        ),
-    )
-    with pytest.raises(TypeError):
-        _lower_num(not_desugared_count)
     with pytest.raises(TypeError):
         _lower_num(cast(ast.NumExpr, ast.StringLit(span=span, value="bad")))

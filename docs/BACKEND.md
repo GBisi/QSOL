@@ -6,7 +6,7 @@ The `dimod-cqm-v1` backend translates QSOL models into Constrained Quadratic Mod
 
 This backend supports:
 *   **Problem Types**: Optimization and Satisfaction.
-*   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns.
+*   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
 *   **Objectives**: Linear and Quadratic objectives.
 
@@ -28,6 +28,22 @@ For a find `Map : Mapping(D -> C)`, the backend generates binary variables for e
 
 It also generates implicit "exactly one" constraints to ensure each element in `D` maps to exactly one element in `C`:
 `sum(Map.is(d, c) for c in C) == 1` for each `d` in `D`.
+
+### Scalar Decisions
+
+```qsol
+find enabled : Bool;
+find T : Int[0 .. 10];
+find Load[Machines] : Int[0 .. Capacity];
+```
+
+The backend keeps CQM as the canonical model:
+
+* `Bool` scalar decisions become native `dimod.Binary` variables.
+* `Int[lo .. hi]` scalar decisions become native `dimod.Integer` variables with the grounded bounds.
+* Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
+
+The exported BQM is derived from the CQM for runtimes and export formats that require binary quadratic form.
 
 ## 3. Constraint Translation
 
@@ -56,6 +72,7 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 ## 5. Limitations
 
 *   **Higher-Order Logic**: Complex nested quantifiers or non-linear expressions that cannot be reduced to quadratic forms may be unsupported or require significant auxiliary variables.
-*   **Integer/Real Variables**: Native integer or continuous variables are not currently supported; all unknowns must be reducable to binary decisions (Sets/Mappings).
+*   **Continuous Variables**: Native continuous variables are not currently supported.
+*   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation.
 
 > For a complete list of unsupported patterns and workarounds, see [Backend V1 Limits](BACKEND_V1_LIMITS.md).

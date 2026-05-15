@@ -26,17 +26,24 @@ class IntRangeType(Type):
 @dataclass(frozen=True, slots=True)
 class SetType(Type):
     name: str
+    numeric_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ElemOfType(Type):
     set_name: str
+    numeric_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class ParamType(Type):
     indices: tuple[SetType, ...]
     elem: Type
+
+
+@dataclass(frozen=True, slots=True)
+class CompType(Type):
+    elem_type: Type
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +68,9 @@ UNKNOWN = UnknownType()
 
 
 def is_numeric(tp: Type) -> bool:
-    return isinstance(tp, (RealType, IntRangeType))
+    return isinstance(tp, (RealType, IntRangeType)) or (
+        isinstance(tp, ElemOfType) and tp.numeric_kind == "Int"
+    )
 
 
 def promote_numeric(left: Type, right: Type) -> Type | None:
@@ -71,4 +80,8 @@ def promote_numeric(left: Type, right: Type) -> Type | None:
         return REAL
     if isinstance(left, IntRangeType) and isinstance(right, IntRangeType):
         return IntRangeType(lo=min(left.lo, right.lo), hi=max(left.hi, right.hi))
+    if isinstance(left, ElemOfType) and left.numeric_kind == "Int":
+        return right if isinstance(right, RealType) else REAL
+    if isinstance(right, ElemOfType) and right.numeric_kind == "Int":
+        return left if isinstance(left, RealType) else REAL
     return REAL

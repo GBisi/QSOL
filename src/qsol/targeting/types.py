@@ -43,6 +43,7 @@ class CompiledModel:
     varmap: dict[str, str]
     diagnostics: list[Diagnostic] = field(default_factory=list)
     stats: dict[str, float | int] = field(default_factory=dict)
+    inverter: Any | None = None
 
 
 @dataclass(slots=True)
@@ -58,6 +59,7 @@ class StandardRunResult:
     timing_ms: float
     capability_report_path: str
     extensions: dict[str, object] = field(default_factory=dict)
+    scalars: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(slots=True)

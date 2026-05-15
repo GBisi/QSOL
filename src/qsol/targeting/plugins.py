@@ -11,7 +11,7 @@ from typing import Any, Callable, cast
 import dimod
 
 from qsol.backend.dimod_codegen import CodegenResult, DimodCodegen
-from qsol.backend.export import export_artifacts
+from qsol.backend.export import dimod_model_stats, export_artifacts
 from qsol.lower.ir import BackendArtifacts, GroundIR
 from qsol.targeting.interfaces import BackendPlugin, PluginBundle, RuntimePlugin
 from qsol.targeting.types import (
@@ -97,24 +97,83 @@ def _selected_assignments_for_sample(
     sample: Mapping[str, int],
     *,
     varmap: Mapping[str, str],
+    inverter: Any | None = None,
+    cqm: Any | None = None,
 ) -> list[dict[str, object]]:
+    selected, _scalars = _decoded_solution_payload(
+        sample, varmap=varmap, inverter=inverter, cqm=cqm
+    )
+    return selected
+
+
+def _decoded_solution_payload(
+    sample: Mapping[Any, object],
+    *,
+    varmap: Mapping[str, str],
+    inverter: Any | None = None,
+    cqm: Any | None = None,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    visible_sample = sample
+    if inverter is not None:
+        visible_sample = cast(Mapping[object, object], inverter(sample))
+
     selected: list[dict[str, object]] = []
-    for label, value in sorted(sample.items(), key=lambda item: item[0]):
-        if value != 1:
-            continue
+    scalars: dict[str, object] = {}
+    for raw_label, raw_value in sorted(visible_sample.items(), key=lambda item: str(item[0])):
+        label = str(raw_label)
         if _is_internal_variable(label):
             continue
         meaning = varmap.get(label)
         if meaning is None:
             continue
-        selected.append({"variable": label, "meaning": meaning, "value": value})
-    return selected
+
+        value = _normalize_decoded_value(raw_value)
+        if ".has(" in meaning or ".is(" in meaning:
+            if value == 1:
+                selected.append({"variable": label, "meaning": meaning, "value": value})
+            continue
+
+        vartype = _cqm_vartype(cqm, label)
+        if vartype is None:
+            if value == 1:
+                selected.append({"variable": label, "meaning": meaning, "value": value})
+            continue
+        if vartype == dimod.BINARY:
+            scalars[meaning] = bool(value)
+        else:
+            scalars[meaning] = value
+    return selected, scalars
+
+
+def _normalize_decoded_value(value: object) -> object:
+    if isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else float(value)
+    try:
+        numeric = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return value
+    return int(numeric) if numeric.is_integer() else numeric
+
+
+def _cqm_vartype(cqm: Any | None, label: str) -> Any | None:
+    if cqm is None:
+        return None
+    try:
+        return cqm.vartype(label)
+    except (KeyError, ValueError, AttributeError):
+        return None
 
 
 def _collect_ranked_solutions(
     sampleset: Any,
     *,
     varmap: Mapping[str, str],
+    inverter: Any | None = None,
+    cqm: Any | None = None,
     requested_solutions: int,
 ) -> list[dict[str, object]]:
     aggregated = sampleset.aggregate()
@@ -125,24 +184,31 @@ def _collect_ranked_solutions(
             int,
             dict[str, int],
             list[dict[str, object]],
+            dict[str, object],
         ]
     ] = []
     for record in aggregated.data(fields=["sample", "energy", "num_occurrences"]):
-        sample = {str(var): int(value) for var, value in record.sample.items()}
+        sample = {var: int(value) for var, value in record.sample.items()}
+        selected, scalars = _decoded_solution_payload(
+            sample, varmap=varmap, inverter=inverter, cqm=cqm
+        )
         rows.append(
             (
                 float(record.energy),
-                _sample_signature(sample),
+                _sample_signature({str(key): int(value) for key, value in sample.items()}),
                 int(record.num_occurrences),
-                sample,
-                _selected_assignments_for_sample(sample, varmap=varmap),
+                {str(key): int(value) for key, value in sample.items()},
+                selected,
+                scalars,
             )
         )
 
     rows.sort(key=lambda row: (row[0], row[1]))
 
     ranked: list[dict[str, object]] = []
-    for rank, (energy, _signature, occurrences, sample, selected) in enumerate(rows, start=1):
+    for rank, (energy, _signature, occurrences, sample, selected, scalars) in enumerate(
+        rows, start=1
+    ):
         ranked.append(
             {
                 "rank": rank,
@@ -150,6 +216,7 @@ def _collect_ranked_solutions(
                 "num_occurrences": occurrences,
                 "sample": sample,
                 "selected_assignments": selected,
+                "scalars": scalars,
             }
         )
         if len(ranked) >= requested_solutions:
@@ -246,6 +313,8 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
     result: Any,
     variable_names: list[str],
     varmap: Mapping[str, str],
+    inverter: Any | None = None,
+    cqm: Any | None = None,
     requested_solutions: int,
 ) -> list[dict[str, object]]:
     rows: list[
@@ -254,6 +323,7 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
             tuple[tuple[str, int], ...],
             dict[str, int],
             list[dict[str, object]],
+            dict[str, object],
             float,
             str,
         ]
@@ -286,18 +356,22 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
             sample = _to_binary_sample(vector, variable_names=variable_names)
         except ValueError:
             continue
+        selected, scalars = _decoded_solution_payload(
+            sample, varmap=varmap, inverter=inverter, cqm=cqm
+        )
         rows.append(
             (
                 float(energy_raw),
                 _sample_signature(sample),
                 sample,
-                _selected_assignments_for_sample(sample, varmap=varmap),
+                selected,
+                scalars,
                 probability,
                 status_name,
             )
         )
 
-    success_rows = [row for row in rows if row[5] == "SUCCESS"]
+    success_rows = [row for row in rows if row[6] == "SUCCESS"]
     if success_rows:
         rows = success_rows
 
@@ -309,19 +383,23 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
         if isinstance(best_energy_raw, bool) or not isinstance(best_energy_raw, (int, float)):
             raise ValueError("qiskit optimizer returned invalid best solution energy")
         sample = _to_binary_sample(best_vector, variable_names=variable_names)
+        selected, scalars = _decoded_solution_payload(
+            sample, varmap=varmap, inverter=inverter, cqm=cqm
+        )
         rows = [
             (
                 float(best_energy_raw),
                 _sample_signature(sample),
                 sample,
-                _selected_assignments_for_sample(sample, varmap=varmap),
+                selected,
+                scalars,
                 1.0,
                 "SUCCESS",
             )
         ]
 
     aggregated: dict[tuple[tuple[str, int], ...], dict[str, object]] = {}
-    for energy, signature, sample, selected, probability, status_name in rows:
+    for energy, signature, sample, selected, scalars, probability, status_name in rows:
         entry = aggregated.get(signature)
         if entry is None:
             aggregated[signature] = {
@@ -329,6 +407,7 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
                 "signature": signature,
                 "sample": sample,
                 "selected_assignments": selected,
+                "scalars": scalars,
                 "probability": probability,
                 "status": status_name,
             }
@@ -344,6 +423,7 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
             entry["energy"] = energy
             entry["sample"] = sample
             entry["selected_assignments"] = selected
+            entry["scalars"] = scalars
             entry["status"] = status_name
 
     ordered = sorted(
@@ -364,6 +444,7 @@ def _collect_qiskit_ranked_solutions(  # pragma: no cover
                 "selected_assignments": list(
                     cast(list[dict[str, object]], row["selected_assignments"])
                 ),
+                "scalars": dict(cast(dict[str, object], row.get("scalars", {}))),
                 "probability": float(cast(float, row["probability"])),
                 "status": str(row["status"]),
             }
@@ -584,6 +665,8 @@ def _run_qiskit_solver(  # pragma: no cover
     *,
     bqm: dimod.BinaryQuadraticModel,
     varmap: Mapping[str, str],
+    inverter: Any | None,
+    cqm: Any | None,
     algorithm: str,
     requested_solutions: int,
     fake_backend: str,
@@ -604,6 +687,8 @@ def _run_qiskit_solver(  # pragma: no cover
             result=result,
             variable_names=variable_names,
             varmap=varmap,
+            inverter=inverter,
+            cqm=cqm,
             requested_solutions=requested_solutions,
         )
         return _QiskitSolvePayload(
@@ -635,6 +720,8 @@ def _run_qiskit_solver(  # pragma: no cover
         result=result,
         variable_names=variable_names,
         varmap=varmap,
+        inverter=inverter,
+        cqm=cqm,
         requested_solutions=requested_solutions,
     )
 
@@ -671,6 +758,8 @@ class DimodCQMBackendPlugin(BackendPlugin):
             "unknown.subset.v1": "full",
             "unknown.mapping.v1": "full",
             "unknown.custom.v1": "none",
+            "decision.scalar.bool.v1": "full",
+            "decision.scalar.int.v1": "full",
             "constraint.compare.eq.v1": "full",
             "constraint.compare.ne.v1": "full",
             "constraint.compare.lt.v1": "full",
@@ -711,11 +800,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
 
     def compile_model(self, ground: GroundIR) -> CompiledModel:
         codegen = DimodCodegen().compile(ground)
-        stats: dict[str, float | int] = {
-            "num_variables": int(len(codegen.bqm.variables)),
-            "num_interactions": int(len(codegen.bqm.quadratic)),
-            "num_constraints": int(len(codegen.cqm.constraints)),
-        }
+        stats = dimod_model_stats(cqm=codegen.cqm, bqm=codegen.bqm)
         return CompiledModel(
             kind="cqm",
             backend_id=self.plugin_id,
@@ -724,6 +809,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
             varmap=dict(codegen.varmap),
             diagnostics=list(codegen.diagnostics),
             stats=stats,
+            inverter=codegen.inverter,
         )
 
     def export_model(
@@ -738,7 +824,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
         codegen_result = CodegenResult(
             cqm=compiled_model.cqm,
             bqm=compiled_model.bqm,
-            inverter=None,
+            inverter=compiled_model.inverter,
             varmap=dict(compiled_model.varmap),
             diagnostics=list(compiled_model.diagnostics),
         )
@@ -850,6 +936,8 @@ class LocalDimodRuntimePlugin(RuntimePlugin):
         solutions = _collect_ranked_solutions(
             sampleset,
             varmap=compiled_model.varmap,
+            inverter=compiled_model.inverter,
+            cqm=compiled_model.cqm,
             requested_solutions=requested_solutions,
         )
         if not solutions:
@@ -861,6 +949,7 @@ class LocalDimodRuntimePlugin(RuntimePlugin):
         first_energy = float(first_energy_raw)
         best_sample = dict(cast(dict[str, int], first["sample"]))
         selected = list(cast(list[dict[str, object]], first["selected_assignments"]))
+        scalars = dict(cast(dict[str, object], first.get("scalars", {})))
         threshold_passed, threshold_violations = _evaluate_energy_thresholds(
             solutions=solutions,
             energy_min=energy_min,
@@ -878,6 +967,7 @@ class LocalDimodRuntimePlugin(RuntimePlugin):
             selected_assignments=selected,
             timing_ms=elapsed_ms,
             capability_report_path="",
+            scalars=scalars,
             extensions={
                 "runtime_options": resolved_runtime_options,
                 "sampler": sampler,
@@ -1020,6 +1110,8 @@ class QiskitRuntimePlugin(RuntimePlugin):
         payload = _run_qiskit_solver(
             bqm=compiled_model.bqm,
             varmap=compiled_model.varmap,
+            inverter=compiled_model.inverter,
+            cqm=compiled_model.cqm,
             algorithm=algorithm,
             requested_solutions=requested_solutions,
             fake_backend=fake_backend,
@@ -1042,6 +1134,7 @@ class QiskitRuntimePlugin(RuntimePlugin):
         first_energy = float(first_energy_raw)
         best_sample = dict(cast(dict[str, int], first["sample"]))
         selected = list(cast(list[dict[str, object]], first["selected_assignments"]))
+        scalars = dict(cast(dict[str, object], first.get("scalars", {})))
         threshold_passed, threshold_violations = _evaluate_energy_thresholds(
             solutions=payload.solutions,
             energy_min=energy_min,
@@ -1079,6 +1172,7 @@ class QiskitRuntimePlugin(RuntimePlugin):
             selected_assignments=selected,
             timing_ms=elapsed_ms,
             capability_report_path="",
+            scalars=scalars,
             extensions=extensions,
         )
 

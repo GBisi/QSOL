@@ -32,9 +32,13 @@ problem MyFirstModel {
     // Here we want to find a subset of Items
     find Picked : Subset(Items);
 
+    // Scalar decisions are available when you need a finite numeric or boolean value
+    find PickCount : Int[0 .. size(Items)];
+
     // 4. Define Constraints
     // We must pick at least one item
     must count(i for i in Items where Picked.has(i)) >= 1;
+    must PickCount = count(i for i in Items where Picked.has(i));
 
     // 5. Define Objective
     // Minimize the total weight of picked items

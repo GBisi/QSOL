@@ -121,6 +121,10 @@ $ qsol build examples/tutorials/graph_coloring.qsol \
 | **num_constraints** | Number of constraints in the compiled CQM (includes user-defined `must` constraints and internal encoding constraints). |
 | **num_interactions**| Number of quadratic interaction terms in the BQM (i.e., edges in the QUBO graph).                           |
 | **num_variables**   | Total number of binary variables in the BQM (includes user variables + compiler-generated auxiliary/slack variables). |
+| **cqm_binary_variables** | Native binary variables in the canonical CQM. |
+| **cqm_integer_variables** | Native integer variables in the canonical CQM. |
+| **converted_bqm_variables** | Binary variables in the converted BQM view. |
+| **converted_bqm_interactions** | Quadratic interaction terms in the converted BQM view. |
 
 > **Key insight:** `num_variables` is typically larger than the number of unknowns you declared. The compiler introduces **auxiliary variables** (prefixed `aux:`) for linearization and **slack variables** (prefixed `slack_v`) to convert inequality constraints into equalities for the QUBO encoding.
 
@@ -266,6 +270,8 @@ The `solve` command prints **three tables** to stdout:
 > If this table shows `-` with "No (non-aux) binary variable set to 1 in the best sample", it means no user-level variable was activated (which usually signals a problem in the model or that the solver found a trivial assignment).
 
 See [Solve Output Deep Dive](#solve-output-deep-dive) for a detailed breakdown of the `run.json` file.
+
+Scalar `Bool` and `Int` decisions are printed in a separate **Scalar Decisions** table when present. `Subset` and `Mapping` choices remain in **Selected Assignments**.
 
 ---
 
@@ -449,6 +455,27 @@ $ qsol inspect lower examples/tutorials/graph_coloring.qsol --json
 - The output mirrors the structure of your QSOL source, but in a normalized, resolver-validated form.
 - Useful for verifying that helper predicates/functions were inlined correctly before data binding.
 
+### `qsol inspect estimate`
+
+Estimates grounded model size without writing backend artifacts or running a sampler.
+
+**Synopsis:**
+
+```bash
+qsol inspect estimate [OPTIONS] FILE
+```
+
+**Options:**
+
+| Option       | Short | Type   | Default                       | Description                                      |
+|--------------|-------|--------|-------------------------------|--------------------------------------------------|
+| `FILE`       | —     | path   | *required*                    | Path to the `.qsol` model source file.           |
+| `--config`   | `-c`  | path   | auto-discovered `*.qsol.toml` | Path to the TOML configuration file.             |
+| `--scenario` | —     | string | config entrypoint scenario    | Scenario name to estimate.                       |
+| `--json`     | `-j`  | flag   | off                           | Print the stable JSON estimate payload.          |
+
+The report includes set sizes and whether a set is derived, decision-variable counts for `Subset`, `Mapping`, scalar `Bool`, and scalar/indexed `Int`, generated mapping exactly-one constraints, and estimated native CQM binary/integer variable counts.
+
 ---
 
 ## Target Commands
@@ -595,6 +622,7 @@ qsol targets check [OPTIONS] FILE
 | `--scenario`        | —     | string | config entrypoint scenario    | Scenario name to check (repeatable for multi-scenario).          |
 | `--all-scenarios`   | —     | flag   | off                           | Check all scenarios declared in the config.                      |
 | `--failure-policy`  | —     | enum   | config or `run-all-fail`      | Scenario failure policy.                                         |
+| `--estimate`        | —     | flag   | off                           | Print grounded size estimates next to compatibility output.       |
 
 **Example:**
 
@@ -835,6 +863,12 @@ The complete, structured solve result. This is the most important output file.
     {"variable": "ColorOf.is[N5,Blue]",  "meaning": "ColorOf.is(N5,Blue)",  "value": 1}
   ],
 
+  "scalars": {
+    "enabled": true,
+    "T": 7,
+    "Load[m1]": 5
+  },
+
   "extensions": {
     "sampler": "simulated-annealing",
     "num_reads": 100,
@@ -863,7 +897,8 @@ The complete, structured solve result. This is the most important output file.
         "energy": 0.0,
         "num_occurrences": 1,
         "sample": { "ColorOf.is[N1,Red]": 1, "..." : "..." },
-        "selected_assignments": [ "..." ]
+        "selected_assignments": [ "..." ],
+        "scalars": { "T": 7 }
       }
     ]
   }
@@ -884,6 +919,7 @@ The complete, structured solve result. This is the most important output file.
 | **reads**                  | int              | Total number of samples (reads) the sampler performed.                                          |
 | **timing_ms**              | float            | Wall-clock time for the full solve pipeline, in milliseconds.                                   |
 | **capability_report_path** | string           | Path to the capability report JSON file.                                                        |
+| **scalars**                | dict             | Decoded scalar `Bool`/`Int` decisions from the best solution. Indexed scalars use labels like `Load[m1]`. |
 
 #### `best_sample`
 
@@ -908,6 +944,12 @@ A filtered, human-readable list of only the user-level variables set to 1:
 | **value**    | Always `1` (only active variables are listed).                 |
 
 This is the **primary answer** to your optimization problem. For graph coloring, it tells you which color was assigned to each node.
+
+#### `scalars`
+
+Decoded scalar decision values. `Bool` scalars are shown as JSON booleans and `Int`
+scalars as integers. Indexed scalar decisions use the same bracket labels as the
+variable map, for example `Load[m1]`.
 
 #### `extensions`
 
@@ -935,6 +977,7 @@ Each element in the `solutions` array represents one unique solution:
 | **num_occurrences**      | int           | How many times this exact assignment was found across all reads. Higher = more stable.         |
 | **sample**               | dict          | Full binary variable assignment (same format as `best_sample`).                               |
 | **selected_assignments** | list          | Filtered list of active user-level variables (same format as top-level `selected_assignments`).|
+| **scalars**              | dict          | Decoded scalar decisions for this solution.                                                     |
 
 > **Interpreting `num_occurrences`:** If you run 100 reads and solution #1 has `num_occurrences: 87`, that means the sampler found this exact assignment 87 out of 100 times — a strong signal that this is likely the global optimum. Low occurrences may indicate multiple near-optimal solutions or that the landscape is rugged.
 
@@ -1051,6 +1094,7 @@ Every command has a short alias for faster typing:
 | `qsol inspect parse`      | `qsol inspect p`   |
 | `qsol inspect check`      | `qsol inspect c`   |
 | `qsol inspect lower`      | `qsol inspect l`   |
+| `qsol inspect estimate`   | `qsol inspect e`   |
 | `qsol targets list`       | `qsol targets ls`  |
 | `qsol targets capabilities`| `qsol targets caps`|
 | `qsol targets check`      | `qsol targets chk` |

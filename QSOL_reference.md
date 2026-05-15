@@ -84,16 +84,23 @@ Inside a `problem` block, you define the components of your model.
 
 ### 4.1. Sets
 
-Sets are abstract collections of items. Their concrete members are provided at runtime configuration.
+Sets are abstract collections of items. Their concrete members are usually provided
+by runtime configuration.
 
 ```qsol
 set Workers;
 set Tasks;
+set Positions = Range(1, size(Workers));
 
 // In the configuration (qsol.toml), these might look like:
 // Workers = ["Alice", "Bob", "Charlie"]
 // Tasks = ["FixBug", "WriteTests"]
 ```
+
+`Range(lo, hi)` declares a derived integer set. Bounds are inclusive and are
+evaluated at scenario grounding time. Bounds may use integer literals, numeric
+scalar params, `size(Set)`, and arithmetic over those forms. Scenario TOML must
+not provide values for derived sets.
 
 ### 4.2. Parameters
 
@@ -107,6 +114,7 @@ param IsEnabled : Bool = true; // with default value
 // Arrays / Maps
 param Cost[Workers, Tasks] : Real;  // 2D Matrix
 param JobType[Tasks] : Elem(Types); // Maps each task to a type
+```
 
 ### 4.2.1. Referencing Specific Elements
 
@@ -133,7 +141,16 @@ find Assignment : Mapping(Tasks -> Workers);
 
 // "Find a permutation of cities (e.g. for TSP)"
 // find Route : Permutation(Cities);
+
+// "Find scalar decisions"
+find Enabled : Bool;
+find Makespan : Int[0 .. MaxTime];
+find Load[Workers] : Int[0 .. MaxTime];
 ```
+
+`Bool` scalar finds are boolean expressions. Bounded `Int[lo .. hi]` scalar finds
+are numeric expressions. Indexed scalar finds are read with bracket access, for
+example `Load[w]`. Unbounded `find x : Int` is rejected.
 
 ### 4.4. Constraints
 
@@ -391,7 +408,9 @@ The `qsol` CLI tool manages the compilation and solving process.
 
 *   **`qsol inspect parse <file>`**: Check for syntax errors. (Useful: `--json`)
 *   **`qsol inspect check <file>`**: Run type checking and validation.
+*   **`qsol inspect estimate <file> -c <config>`**: Estimate grounded set sizes, decision-variable counts, and backend CQM variable counts.
 *   **`qsol targets check <file>`**: Verify if the backend supports your model features.
+*   **`qsol targets check <file> --estimate`**: Include the estimate next to the target support report.
 *   **`qsol build <file>`**: Compile the model to artifacts (e.g., CQM/BQM files).
 *   **`qsol solve <file>`**: Compile and run the solver.
 

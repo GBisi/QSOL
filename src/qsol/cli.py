@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.pretty import Pretty
 from rich.table import Table
 
+from qsol.compiler.estimate import estimate_ground_ir
 from qsol.compiler.options import CompileOptions
 from qsol.compiler.pipeline import (
     build_for_target,
@@ -226,6 +227,27 @@ def _format_runtime_parameter_value(value: object) -> str:
     if isinstance(value, list):
         return json.dumps(value, sort_keys=True, default=str)
     return str(value)
+
+
+def _print_estimate(console: Console, reports: list[dict[str, object]]) -> None:
+    for report in reports:
+        table = Table(title=f"Estimate ({report.get('problem', '')})")
+        table.add_column("Key")
+        table.add_column("Value")
+        sets = cast(Mapping[str, object], report.get("sets", {}))
+        decisions = cast(Mapping[str, object], report.get("decision_variables", {}))
+        constraints = cast(Mapping[str, object], report.get("constraints", {}))
+        backend = cast(Mapping[str, object], report.get("backend", {}))
+        table.add_row("Sets", str(len(sets)))
+        table.add_row("Decision Variables", str(len(decisions)))
+        table.add_row("Explicit Constraints", str(constraints.get("explicit", 0)))
+        table.add_row(
+            "Mapping Exactly-One",
+            str(constraints.get("mapping_exactly_one", 0)),
+        )
+        table.add_row("CQM Binary Variables", str(backend.get("cqm_binary_variables", 0)))
+        table.add_row("CQM Integer Variables", str(backend.get("cqm_integer_variables", 0)))
+        console.print(table)
 
 
 def _runtime_parameters_summary(run_result: StandardRunResult) -> str:
@@ -535,6 +557,70 @@ def inspect_lower(
         console.print(Pretty(unit.lowered_ir_symbolic))
 
 
+@inspect_app.command("estimate", help="Estimate grounded model size without writing artifacts.")
+def inspect_estimate(
+    file: Path = typer.Argument(..., help="Path to the QSOL model source file."),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to config TOML. Defaults to discovered <model>.qsol.toml when available.",
+    ),
+    scenario: str | None = typer.Option(None, "--scenario", help="Scenario name to estimate."),
+    json_out: bool = typer.Option(False, "--json", "-j", help="Print estimate as JSON."),
+    no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
+    log_level: LogLevel = typer.Option(
+        LogLevel.warning,
+        "--log-level",
+        "-l",
+        help="Set CLI log verbosity.",
+    ),
+) -> None:
+    console = Console(no_color=no_color)
+    text, _resolved_config_path, parsed_config = _read_model_and_config(
+        file=file, config=config, console=console
+    )
+    if text is None or parsed_config is None:
+        raise typer.Exit(code=1)
+    _configure_logging(log_level)
+
+    scenario_names = (
+        [scenario]
+        if scenario is not None
+        else resolve_selected_scenarios(
+            config=parsed_config,
+            cli_scenarios=[],
+            cli_all_scenarios=False,
+        )
+    )
+    if not scenario_names:
+        _print_diags(
+            console,
+            None,
+            [_diag(file, code="QSOL4001", message="no scenario selected for estimate")],
+        )
+        raise typer.Exit(code=1)
+
+    instance_payload = materialize_instance_payload(
+        config=parsed_config, scenario_name=scenario_names[0]
+    )
+    unit = compile_frontend(
+        text,
+        options=CompileOptions(filename=str(file), instance_payload=instance_payload),
+    )
+    source = SourceText(text, str(file))
+    has_errors = _print_diags(console, source, unit.diagnostics)
+    if has_errors or unit.ground_ir is None:
+        raise typer.Exit(code=1)
+
+    payload = [report.to_dict() for report in estimate_ground_ir(unit.ground_ir)]
+    if json_out:
+        console.print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    _print_estimate(console, payload)
+
+
 @targets_app.command("list", help="List discovered runtime and backend plugins.")
 def targets_list(
     plugin: list[str] = typer.Option(
@@ -767,12 +853,14 @@ def _merge_multi_scenario_solutions(
             tuple[tuple[str, int], ...],
             dict[str, int],
             list[dict[str, object]],
+            dict[str, object],
             dict[str, float],
         ]
     ] = []
     for signature in signatures:
         scenario_energies: dict[str, float] = {}
         selected_assignments: list[dict[str, object]] = []
+        scalars: dict[str, object] = {}
         for scenario_name, solution_map in per_scenario.items():
             solution = solution_map.get(signature)
             if solution is None:
@@ -786,6 +874,10 @@ def _merge_multi_scenario_solutions(
                 selected_raw = solution.get("selected_assignments", [])
                 if isinstance(selected_raw, list):
                     selected_assignments = list(cast(list[dict[str, object]], selected_raw))
+            if not scalars:
+                scalars_raw = solution.get("scalars", {})
+                if isinstance(scalars_raw, Mapping):
+                    scalars = {str(key): value for key, value in scalars_raw.items()}
 
         if not scenario_energies:
             continue
@@ -797,21 +889,28 @@ def _merge_multi_scenario_solutions(
                 signature,
                 {name: value for name, value in signature},
                 selected_assignments,
+                scalars,
                 scenario_energies,
             )
         )
 
     rows.sort(key=lambda row: (row[0], row[1]))
     merged: list[dict[str, object]] = []
-    for rank, (energy, _signature, sample, selected_assignments, scenario_energies) in enumerate(
-        rows, start=1
-    ):
+    for rank, (
+        energy,
+        _signature,
+        sample,
+        selected_assignments,
+        scalars,
+        scenario_energies,
+    ) in enumerate(rows, start=1):
         merged.append(
             {
                 "rank": rank,
                 "energy": energy,
                 "sample": sample,
                 "selected_assignments": selected_assignments,
+                "scalars": scalars,
                 "scenario_energies": scenario_energies,
                 "scenario_count": len(scenario_energies),
             }
@@ -897,6 +996,7 @@ def _build_multi_scenario_run_result(
     energy = None if first is None else cast(float, first.get("energy"))
     best_sample: dict[str, int] = {}
     selected_assignments: list[dict[str, object]] = []
+    scalars: dict[str, object] = {}
     if first is not None:
         sample_raw = first.get("sample")
         if isinstance(sample_raw, Mapping):
@@ -904,6 +1004,9 @@ def _build_multi_scenario_run_result(
         selected_raw = first.get("selected_assignments")
         if isinstance(selected_raw, list):
             selected_assignments = list(cast(list[dict[str, object]], selected_raw))
+        scalars_raw = first.get("scalars")
+        if isinstance(scalars_raw, Mapping):
+            scalars = {str(key): value for key, value in scalars_raw.items()}
 
     total_reads = 0
     total_timing_ms = 0.0
@@ -939,6 +1042,7 @@ def _build_multi_scenario_run_result(
         selected_assignments=selected_assignments,
         timing_ms=total_timing_ms,
         capability_report_path="",
+        scalars=scalars,
         extensions={
             "selected_scenarios": selected_scenarios,
             "combine_mode": combine_mode.value,
@@ -998,6 +1102,11 @@ def targets_check(
         "--plugin",
         "-p",
         help="Load an extra plugin bundle from module:attribute.",
+    ),
+    estimate: bool = typer.Option(
+        False,
+        "--estimate",
+        help="Print grounded size estimate next to compatibility output.",
     ),
     no_color: bool = typer.Option(False, "--no-color", "-n", help="Disable ANSI color output."),
     log_level: LogLevel = typer.Option(
@@ -1060,6 +1169,17 @@ def targets_check(
             report_path = _write_capability_report(
                 scenario_outdir, support_report_to_dict(unit.support_report)
             )
+        estimate_payload: list[dict[str, object]] = []
+        if estimate and unit.ground_ir is not None:
+            estimate_payload = [
+                report.to_dict()
+                for report in estimate_ground_ir(
+                    unit.ground_ir,
+                    backend_status="supported"
+                    if unit.support_report is not None and unit.support_report.supported
+                    else "unsupported",
+                )
+            ]
 
         success = not has_errors and bool(unit.support_report and unit.support_report.supported)
         outcomes.append(
@@ -1092,7 +1212,18 @@ def targets_check(
                 "Capability Report",
                 str(report_path) if report_path is not None else "<not-written>",
             )
+            if estimate_payload:
+                backend = cast(Mapping[str, object], estimate_payload[0].get("backend", {}))
+                scenario_summary.add_row(
+                    "Estimated CQM Variables",
+                    str(
+                        int(cast(int, backend.get("cqm_binary_variables", 0)))
+                        + int(cast(int, backend.get("cqm_integer_variables", 0)))
+                    ),
+                )
             console.print(scenario_summary)
+            if estimate_payload:
+                _print_estimate(console, estimate_payload)
 
         if not success and resolved_failure_policy is FailurePolicy.fail_fast:
             break
@@ -1149,6 +1280,19 @@ def targets_check(
             str(outcome.report_path) if outcome.report_path is not None else "<not-written>",
         )
         console.print(summary)
+        if estimate and outcomes and unit.ground_ir is not None:
+            _print_estimate(
+                console,
+                [
+                    report.to_dict()
+                    for report in estimate_ground_ir(
+                        unit.ground_ir,
+                        backend_status="supported"
+                        if unit.support_report is not None and unit.support_report.supported
+                        else "unsupported",
+                    )
+                ],
+            )
 
     if not command_ok:
         raise typer.Exit(code=1)
@@ -1856,6 +2000,14 @@ def solve_cmd(
         selected_table.add_row("-", "No (non-aux) binary variable set to 1 in the best sample")
     console.print(selected_table)
 
+    if final_run_result.scalars:
+        scalar_table = Table(title="Scalar Decisions")
+        scalar_table.add_column("Name")
+        scalar_table.add_column("Value")
+        for name, value in sorted(final_run_result.scalars.items(), key=lambda item: item[0]):
+            scalar_table.add_row(escape(str(name)), escape(str(value)))
+        console.print(scalar_table)
+
     if not command_ok:
         raise typer.Exit(code=1)
 
@@ -1864,6 +2016,7 @@ def solve_cmd(
 inspect_app.command("p", help="Alias for `inspect parse`.")(inspect_parse)
 inspect_app.command("c", help="Alias for `inspect check`.")(inspect_check)
 inspect_app.command("l", help="Alias for `inspect lower`.")(inspect_lower)
+inspect_app.command("e", help="Alias for `inspect estimate`.")(inspect_estimate)
 targets_app.command("ls", help="Alias for `targets list`.")(targets_list)
 targets_app.command("caps", help="Alias for `targets capabilities`.")(targets_capabilities)
 targets_app.command("chk", help="Alias for `targets check`.")(targets_check)

@@ -1,0 +1,14 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "default"
+runtime = "local-dimod"
+
+[scenarios.default]
+problem = "ScalarBoolDemo"
+
+[scenarios.default.sets]
+Machines = ["m1", "m2", "m3"]
+
+[scenarios.default.params]
+Capacity = 5

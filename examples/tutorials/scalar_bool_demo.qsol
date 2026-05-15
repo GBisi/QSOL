@@ -1,0 +1,14 @@
+problem ScalarBoolDemo {
+    set Machines;
+
+    param Capacity : Int[0 .. 100];
+
+    find Enabled : Bool;
+    find Load[Machines] : Int[0 .. Capacity];
+
+    must Enabled;
+    must forall m in Machines:
+        Load[m] <= Capacity;
+
+    minimize sum(Load[m] for m in Machines);
+}

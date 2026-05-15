@@ -79,10 +79,26 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
     out: list[GroundProblem] = []
 
     for problem in problems:
-        p_sets: dict[str, list[str]] = {}
+        p_sets: dict[str, list[object]] = {}
         p_params: dict[str, object] = {}
+        p_derived_sets: dict[str, str] = {}
 
         for decl in problem.sets:
+            if decl.expr is not None:
+                if decl.name in set_values:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL4201",
+                            message=(
+                                f"set `{decl.name}` is derived in source and must not be "
+                                "supplied by scenario data"
+                            ),
+                            span=decl.span,
+                            help=["Remove this set from the scenario `sets` table."],
+                        )
+                    )
+                continue
             vals = set_values.get(decl.name)
             if vals is None:
                 diagnostics.append(
@@ -111,97 +127,55 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
             p_sets[decl.name] = [str(v) for v in vals]
 
         for pdecl in problem.params:
-            provided = pdecl.name in params_payload
-            if provided:
-                value = params_payload[pdecl.name]
-            elif pdecl.default is not None:
-                value = pdecl.default
-            else:
+            if not pdecl.indices:
+                _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
+
+        for decl in problem.sets:
+            if decl.expr is None:
+                continue
+            if not isinstance(decl.expr, ir.KRangeSetExpr):
+                continue
+            lo = _eval_int_expr(
+                decl.expr.lo,
+                set_sizes={name: len(values) for name, values in p_sets.items()},
+                params=p_params,
+                diagnostics=diagnostics,
+            )
+            hi = _eval_int_expr(
+                decl.expr.hi,
+                set_sizes={name: len(values) for name, values in p_sets.items()},
+                params=p_params,
+                diagnostics=diagnostics,
+            )
+            if lo is None or hi is None:
+                continue
+            if hi < lo:
                 diagnostics.append(
                     Diagnostic(
                         severity=Severity.ERROR,
                         code="QSOL2201",
-                        message=f"missing value for param `{pdecl.name}`",
-                        span=pdecl.span,
-                        help=[
-                            f"Provide `params.{pdecl.name}` in the instance payload or declare a default in the model."
-                        ],
+                        message=f"Range lower bound exceeds upper bound for set `{decl.name}`",
+                        span=decl.span,
+                        help=["Use `Range(lo, hi)` with `lo <= hi`."],
                     )
                 )
                 continue
+            p_sets[decl.name] = list(range(lo, hi + 1))
+            p_derived_sets[decl.name] = "Range"
 
+        for pdecl in problem.params:
             if pdecl.indices:
-                if not isinstance(value, dict):
-                    if not provided and pdecl.default is not None:
-                        value = _expand_indexed_default(pdecl.default, list(pdecl.indices), p_sets)
-                    else:
-                        diagnostics.append(
-                            Diagnostic(
-                                severity=Severity.ERROR,
-                                code="QSOL2201",
-                                message=f"param `{pdecl.name}` expects indexed object",
-                                span=pdecl.span,
-                                help=[
-                                    "Use nested objects keyed by index set elements for indexed params."
-                                ],
-                            )
-                        )
-                        continue
-                shape_ok = _check_shape(value, list(pdecl.indices), p_sets)
-                if not shape_ok:
-                    diagnostics.append(
-                        Diagnostic(
-                            severity=Severity.ERROR,
-                            code="QSOL2201",
-                            message=f"param `{pdecl.name}` shape does not match index sets",
-                            span=pdecl.span,
-                            help=[
-                                "Ensure object keys exactly match declared index set elements at each dimension."
-                            ],
-                        )
-                    )
-                    continue
+                _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
 
-            if pdecl.elem_set is not None:
-                allowed = p_sets.get(pdecl.elem_set)
-                if allowed is None:
-                    diagnostics.append(
-                        Diagnostic(
-                            severity=Severity.ERROR,
-                            code="QSOL2201",
-                            message=f"missing set values for `{pdecl.elem_set}` used by `{pdecl.name}`",
-                            span=pdecl.span,
-                            help=[
-                                f"Add `sets.{pdecl.elem_set}` to the instance payload before using `{pdecl.name}`."
-                            ],
-                        )
-                    )
-                    continue
-
-                normalized, bad_value = _normalize_elem_value(
-                    value,
-                    list(pdecl.indices),
-                    allowed_members=frozenset(allowed),
-                )
-                if bad_value is not None:
-                    diagnostics.append(
-                        Diagnostic(
-                            severity=Severity.ERROR,
-                            code="QSOL2201",
-                            message=(
-                                f"param `{pdecl.name}` has value `{bad_value}` not present in set "
-                                f"`{pdecl.elem_set}`"
-                            ),
-                            span=pdecl.span,
-                            help=[
-                                f"Restrict values of `{pdecl.name}` to members declared in set `{pdecl.elem_set}`."
-                            ],
-                        )
-                    )
-                    continue
-                value = normalized
-
-            p_params[pdecl.name] = value
+        grounded_finds = tuple(
+            _ground_find(
+                find,
+                set_sizes={name: len(values) for name, values in p_sets.items()},
+                params=p_params,
+                diagnostics=diagnostics,
+            )
+            for find in problem.finds
+        )
 
         out.append(
             GroundProblem(
@@ -209,7 +183,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 name=problem.name,
                 set_values=p_sets,
                 params=p_params,
-                finds=problem.finds,
+                finds=grounded_finds,
                 constraints=_fold_size_in_constraints(
                     problem.constraints,
                     set_sizes={name: len(values) for name, values in p_sets.items()},
@@ -222,6 +196,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                     declared_sets=frozenset(s.name for s in problem.sets),
                     diagnostics=diagnostics,
                 ),
+                derived_sets=p_derived_sets,
             )
         )
 
@@ -234,14 +209,111 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
     )
 
 
-def _check_shape(value: object, dims: list[str], sets: dict[str, list[str]]) -> bool:
+def _materialize_param(
+    pdecl: ir.KParamDecl,
+    params_payload: Mapping[str, object],
+    p_sets: dict[str, list[object]],
+    p_params: dict[str, object],
+    diagnostics: list[Diagnostic],
+) -> None:
+    provided = pdecl.name in params_payload
+    if provided:
+        value = params_payload[pdecl.name]
+    elif pdecl.default is not None:
+        value = pdecl.default
+    else:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"missing value for param `{pdecl.name}`",
+                span=pdecl.span,
+                help=[
+                    f"Provide `params.{pdecl.name}` in the instance payload or declare a default in the model."
+                ],
+            )
+        )
+        return
+
+    if pdecl.indices:
+        if not isinstance(value, dict):
+            if not provided and pdecl.default is not None:
+                value = _expand_indexed_default(pdecl.default, list(pdecl.indices), p_sets)
+            else:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"param `{pdecl.name}` expects indexed object",
+                        span=pdecl.span,
+                        help=["Use nested objects keyed by index set elements for indexed params."],
+                    )
+                )
+                return
+        if not _check_shape(value, list(pdecl.indices), p_sets):
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"param `{pdecl.name}` shape does not match index sets",
+                    span=pdecl.span,
+                    help=[
+                        "Ensure object keys exactly match declared index set elements at each dimension."
+                    ],
+                )
+            )
+            return
+
+    if pdecl.elem_set is not None:
+        allowed = p_sets.get(pdecl.elem_set)
+        if allowed is None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"missing set values for `{pdecl.elem_set}` used by `{pdecl.name}`",
+                    span=pdecl.span,
+                    help=[
+                        f"Add `sets.{pdecl.elem_set}` to the instance payload before using `{pdecl.name}`."
+                    ],
+                )
+            )
+            return
+
+        normalized, bad_value = _normalize_elem_value(
+            value,
+            list(pdecl.indices),
+            allowed_members=frozenset(str(member) for member in allowed),
+        )
+        if bad_value is not None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=(
+                        f"param `{pdecl.name}` has value `{bad_value}` not present in set "
+                        f"`{pdecl.elem_set}`"
+                    ),
+                    span=pdecl.span,
+                    help=[
+                        f"Restrict values of `{pdecl.name}` to members declared in set `{pdecl.elem_set}`."
+                    ],
+                )
+            )
+            return
+        value = normalized
+
+    p_params[pdecl.name] = value
+
+
+def _check_shape(value: object, dims: list[str], sets: dict[str, list[object]]) -> bool:
     if not dims:
         return not isinstance(value, dict)
     if not isinstance(value, dict):
         return False
 
     dim = dims[0]
-    expected = sorted(sets.get(dim, []))
+    expected = sorted(str(v) for v in sets.get(dim, []))
     keys = sorted(str(k) for k in value.keys())
     if expected and keys != expected:
         return False
@@ -249,14 +321,176 @@ def _check_shape(value: object, dims: list[str], sets: dict[str, list[str]]) -> 
 
 
 def _expand_indexed_default(
-    default_value: object, dims: list[str], sets: dict[str, list[str]]
+    default_value: object, dims: list[str], sets: dict[str, list[object]]
 ) -> object:
     if not dims:
         return default_value
 
     dim = dims[0]
-    elems = sorted(sets.get(dim, []))
+    elems = sorted(str(v) for v in sets.get(dim, []))
     return {elem: _expand_indexed_default(default_value, dims[1:], sets) for elem in elems}
+
+
+def _ground_find(
+    find: ir.KFindDecl,
+    *,
+    set_sizes: Mapping[str, int],
+    params: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> ir.KFindDecl:
+    if not isinstance(find.decision_type, ir.KIntDecisionType):
+        return find
+    lo = _eval_int_expr(
+        find.decision_type.lo, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+    )
+    hi = _eval_int_expr(
+        find.decision_type.hi, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+    )
+    if lo is None or hi is None:
+        return find
+    if hi < lo:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"Int decision `{find.name}` lower bound exceeds upper bound",
+                span=find.span,
+                help=["Use `Int[lo .. hi]` with `lo <= hi`."],
+            )
+        )
+        return find
+    return replace(
+        find,
+        decision_type=replace(
+            find.decision_type,
+            lo=ir.KNumLit(span=find.decision_type.lo.span, value=float(lo)),
+            hi=ir.KNumLit(span=find.decision_type.hi.span, value=float(hi)),
+        ),
+    )
+
+
+def _eval_int_expr(
+    expr: ir.KNumExpr,
+    *,
+    set_sizes: Mapping[str, int],
+    params: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> int | None:
+    value = _eval_num_expr(expr, set_sizes=set_sizes, params=params, diagnostics=diagnostics)
+    if value is None:
+        return None
+    if abs(value - round(value)) > 1e-9:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message="integer bound expression must evaluate to an integer",
+                span=expr.span,
+                help=["Use integer literals, integer params, size(Set), or integer arithmetic."],
+            )
+        )
+        return None
+    return int(round(value))
+
+
+def _eval_num_expr(
+    expr: ir.KNumExpr,
+    *,
+    set_sizes: Mapping[str, int],
+    params: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> float | None:
+    if isinstance(expr, ir.KNumLit):
+        return float(expr.value)
+    if isinstance(expr, ir.KName):
+        value = params.get(expr.name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"bound expression references non-numeric scalar param `{expr.name}`",
+                    span=expr.span,
+                    help=["Use only numeric scalar params in bounds."],
+                )
+            )
+            return None
+        return float(value)
+    if isinstance(expr, ir.KFuncCall) and expr.name == "size" and len(expr.args) == 1:
+        arg = expr.args[0]
+        if isinstance(arg, ir.KName) and arg.name in set_sizes:
+            return float(set_sizes[arg.name])
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message="size() in a bound references an unknown set",
+                span=expr.span,
+                help=["Use `size(SetName)` with a grounded set."],
+            )
+        )
+        return None
+    if isinstance(expr, ir.KAdd):
+        left = _eval_num_expr(
+            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        right = _eval_num_expr(
+            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        return None if left is None or right is None else left + right
+    if isinstance(expr, ir.KSub):
+        left = _eval_num_expr(
+            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        right = _eval_num_expr(
+            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        return None if left is None or right is None else left - right
+    if isinstance(expr, ir.KMul):
+        left = _eval_num_expr(
+            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        right = _eval_num_expr(
+            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        return None if left is None or right is None else left * right
+    if isinstance(expr, ir.KDiv):
+        left = _eval_num_expr(
+            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        right = _eval_num_expr(
+            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        if left is None or right is None:
+            return None
+        if abs(right) <= 1e-12:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message="division by zero in integer bound",
+                    span=expr.span,
+                    help=["Use a non-zero divisor in bound arithmetic."],
+                )
+            )
+            return None
+        return left / right
+    if isinstance(expr, ir.KNeg):
+        inner = _eval_num_expr(
+            expr.expr, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        )
+        return None if inner is None else -inner
+
+    diagnostics.append(
+        Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2201",
+            message="unsupported integer bound expression",
+            span=expr.span,
+            help=["Use literals, scalar params, size(Set), and arithmetic in bounds."],
+        )
+    )
+    return None
 
 
 def _normalize_elem_value(

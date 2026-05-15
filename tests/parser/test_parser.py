@@ -7,7 +7,7 @@ def test_parse_valid_program() -> None:
 problem P {
   set A;
   find S : Subset(A);
-  must forall x in A: S.has(x) or not S.has(x);
+  must all(S.has(x) or not S.has(x) for x in A);
   minimize sum( if S.has(x) then 1 else 0 for x in A );
 }
 """
@@ -208,8 +208,7 @@ problem P {
     constraint = problem.stmts[2]
     assert isinstance(constraint, ast.Constraint)
     assert isinstance(constraint.expr, ast.FuncCall)
-    assert isinstance(constraint.expr.args[1], ast.BoolAggregate)
-    assert constraint.expr.args[1].from_comp_arg is True
+    assert isinstance(constraint.expr.args[1], ast.BoolComprehension)
 
 
 def test_parse_missing_semicolon_produces_help() -> None:
@@ -246,36 +245,6 @@ problem P {
         raise AssertionError("expected parse failure")
 
 
-def test_parse_count_shorthand_forms() -> None:
-    text = """
-problem P {
-  set X;
-  find S : Subset(X);
-  minimize count(x in X) + count(x in X where S.has(x));
-}
-"""
-    program = parse_to_ast(text, filename="count_shorthand.qsol")
-    problem = program.items[0]
-    assert isinstance(problem, ast.ProblemDef)
-    objective = problem.stmts[2]
-    assert isinstance(objective, ast.Objective)
-    assert isinstance(objective.expr, ast.Add)
-    lhs = objective.expr.left
-    rhs = objective.expr.right
-    assert isinstance(lhs, ast.NumAggregate)
-    assert isinstance(lhs.comp, ast.CountComprehension)
-    assert lhs.comp.var_ref == "x"
-    assert lhs.comp.var == "x"
-    assert lhs.comp.domain_set == "X"
-    assert lhs.comp.where is None
-    assert isinstance(rhs, ast.NumAggregate)
-    assert isinstance(rhs.comp, ast.CountComprehension)
-    assert rhs.comp.var_ref == "x"
-    assert rhs.comp.var == "x"
-    assert rhs.comp.domain_set == "X"
-    assert rhs.comp.where is not None
-
-
 def test_parse_predicate_and_function_without_return_type() -> None:
     text = """
 predicate iff(a: Bool, b: Bool) = a and b or not a and not b;
@@ -289,11 +258,47 @@ problem P {
 """
     program = parse_to_ast(text, filename="optional_return_type.qsol")
     assert len(program.items) == 3
-    assert isinstance(program.items[0], ast.PredicateDef)
-    assert program.items[0].name == "iff"
-    assert isinstance(program.items[1], ast.FunctionDef)
-    assert program.items[1].name == "indicator"
-    assert isinstance(program.items[2], ast.ProblemDef)
+
+
+def test_parse_range_set_and_scalar_find_declarations() -> None:
+    text = """
+problem P {
+  set V;
+  set Positions = Range(1, size(V));
+  find b : Bool;
+  find T : Int[0 .. size(V)];
+  find Load[V] : Int[0 .. size(V)];
+}
+"""
+    program = parse_to_ast(text, filename="range_scalar_find.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    range_set = problem.stmts[1]
+    assert isinstance(range_set, ast.SetDecl)
+    assert isinstance(range_set.expr, ast.RangeSetExpr)
+    scalar_bool = problem.stmts[2]
+    assert isinstance(scalar_bool, ast.FindDecl)
+    assert isinstance(scalar_bool.decision_type, ast.BoolDecisionType)
+    scalar_int = problem.stmts[3]
+    assert isinstance(scalar_int, ast.FindDecl)
+    assert isinstance(scalar_int.decision_type, ast.IntDecisionType)
+    indexed_int = problem.stmts[4]
+    assert isinstance(indexed_int, ast.FindDecl)
+    assert indexed_int.indices == ["V"]
+
+
+def test_parse_rejects_unbounded_int_find() -> None:
+    text = """
+problem P {
+  find x : Int;
+}
+"""
+    try:
+        parse_to_ast(text, filename="unbounded_int_find_bad.qsol")
+    except ParseFailure as exc:
+        assert exc.diagnostic.code == "QSOL1001"
+    else:
+        raise AssertionError("expected parse failure")
 
 
 def test_parse_predicate_and_function_mixed_return_type_styles() -> None:

@@ -74,6 +74,7 @@ uv run qsol targets check \
   examples/tutorials/first_program.qsol \
   --config examples/tutorials/first_program.qsol.toml \
   --runtime local-dimod \
+  --estimate \
   --out outdir/first_program
 ```
 
@@ -148,6 +149,7 @@ Solve terminal output:
 - `Returned Solutions` lists every returned solution row with rank/energy/compact sample summary plus
   optional metadata (`num_occurrences`, `probability`, `status`, `scenario_energies`) when present.
 - `Selected Assignments` still summarizes the best solution assignment meanings.
+- `Scalar Decisions` appears when the model uses scalar `Bool` or `Int` decisions.
 
 ## 6. Output Directory and Artifacts (`outdir/...`)
 
@@ -158,9 +160,11 @@ When you run `build` or `solve`, QSOL generates several artifacts in the output 
 #### `run.json`
 The primary result file. Contains:
 - `energy`: The objective value of the best solution found.
-- `solution`: The decoded high-level solution (e.g., `ColorOf: { N1: Red, ... }`).
-- `is_feasible`: Boolean indicating if all hard constraints were satisfied.
-- `sample`: The raw low-level variable assignments (0/1).
+- `status`: `ok` when the runtime completed successfully.
+- `best_sample`: The converted BQM sample, including internal `aux:` and `slack_` variables.
+- `selected_assignments`: Decoded active `Subset`/`Mapping` binary decisions.
+- `scalars`: Decoded scalar `Bool`/`Int` decisions, including indexed labels such as `Load[m1]`.
+- `extensions.solutions`: Ranked solution rows with per-solution samples, selected assignments, and scalar values.
 
 #### `varmap.json`
 Maps your high-level QSOL variables to the solver's low-level indices.
@@ -170,8 +174,8 @@ Useful for debugging raw solver outputs or understanding variable counts.
 
 #### `model.cqm` / `model.bqm`
 The compiled model in binary format (Python pickle of `dimod.ConstrainedQuadraticModel` or `dimod.BinaryQuadraticModel`).
-- **CQM**: Contains constraints and objectives.
-- **BQM**: If the backend supports it, a purely binary quadratic model (often used for annealing).
+- **CQM**: Canonical backend model. It can contain native binary and integer variables.
+- **BQM**: Converted binary quadratic view used by local BQM samplers and QUBO/Ising exports.
 You can load these in Python with `dimod.serialization.file.load` to inspect or run them manually.
 
 #### `explain.json`
@@ -217,9 +221,10 @@ Scenario/default plugin specs and CLI plugin specs are merged with exact-string 
 1. `uv run qsol inspect parse model.qsol --json`
 2. `uv run qsol inspect check model.qsol`
 3. `uv run qsol inspect lower model.qsol --json`
-4. `uv run qsol targets check model.qsol -c model.qsol.toml --runtime <id>`
-5. `uv run qsol build model.qsol -c model.qsol.toml --runtime <id> -o outdir/model`
-6. `uv run qsol solve model.qsol -c model.qsol.toml --runtime <id> -o outdir/model`
+4. `uv run qsol inspect estimate model.qsol -c model.qsol.toml --json`
+5. `uv run qsol targets check model.qsol -c model.qsol.toml --runtime <id> --estimate`
+6. `uv run qsol build model.qsol -c model.qsol.toml --runtime <id> -o outdir/model`
+7. `uv run qsol solve model.qsol -c model.qsol.toml --runtime <id> -o outdir/model`
 
 ## 9. Common Diagnostics
 

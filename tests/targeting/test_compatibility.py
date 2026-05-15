@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import dimod
+
 from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.parse import ast
@@ -69,17 +71,24 @@ def _ground_program(*, custom_find: bool = False) -> ir.GroundIR:
             ir.KConstraint(
                 span=span,
                 kind=ast.ConstraintKind.MUST,
-                expr=ir.KQuantifier(
+                expr=ir.KCompare(
                     span=span,
-                    kind="forall",
-                    var="x",
-                    domain_set="A",
-                    expr=ir.KCompare(
+                    op="=",
+                    left=ir.KSum(
                         span=span,
-                        op="=",
-                        left=has_x,
-                        right=ir.KNumLit(span=span, value=1.0),
+                        comp=ir.KNumComprehension(
+                            span=span,
+                            term=ir.KIfThenElse(
+                                span=span,
+                                cond=has_x,
+                                then_expr=ir.KNumLit(span=span, value=1.0),
+                                else_expr=ir.KNumLit(span=span, value=0.0),
+                            ),
+                            var="x",
+                            domain_set="A",
+                        ),
                     ),
+                    right=ir.KNumLit(span=span, value=2.0),
                 ),
             ),
         ),
@@ -113,7 +122,7 @@ def test_extract_required_capabilities_includes_key_features() -> None:
 
     assert "unknown.subset.v1" in required
     assert "constraint.compare.eq.v1" in required
-    assert "constraint.quantifier.forall.v1" in required
+
     assert "objective.sum.v1" in required
     assert "objective.if_then_else.v1" in required
 
@@ -303,6 +312,68 @@ def test_local_runtime_run_model_simulated_annealing_branch(monkeypatch) -> None
     assert result.extensions["returned_solutions"] == 1
     assert result.extensions["requested_solutions"] == 1
     assert result.extensions["energy_threshold"]["passed"] is True
+
+
+def test_local_runtime_decodes_scalar_decisions_from_inverted_cqm_sample(monkeypatch) -> None:
+    class _Record:
+        def __init__(self, sample: dict[object, int], energy: float, num_occurrences: int) -> None:
+            self.sample = sample
+            self.energy = energy
+            self.num_occurrences = num_occurrences
+
+    class _AggregateSampleSet:
+        def data(self, *, fields):
+            assert fields == ["sample", "energy", "num_occurrences"]
+            return iter([_Record({("T", 1): 0, ("T", 2, "msb"): 1, "enabled": 1}, -2.0, 1)])
+
+    class _SampleSet:
+        def __len__(self) -> int:
+            return 1
+
+        def aggregate(self) -> _AggregateSampleSet:
+            return _AggregateSampleSet()
+
+    class _Sampler:
+        parameters = {"num_reads": [], "seed": []}
+
+        def sample(self, _bqm, **_kwargs):
+            return _SampleSet()
+
+    class _CQM:
+        def vartype(self, label: str):
+            if label == "enabled":
+                return dimod.BINARY
+            if label == "T":
+                return dimod.INTEGER
+            raise KeyError(label)
+
+    class _Inverter:
+        def __call__(self, _sample):
+            return {"enabled": 1, "T": 2}
+
+    monkeypatch.setattr(
+        "qsol.targeting.plugins.dimod.SimulatedAnnealingSampler", lambda: _Sampler()
+    )
+
+    runtime = LocalDimodRuntimePlugin()
+    model = CompiledModel(
+        kind="cqm",
+        backend_id="dimod-cqm-v1",
+        cqm=_CQM(),
+        bqm=object(),
+        varmap={"enabled": "enabled", "T": "T"},
+        inverter=_Inverter(),
+    )
+
+    result = runtime.run_model(
+        model,
+        selection=TargetSelection(runtime_id="local-dimod", backend_id="dimod-cqm-v1"),
+        run_options=RuntimeRunOptions(params={"sampler": "simulated-annealing"}),
+    )
+
+    assert result.selected_assignments == []
+    assert result.scalars == {"enabled": True, "T": 2}
+    assert result.extensions["solutions"][0]["scalars"] == {"enabled": True, "T": 2}
 
 
 def test_local_runtime_run_model_multi_solution_and_threshold_pass(monkeypatch) -> None:

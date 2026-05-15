@@ -239,7 +239,20 @@ class ASTBuilder:
             return self._slice(node).strip()
 
         if data == "set_decl":
-            return ast.SetDecl(span=self._span(node), name=self._name(c[0]))
+            set_expr: ast.SetExpr | None = None
+            if len(c) == 2:
+                set_expr = cast(ast.SetExpr, self._from_tree(c[1]))
+            return ast.SetDecl(span=self._span(node), name=self._name(c[0]), expr=set_expr)
+        if data == "set_initializer":
+            return self._from_tree(c[0])
+        if data == "set_expr":
+            return self._from_tree(c[0])
+        if data == "range_set_expr":
+            return ast.RangeSetExpr(
+                span=self._span(node),
+                lo=cast(ast.NumExpr, self._from_tree(c[0])),
+                hi=cast(ast.NumExpr, self._from_tree(c[1])),
+            )
 
         if data == "param_decl":
             name = self._name(c[0])
@@ -281,10 +294,31 @@ class ASTBuilder:
             raise TypeError(f"param default must be a literal, got {type(value)}")
 
         if data == "find_decl":
+            find_indices: list[str] = []
+            decision_idx = 1
+            if len(c) == 3:
+                find_indices = cast(list[str], self._from_tree(c[1]))
+                decision_idx = 2
             return ast.FindDecl(
                 span=self._span(node),
                 name=self._name(c[0]),
-                unknown_type=cast(ast.UnknownTypeRef, self._from_tree(c[1])),
+                indices=find_indices,
+                decision_type=cast(ast.DecisionType, self._from_tree(c[decision_idx])),
+            )
+        if data == "find_indexing":
+            return cast(list[str], self._from_tree(c[0]))
+        if data == "decision_type":
+            value = self._from_tree(c[0])
+            if isinstance(value, ast.UnknownTypeRef):
+                return ast.UnknownDecisionType(span=value.span, unknown_type=value)
+            return value
+        if data == "bool_decision_type":
+            return ast.BoolDecisionType(span=self._span(node))
+        if data == "int_decision_type":
+            return ast.IntDecisionType(
+                span=self._span(node),
+                lo=cast(ast.NumExpr, self._from_tree(c[0])),
+                hi=cast(ast.NumExpr, self._from_tree(c[1])),
             )
 
         if data == "unknown_type":
@@ -428,6 +462,7 @@ class ASTBuilder:
                 where=bool_where,
                 else_term=bool_else_term,
             )
+
         if data == "comp_arg_num":
             num_term = cast(ast.NumExpr, self._from_tree(c[0]))
             num_var = self._name(c[1])
@@ -451,6 +486,7 @@ class ASTBuilder:
                 ),
                 from_comp_arg=True,
             )
+
         if data == "comp_arg_bool":
             bool_term = cast(ast.BoolExpr, self._from_tree(c[0]))
             bool_var = self._name(c[1])
@@ -461,18 +497,14 @@ class ASTBuilder:
                 arg_bool_where, arg_bool_else_term = cast(
                     tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[3])
                 )
-            return ast.BoolAggregate(
+
+            return ast.BoolComprehension(
                 span=self._span(node),
-                kind="any",
-                comp=ast.BoolComprehension(
-                    span=self._span(node),
-                    term=bool_term,
-                    var=bool_var,
-                    domain_set=bool_domain,
-                    where=arg_bool_where,
-                    else_term=arg_bool_else_term,
-                ),
-                from_comp_arg=True,
+                term=bool_term,
+                var=bool_var,
+                domain_set=bool_domain,
+                where=arg_bool_where,
+                else_term=arg_bool_else_term,
             )
 
         if data == "comp_count":
@@ -566,7 +598,8 @@ class ASTBuilder:
             right = cast(ast.Expr, self._from_tree(c[2]))
             return ast.Compare(span=self._span(node), op=op, left=left, right=right)
         if data in {"comp_op", "eq_op"}:
-            return self._slice(node).strip()
+            op = self._slice(node).strip()
+            return "=" if op == "==" else op
 
         if data == "paren_call":
             func_args: list[ast.Expr] = []
@@ -715,10 +748,10 @@ class ASTBuilder:
         return self.text[_ival(node.start_pos) : _ival(node.end_pos)]
 
     def _name(self, node: ParseNode) -> str:
-        if isinstance(node, str):
-            return node
         if isinstance(node, Token):
             return str(node.value)
+        if isinstance(node, str):
+            return node
         value = self._from_tree(node)
         if isinstance(value, ast.NameRef):
             return value.name

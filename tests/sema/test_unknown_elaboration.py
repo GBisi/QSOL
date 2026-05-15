@@ -14,7 +14,7 @@ unknown InjectiveMapping(A, B) {
     f : Mapping(A -> B);
   }
   laws {
-    must forall b in B: count(a for a in A where f.is(a, b)) <= 1;
+    must sum(if not (count(a for a in A where f.is(a, b)) <= 1) then 1 else 0 for b in B) = 0;
   }
   view {
     predicate is(a: Elem(A), b: Elem(B)): Bool = f.is(a, b);
@@ -33,7 +33,7 @@ unknown PermLike(A) {
 problem Demo {
   set V;
   find P : PermLike(V);
-  must forall x in V: forall y in V: P.is(x, y) = P.is(x, y);
+  must sum(if not (sum(if not (P.is(x, y) = P.is(x, y)) then 1 else 0 for y in V) = 0) then 1 else 0 for x in V) = 0;
   minimize 0;
 }
 """,
@@ -220,7 +220,7 @@ unknown Fancy(T) {
 problem Demo {
   set A;
   find F : Fancy(A);
-  must forall x in A: F.alias(x);
+  must sum(if not F.alias(x) then 1 else 0 for x in A) = 0;
   minimize -size(A);
 }
 """,
@@ -250,8 +250,8 @@ unknown U(A) {
 problem Demo {
   set A;
   find X : U(A);
-  must forall x in A: X.missing(x);
-  must forall x in A: X.has();
+  must sum(if not X.missing(x) then 1 else 0 for x in A) = 0;
+  must sum(if not X.has() then 1 else 0 for x in A) = 0;
 }
 """,
         filename="elab_method_errors.qsol",
@@ -274,7 +274,7 @@ unknown Loop(A) {
 problem Demo {
   set A;
   find X : Loop(A);
-  must forall x in A: X.p(x);
+  must sum(if not X.p(x) then 1 else 0 for x in A) = 0;
 }
 """,
         filename="elab_recursive_view.qsol",
@@ -327,7 +327,7 @@ unknown Fancy(A) {
 problem Demo {
   set A;
   find F : Fancy(A);
-  must forall x in A: F.ok(x);
+  must sum(if not F.ok(x) then 1 else 0 for x in A) = 0;
   minimize sum(F.score(x) for x in A);
 }
 """,
@@ -404,8 +404,8 @@ problem Demo {
 
     problem = next(item for item in elaborated.program.items if isinstance(item, ast.ProblemDef))
     constraint = next(stmt for stmt in problem.stmts if isinstance(stmt, ast.Constraint))
-    assert isinstance(constraint.expr, ast.BoolAggregate)
-    assert isinstance(constraint.expr.comp.term, ast.Compare)
+    assert isinstance(constraint.expr, ast.Compare)
+    assert isinstance(constraint.expr.left, ast.NumAggregate)
 
 
 def test_unknown_elaboration_rejects_comp_arg_for_non_comp_formal() -> None:
