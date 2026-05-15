@@ -1055,7 +1055,7 @@ x >= max(...)
 x <= min(...)
 ```
 
-only if finite bounds are known and lowering is exact.
+only if finite bounds are known and lowering is exact. Discuss its feasibility with the user.
 
 ### 9.4 Reject initially
 
