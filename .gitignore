@@ -22,3 +22,6 @@ logs/
 
 # Qsol-specific files
 outdir/
+
+# Git worktrees
+.worktrees/
