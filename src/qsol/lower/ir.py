@@ -27,6 +27,7 @@ class KRelationField(KNode):
 class KRelationDecl(KNode):
     name: str
     fields: tuple[KRelationField, ...]
+    expr: KRelationExpr | None = None
 
 
 class KSetExpr(KNode):
@@ -242,6 +243,22 @@ class KTupleCompBinder(KNode):
     domain_relation: str
 
 
+class KRelationExpr(KNode):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class KPairsRelationExpr(KRelationExpr):
+    binders: tuple[KCompBinder | KTupleCompBinder, ...]
+    where: KBoolExpr | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class KFilterRelationExpr(KRelationExpr):
+    binder: KTupleCompBinder
+    where: KBoolExpr | None = None
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class KNumComprehension(KNode):
     term: KNumExpr
@@ -359,6 +376,7 @@ class GroundProblem(KNode):
     objectives: tuple[KObjective, ...]
     relation_values: dict[str, tuple[tuple[object, ...], ...]] = field(default_factory=dict)
     derived_sets: dict[str, str] = field(default_factory=dict)
+    derived_relations: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

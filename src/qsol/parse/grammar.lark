@@ -95,9 +95,18 @@ set_initializer: "=" set_expr
 set_expr: range_set_expr
 range_set_expr: "Range" "(" num_expr "," num_expr ")"
 
-relation_decl: "relation" NAME "(" relation_fields ")"
+relation_decl: "relation" NAME "(" relation_fields ")" relation_initializer?
 relation_fields: relation_field ("," relation_field)*
 relation_field: NAME ":" NAME
+relation_initializer: "=" relation_expr
+relation_expr: pairs_relation_expr
+             | filter_relation_expr
+pairs_relation_expr: "pairs" "(" relation_binder_list relation_where? ")"
+filter_relation_expr: "filter" "(" tuple_binder "in" NAME relation_where? ")"
+relation_binder_list: relation_binder ("," relation_binder)*
+relation_binder: NAME "in" NAME             -> relation_set_binder
+               | tuple_binder "in" NAME     -> relation_tuple_binder
+relation_where: "where" bool_expr
 
 param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
 param_indexing: "[" name_list "]"

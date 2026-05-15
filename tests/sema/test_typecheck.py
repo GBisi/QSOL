@@ -302,6 +302,40 @@ problem P {
     )
 
 
+def test_derived_relation_rejects_decision_dependent_filter() -> None:
+    text = """
+problem BadDerived {
+  set V;
+  relation Edge(u: V, v: V);
+  find Pick : Subset(V);
+  relation PickedEdge(u: V, v: V) = filter((u, v) in Edge where Pick.has(u));
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="derived_decision.qsol"))
+
+    assert any(
+        d.code == "QSOL2101"
+        and "derived relation condition must be scenario-time static" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_derived_relation_rejects_dependency_cycle() -> None:
+    text = """
+problem Cycle {
+  set V;
+  relation A(u: V, v: V) = filter((u, v) in B where true);
+  relation B(u: V, v: V) = filter((u, v) in A where true);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="derived_cycle.qsol"))
+
+    assert any(
+        d.code == "QSOL2101" and "derived relation dependency cycle" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_unknown_function_or_predicate_call_is_rejected_after_macro_pass() -> None:
     text = """
 problem P {

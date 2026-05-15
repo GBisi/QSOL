@@ -10,6 +10,7 @@ from qsol.lower import ir
 class EstimateReport:
     problem: str
     sets: dict[str, dict[str, object]]
+    relations: dict[str, dict[str, object]]
     decision_variables: dict[str, dict[str, object]]
     constraints: dict[str, int]
     backend: dict[str, object] = field(default_factory=dict)
@@ -18,6 +19,7 @@ class EstimateReport:
         return {
             "problem": self.problem,
             "sets": self.sets,
+            "relations": self.relations,
             "decision_variables": self.decision_variables,
             "constraints": self.constraints,
             "backend": self.backend,
@@ -36,6 +38,14 @@ def estimate_ground_ir(
                 "source": problem.derived_sets.get(name),
             }
             for name, values in sorted(problem.set_values.items())
+        }
+        relation_report: dict[str, dict[str, object]] = {
+            name: {
+                "size": len(values),
+                "derived": _is_derived_relation(problem, name),
+                "source": problem.derived_relations.get(name),
+            }
+            for name, values in sorted(problem.relation_values.items())
         }
         decision_report: dict[str, dict[str, object]] = {}
         cqm_binary = 0
@@ -93,6 +103,7 @@ def estimate_ground_ir(
             EstimateReport(
                 problem=str(problem.name),
                 sets=set_report,
+                relations=relation_report,
                 decision_variables=decision_report,
                 constraints={
                     "explicit": len(problem.constraints),
@@ -110,6 +121,10 @@ def estimate_ground_ir(
 
 def _is_derived_set(problem: ir.GroundProblem, name: str) -> bool:
     return name in problem.derived_sets
+
+
+def _is_derived_relation(problem: ir.GroundProblem, name: str) -> bool:
+    return name in problem.derived_relations
 
 
 def _indexed_count(problem: ir.GroundProblem, indices: tuple[str, ...]) -> int:

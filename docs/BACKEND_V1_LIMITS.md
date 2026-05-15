@@ -7,7 +7,7 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 *   **Comparisons**: `=`, `!=`, `<`, `<=`, `>`, `>=` are fully supported.
 *   **Logic**: `and`, `or`, `not`, `implies` are supported.
 *   **Quantifiers**: `forall`, `exists`, `sum`, `count` are supported.
-*   **Static relations**: Tuple binders over grounded relations are supported. Relation membership calls evaluate against static scenario data.
+*   **Static relations**: Tuple binders over grounded relations are supported. Base relations come from scenario data; derived relations are evaluated during grounding. Relation membership calls evaluate against static relation values.
 
 ## 2. Arithmetic Limitations
 
@@ -30,4 +30,4 @@ If you encounter `QSOL3001`, you have likely used a construct that cannot be low
 *   **Non-Quadratic**: `x * y * z` (cubic interactions).
 *   **Non-Linear Comparisons**: `x * y <= z` (quadratic inequality) *is* supported, but `x * y * z <= 1` is not.
 *   **Dynamic Sets**: `sum(x for x in S if Var.has(x))` (filtering a set based on a variable) is not supported directly; use `indicator` masks instead: `sum(if Var.has(x) then x else 0 for x in S)`.
-*   **Relation Size Blowups**: Relation iteration is static, but a large relation can still produce many grounded constraints or objective terms.
+*   **Relation Size Blowups**: Relation iteration is static, but a large base or derived relation can still produce many grounded constraints or objective terms.

@@ -235,10 +235,12 @@ def _print_estimate(console: Console, reports: list[dict[str, object]]) -> None:
         table.add_column("Key")
         table.add_column("Value")
         sets = cast(Mapping[str, object], report.get("sets", {}))
+        relations = cast(Mapping[str, object], report.get("relations", {}))
         decisions = cast(Mapping[str, object], report.get("decision_variables", {}))
         constraints = cast(Mapping[str, object], report.get("constraints", {}))
         backend = cast(Mapping[str, object], report.get("backend", {}))
         table.add_row("Sets", str(len(sets)))
+        table.add_row("Relations", str(len(relations)))
         table.add_row("Decision Variables", str(len(decisions)))
         table.add_row("Explicit Constraints", str(constraints.get("explicit", 0)))
         table.add_row(

@@ -263,11 +263,13 @@ Relations declare finite static tuple data inside a problem:
 ```qsol
 relation Edge(u: V, v: V);
 relation Contains(set: Sets, element: Universe);
+relation Pair(u: V, v: V) = pairs(u in V, v in V where u != v);
 ```
 
 Each field references a declared set. Relation names share the problem namespace
-with sets, params, and finds. Relations are static: they are loaded from scenario
-data and cannot depend on decision variables.
+with sets, params, and finds. Relations are static: base relations are loaded
+from scenario data, and derived relations are evaluated during grounding.
+Derived relation expressions cannot depend on decision variables.
 
 Relation membership calls return `Bool`:
 
@@ -283,6 +285,23 @@ all(Edge(u, v) for (u, v) in Edge)
 forall (u, v) in Edge: Edge(u, v)
 count((u, v) in Edge where Edge(v, u))
 ```
+
+Derived relations use `pairs(...)` to generate a static product and `filter(...)`
+to select rows from an existing relation:
+
+```qsol
+relation NonEdge(u: V, v: V) =
+  pairs(u in V, v in V where u != v and not Edge(u, v));
+
+relation Reciprocal(u: V, v: V) =
+  filter((u, v) in Edge where Edge(v, u));
+```
+
+Derived conditions may reference relation/set binders, scalar params, indexed
+params, relation membership calls, arithmetic, and comparisons over static
+values. They must not reference `find` decisions, unknown view methods such as
+`Subset.has`, or backend variables. Scenario TOML must not supply values for
+derived relations.
 
 Record binders and field access such as `for e in Edge` / `e.u` are not part of
 this version.
@@ -442,7 +461,7 @@ The `qsol` CLI tool manages the compilation and solving process.
 
 *   **`qsol inspect parse <file>`**: Check for syntax errors. (Useful: `--json`)
 *   **`qsol inspect check <file>`**: Run type checking and validation.
-*   **`qsol inspect estimate <file> -c <config>`**: Estimate grounded set sizes, decision-variable counts, and backend CQM variable counts.
+*   **`qsol inspect estimate <file> -c <config>`**: Estimate grounded set/relation sizes, decision-variable counts, and backend CQM variable counts.
 *   **`qsol targets check <file>`**: Verify if the backend supports your model features.
 *   **`qsol targets check <file> --estimate`**: Include the estimate next to the target support report.
 *   **`qsol build <file>`**: Compile the model to artifacts (e.g., CQM/BQM files).

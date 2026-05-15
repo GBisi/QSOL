@@ -108,6 +108,8 @@ Usage notes:
 ```qsol
 relation Edge(u: Nodes, v: Nodes);
 relation Contains(set: Sets, element: Items);
+relation NonEdge(u: Nodes, v: Nodes) =
+  pairs(u in Nodes, v in Nodes where u != v and not Edge(u, v));
 ```
 
 Relations are finite, static data. Fields must reference declared sets. Use
@@ -137,6 +139,20 @@ Edge = [
 ```
 
 Compact tuple arrays are also accepted: `Edge = [["a", "b"], ["b", "c"]]`.
+Scenario data supplies only base relations. Derived relations are evaluated at
+grounding time and must not appear under `scenarios.<name>.relations`.
+
+Derived relation constructors:
+
+```qsol
+pairs(u in Nodes, v in Nodes)
+pairs(u in Nodes, v in Nodes where u != v)
+filter((u, v) in Edge where Edge(v, u))
+```
+
+Derived `where` conditions must be scenario-time static. They may use binders,
+params, relation membership calls, arithmetic, and comparisons, but not `find`
+decisions or unknown view methods such as `Pick.has(u)`.
 Record binders (`for e in Edge`, `e.u`) are not supported yet.
 
 ### 3.4 Finds

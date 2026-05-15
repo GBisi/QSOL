@@ -71,6 +71,7 @@ class RelationField(Node):
 class RelationDecl(ProblemStmt):
     name: str
     fields: tuple[RelationField, ...]
+    expr: RelationExpr | None = None
 
 
 class SetExpr(Node):
@@ -357,6 +358,22 @@ class TupleCompBinder(Node):
 
     vars: tuple[str, ...]
     domain_relation: str
+
+
+class RelationExpr(Node):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class PairsRelationExpr(RelationExpr):
+    binders: tuple["CompBinder | TupleCompBinder", ...]
+    where: BoolExpr | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FilterRelationExpr(RelationExpr):
+    binder: TupleCompBinder
+    where: BoolExpr | None = None
 
 
 @dataclass(frozen=True, slots=True, init=False)

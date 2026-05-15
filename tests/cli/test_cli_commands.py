@@ -166,6 +166,7 @@ def test_inspect_estimate_and_targets_check_estimate(tmp_path: Path) -> None:
 problem Scalar {
   set V;
   set Positions = Range(1, size(V));
+  relation Pair(u: V, v: V) = pairs(u in V, v in V where u != v);
   param Total : Int[0 .. 10];
   find enabled : Bool;
   find Load[V] : Int[0 .. Total];
@@ -201,6 +202,8 @@ Total = 5
     assert estimate_result.exit_code == 0
     estimate_payload = json.loads(estimate_result.stdout)
     assert estimate_payload[0]["sets"]["Positions"]["derived"] is True
+    assert estimate_payload[0]["relations"]["Pair"]["derived"] is True
+    assert estimate_payload[0]["relations"]["Pair"]["source"] == "pairs"
     assert estimate_payload[0]["backend"]["cqm_integer_variables"] == 2
 
     check_result = runner.invoke(
@@ -219,6 +222,7 @@ Total = 5
     )
     assert check_result.exit_code == 0
     assert "Estimate" in check_result.stdout
+    assert "Relations" in check_result.stdout
     assert "CQM Integer Variables" in check_result.stdout
 
 

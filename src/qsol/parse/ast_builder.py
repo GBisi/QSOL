@@ -254,10 +254,14 @@ class ASTBuilder:
                 hi=cast(ast.NumExpr, self._from_tree(c[1])),
             )
         if data == "relation_decl":
+            relation_expr: ast.RelationExpr | None = None
+            if len(c) == 3:
+                relation_expr = cast(ast.RelationExpr, self._from_tree(c[2]))
             return ast.RelationDecl(
                 span=self._span(node),
                 name=self._name(c[0]),
                 fields=tuple(cast(list[ast.RelationField], self._from_tree(c[1]))),
+                expr=relation_expr,
             )
         if data == "relation_fields":
             return [cast(ast.RelationField, self._from_tree(ch)) for ch in c]
@@ -267,6 +271,45 @@ class ASTBuilder:
                 name=self._name(c[0]),
                 set_name=self._name(c[1]),
             )
+        if data == "relation_initializer":
+            return self._from_tree(c[0])
+        if data == "relation_expr":
+            return self._from_tree(c[0])
+        if data == "pairs_relation_expr":
+            binders = cast(
+                list[ast.CompBinder | ast.TupleCompBinder],
+                self._from_tree(c[0]),
+            )
+            where = cast(ast.BoolExpr, self._from_tree(c[1])) if len(c) == 2 else None
+            return ast.PairsRelationExpr(
+                span=self._span(node),
+                binders=tuple(binders),
+                where=where,
+            )
+        if data == "filter_relation_expr":
+            binder = ast.TupleCompBinder(
+                span=self._span(cast(Tree[object], c[0])),
+                vars=cast(tuple[str, ...], self._from_tree(c[0])),
+                domain_relation=self._name(c[1]),
+            )
+            where = cast(ast.BoolExpr, self._from_tree(c[2])) if len(c) == 3 else None
+            return ast.FilterRelationExpr(span=self._span(node), binder=binder, where=where)
+        if data == "relation_binder_list":
+            return [cast(ast.CompBinder | ast.TupleCompBinder, self._from_tree(ch)) for ch in c]
+        if data == "relation_set_binder":
+            return ast.CompBinder(
+                span=self._span(node),
+                var=self._name(c[0]),
+                domain_set=self._name(c[1]),
+            )
+        if data == "relation_tuple_binder":
+            return ast.TupleCompBinder(
+                span=self._span(node),
+                vars=cast(tuple[str, ...], self._from_tree(c[0])),
+                domain_relation=self._name(c[1]),
+            )
+        if data == "relation_where":
+            return cast(ast.BoolExpr, self._from_tree(c[0]))
 
         if data == "param_decl":
             name = self._name(c[0])

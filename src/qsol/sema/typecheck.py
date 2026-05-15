@@ -57,6 +57,8 @@ class TypeChecker:
                             self._scenario_const_int_type(
                                 stmt.decision_type.hi, scope, {}, diagnostics, typed.types
                             )
+                    elif isinstance(stmt, ast.RelationDecl) and stmt.expr is not None:
+                        self._check_relation_expr(stmt, scope, diagnostics, typed.types)
                     elif isinstance(stmt, ast.Constraint):
                         expr_ty = self._expr_type(stmt.expr, scope, {}, diagnostics, typed.types)
                         if not isinstance(expr_ty, type(BOOL)):
@@ -94,6 +96,7 @@ class TypeChecker:
                                 diagnostics.append(
                                     self._type_err(stmt.default.span, "param default type mismatch")
                                 )
+                self._check_relation_dependency_cycles(item, diagnostics)
 
         return TypeCheckResult(typed_program=typed, diagnostics=diagnostics)
 
@@ -643,6 +646,217 @@ class TypeChecker:
                 span,
                 diagnostics,
             )
+
+    def _check_relation_expr(
+        self,
+        stmt: ast.RelationDecl,
+        scope: Scope,
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> None:
+        if stmt.expr is None:
+            return
+
+        binders: dict[str, Type] = {}
+        if isinstance(stmt.expr, ast.PairsRelationExpr):
+            self._extend_comp_binders(
+                scope, binders, stmt.expr.binders, stmt.expr.span, diagnostics
+            )
+            self._check_relation_output_fields(stmt, binders, diagnostics)
+            if stmt.expr.where is not None:
+                where_ty = self._expr_type(stmt.expr.where, scope, binders, diagnostics, tmap)
+                if not isinstance(where_ty, type(BOOL)):
+                    diagnostics.append(
+                        self._type_err(
+                            stmt.expr.where.span, "derived relation where clause must be Bool"
+                        )
+                    )
+                if not self._is_static_relation_expr(stmt.expr.where, scope, binders):
+                    diagnostics.append(self._derived_static_error(stmt.expr.where.span))
+            return
+
+        if isinstance(stmt.expr, ast.FilterRelationExpr):
+            self._extend_tuple_binder(scope, binders, stmt.expr.binder, stmt.expr.span, diagnostics)
+            self._check_relation_output_fields(stmt, binders, diagnostics)
+            if stmt.expr.where is not None:
+                where_ty = self._expr_type(stmt.expr.where, scope, binders, diagnostics, tmap)
+                if not isinstance(where_ty, type(BOOL)):
+                    diagnostics.append(
+                        self._type_err(
+                            stmt.expr.where.span, "derived relation where clause must be Bool"
+                        )
+                    )
+                if not self._is_static_relation_expr(stmt.expr.where, scope, binders):
+                    diagnostics.append(self._derived_static_error(stmt.expr.where.span))
+
+    def _check_relation_output_fields(
+        self,
+        stmt: ast.RelationDecl,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        for relation_field in stmt.fields:
+            bound_ty = binders.get(relation_field.name)
+            if bound_ty is None:
+                diagnostics.append(
+                    self._type_err(
+                        relation_field.span,
+                        f"derived relation field `{relation_field.name}` must be bound by the relation expression",
+                    )
+                )
+                continue
+            if not isinstance(bound_ty, ElemOfType) or bound_ty.set_name != relation_field.set_name:
+                diagnostics.append(
+                    self._type_err(
+                        relation_field.span,
+                        f"derived relation field `{relation_field.name}` must be an element of `{relation_field.set_name}`",
+                    )
+                )
+
+    def _derived_static_error(self, span: Span) -> Diagnostic:
+        return self._type_err(
+            span,
+            "derived relation condition must be scenario-time static",
+        )
+
+    def _is_static_relation_expr(
+        self,
+        expr: ast.Expr,
+        scope: Scope,
+        binders: dict[str, Type],
+    ) -> bool:
+        if isinstance(expr, (ast.BoolLit, ast.NumLit, ast.StringLit, ast.Literal)):
+            return True
+        if isinstance(expr, ast.NameRef):
+            if expr.name in binders:
+                return True
+            symbol = scope.lookup(expr.name)
+            return (
+                symbol is not None
+                and symbol.kind == SymbolKind.PARAM
+                and isinstance(symbol.type, ParamType)
+                and not symbol.type.indices
+            )
+        if isinstance(expr, ast.Not):
+            return self._is_static_relation_expr(expr.expr, scope, binders)
+        if isinstance(expr, (ast.And, ast.Or, ast.Implies)):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, ast.Compare):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, (ast.Add, ast.Sub, ast.Mul, ast.Div)):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, ast.Neg):
+            return self._is_static_relation_expr(expr.expr, scope, binders)
+        if isinstance(expr, ast.IfThenElse):
+            return (
+                self._is_static_relation_expr(expr.cond, scope, binders)
+                and self._is_static_relation_expr(expr.then_expr, scope, binders)
+                and self._is_static_relation_expr(expr.else_expr, scope, binders)
+            )
+        if isinstance(expr, ast.BoolIfThenElse):
+            return (
+                self._is_static_relation_expr(expr.cond, scope, binders)
+                and self._is_static_relation_expr(expr.then_expr, scope, binders)
+                and self._is_static_relation_expr(expr.else_expr, scope, binders)
+            )
+        if isinstance(expr, ast.FuncCall):
+            symbol = scope.lookup(expr.name)
+            if expr.name == "size":
+                return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+            if expr.call_style == "bracket":
+                if symbol is None or symbol.kind != SymbolKind.PARAM:
+                    return False
+                return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+            if symbol is None or symbol.kind not in {SymbolKind.PARAM, SymbolKind.RELATION}:
+                return False
+            if symbol.kind == SymbolKind.PARAM and isinstance(symbol.type, ParamType):
+                if not symbol.type.indices:
+                    return not expr.args
+                return False
+            return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+        return False
+
+    def _check_relation_dependency_cycles(
+        self,
+        problem: ast.ProblemDef,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        derived = {
+            stmt.name: stmt
+            for stmt in problem.stmts
+            if isinstance(stmt, ast.RelationDecl) and stmt.expr is not None
+        }
+        if not derived:
+            return
+        graph = {
+            name: {dep for dep in self._relation_expr_deps(stmt.expr) if dep in derived}
+            for name, stmt in derived.items()
+            if stmt.expr is not None
+        }
+        visited: set[str] = set()
+        active: list[str] = []
+
+        def visit(name: str) -> None:
+            if name in active:
+                cycle = active[active.index(name) :] + [name]
+                diagnostics.append(
+                    self._type_err(
+                        derived[name].span,
+                        f"derived relation dependency cycle: {' -> '.join(cycle)}",
+                    )
+                )
+                return
+            if name in visited:
+                return
+            active.append(name)
+            for dep in sorted(graph.get(name, ())):
+                visit(dep)
+            active.pop()
+            visited.add(name)
+
+        for name in sorted(graph):
+            visit(name)
+
+    def _relation_expr_deps(self, expr: ast.RelationExpr) -> set[str]:
+        deps: set[str] = set()
+        if isinstance(expr, ast.PairsRelationExpr):
+            for binder in expr.binders:
+                if isinstance(binder, ast.TupleCompBinder):
+                    deps.add(binder.domain_relation)
+            if expr.where is not None:
+                self._collect_relation_call_deps(expr.where, deps)
+        elif isinstance(expr, ast.FilterRelationExpr):
+            deps.add(expr.binder.domain_relation)
+            if expr.where is not None:
+                self._collect_relation_call_deps(expr.where, deps)
+        return deps
+
+    def _collect_relation_call_deps(self, expr: ast.Expr, deps: set[str]) -> None:
+        if isinstance(expr, ast.FuncCall):
+            deps.add(expr.name)
+            for arg in expr.args:
+                self._collect_relation_call_deps(arg, deps)
+        elif isinstance(expr, ast.MethodCall):
+            self._collect_relation_call_deps(expr.target, deps)
+            for arg in expr.args:
+                self._collect_relation_call_deps(arg, deps)
+        elif isinstance(expr, (ast.Not, ast.Neg)):
+            self._collect_relation_call_deps(expr.expr, deps)
+        elif isinstance(
+            expr, (ast.And, ast.Or, ast.Implies, ast.Compare, ast.Add, ast.Sub, ast.Mul, ast.Div)
+        ):
+            self._collect_relation_call_deps(expr.left, deps)
+            self._collect_relation_call_deps(expr.right, deps)
+        elif isinstance(expr, (ast.IfThenElse, ast.BoolIfThenElse)):
+            self._collect_relation_call_deps(expr.cond, deps)
+            self._collect_relation_call_deps(expr.then_expr, deps)
+            self._collect_relation_call_deps(expr.else_expr, deps)
 
     def _unknown_domain_diagnostic(
         self,

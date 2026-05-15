@@ -126,6 +126,20 @@ Edge = [
 ]
 ```
 
+When a relation can be computed from static data, derive it in the model instead
+of duplicating it in TOML:
+
+```qsol
+relation NonEdge(u: V, v: V) =
+  pairs(u in V, v in V where u != v and not Edge(u, v));
+
+relation Reciprocal(u: V, v: V) =
+  filter((u, v) in Edge where Edge(v, u));
+```
+
+Derived relation filters run during grounding. They may use params and relation
+membership calls, but not decisions such as `Pick.has(v)`.
+
 ## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:

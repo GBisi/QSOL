@@ -40,6 +40,7 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                             )
                             for field in stmt.fields
                         ),
+                        expr=_lower_relation_expr(stmt.expr) if stmt.expr is not None else None,
                     )
                 )
             elif isinstance(stmt, ast.ParamDecl):
@@ -251,3 +252,22 @@ def _lower_comp_binder(
             domain_relation=binder.domain_relation,
         )
     return ir.KCompBinder(span=binder.span, var=binder.var, domain_set=binder.domain_set)
+
+
+def _lower_relation_expr(expr: ast.RelationExpr) -> ir.KRelationExpr:
+    if isinstance(expr, ast.PairsRelationExpr):
+        return ir.KPairsRelationExpr(
+            span=expr.span,
+            binders=tuple(_lower_comp_binder(binder) for binder in expr.binders),
+            where=_lower_bool(expr.where) if expr.where is not None else None,
+        )
+    if isinstance(expr, ast.FilterRelationExpr):
+        binder = _lower_comp_binder(expr.binder)
+        if not isinstance(binder, ir.KTupleCompBinder):
+            raise TypeError("filter relation requires a tuple relation binder")
+        return ir.KFilterRelationExpr(
+            span=expr.span,
+            binder=binder,
+            where=_lower_bool(expr.where) if expr.where is not None else None,
+        )
+    raise TypeError(f"Unsupported relation expression: {type(expr)}")

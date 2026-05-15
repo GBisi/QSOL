@@ -81,6 +81,17 @@ relation Edge(u: Items, v: Items);
 Edge = [{ u = "apple", v = "banana" }]
 ```
 
+Relations can also be derived from static data. For example, a complement edge
+relation can be generated during grounding:
+
+```qsol
+relation NonEdge(u: Items, v: Items) =
+  pairs(u in Items, v in Items where u != v and not Edge(u, v));
+```
+
+Derived relations are not supplied in TOML. Their filters may use static params
+and relation membership calls, but not decisions such as `Picked.has(item)`.
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

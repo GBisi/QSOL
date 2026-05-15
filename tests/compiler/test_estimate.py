@@ -24,6 +24,11 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
         span=span,
         name="Estimate",
         set_values={"A": ["a1", "a2"], "B": ["b1"], "Positions": [1, 2, 3]},
+        relation_values={
+            "Edge": (("a1", "a2"),),
+            "NonEdge": (("a2", "a1"),),
+        },
+        derived_relations={"NonEdge": "pairs"},
         derived_sets={"Positions": "Range"},
         params={},
         finds=(
@@ -76,6 +81,8 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
     )[0].to_dict()
 
     assert report["sets"]["Positions"] == {"size": 3, "derived": True, "source": "Range"}
+    assert report["relations"]["Edge"] == {"size": 1, "derived": False, "source": None}
+    assert report["relations"]["NonEdge"] == {"size": 1, "derived": True, "source": "pairs"}
     assert report["decision_variables"]["Pick"]["binary_variables"] == 2
     assert report["decision_variables"]["Assign"]["exactly_one_constraints"] == 2
     assert report["decision_variables"]["Custom"]["supported"] is False

@@ -9,7 +9,7 @@ This backend supports:
 *   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
 *   **Objectives**: Linear and Quadratic objectives.
-*   **Static relations**: Relation values are grounded before backend compilation. Tuple iteration expands over the supplied relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
+*   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
 
 ## 2. Variable Mapping
 

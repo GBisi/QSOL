@@ -18,6 +18,8 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `relation_graph_independent_set.qsol.toml`
 - `relation_set_packing.qsol`
 - `relation_set_packing.qsol.toml`
+- `derived_max_clique.qsol`
+- `derived_max_clique.qsol.toml`
 
 ## Run
 
@@ -99,6 +101,15 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol solve \
+  examples/tutorials/derived_max_clique.qsol \
+  --config examples/tutorials/derived_max_clique.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/derived_max_clique \
+  --runtime-option sampler=exact
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -132,6 +143,10 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Sets`
   - `scenarios.baseline.sets.Items`
   - `scenarios.baseline.relations.Contains`
+- `derived_max_clique.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+  - `NonEdge` is derived with `pairs(...)` and is not supplied in TOML.
 
 ## Related
 

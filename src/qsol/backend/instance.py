@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from qsol.diag.diagnostic import Diagnostic, Severity
+from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.lower.ir import GroundIR, GroundProblem, KernelIR, KProblem
 
@@ -89,6 +90,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
         p_relations: dict[str, tuple[tuple[object, ...], ...]] = {}
         p_params: dict[str, object] = {}
         p_derived_sets: dict[str, str] = {}
+        p_derived_relations: dict[str, str] = {}
 
         for decl in problem.sets:
             if decl.expr is not None:
@@ -175,8 +177,22 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
 
         declared_relation_names = {decl.name for decl in problem.relations}
+        derived_relation_names = {decl.name for decl in problem.relations if decl.expr is not None}
         for supplied_name in relation_values:
-            if supplied_name not in declared_relation_names:
+            if supplied_name in derived_relation_names:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL4201",
+                        message=(
+                            f"relation `{supplied_name}` is derived in source and must not be "
+                            "supplied by scenario data"
+                        ),
+                        span=problem.span,
+                        help=["Remove this relation from the scenario `relations` table."],
+                    )
+                )
+            elif supplied_name not in declared_relation_names:
                 diagnostics.append(
                     Diagnostic(
                         severity=Severity.ERROR,
@@ -188,7 +204,12 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 )
 
         for rdecl in problem.relations:
-            _materialize_relation(rdecl, relation_values, p_sets, p_relations, diagnostics)
+            if rdecl.expr is None:
+                _materialize_relation(rdecl, relation_values, p_sets, p_relations, diagnostics)
+
+        p_derived_relations.update(
+            _materialize_derived_relations(problem, p_sets, p_params, p_relations, diagnostics)
+        )
 
         grounded_finds = tuple(
             _ground_find(
@@ -221,6 +242,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                     diagnostics=diagnostics,
                 ),
                 derived_sets=p_derived_sets,
+                derived_relations=p_derived_relations,
             )
         )
 
@@ -462,6 +484,584 @@ def _materialize_relation(
         tuples.append(normalized)
 
     p_relations[rdecl.name] = tuple(tuples)
+
+
+def _materialize_derived_relations(
+    problem: KProblem,
+    p_sets: dict[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> dict[str, str]:
+    derived = {decl.name: decl for decl in problem.relations if decl.expr is not None}
+    relation_decl_names = {decl.name for decl in problem.relations}
+    sources: dict[str, str] = {}
+    remaining = set(derived)
+
+    while remaining:
+        progressed = False
+        for name in sorted(remaining):
+            rdecl = derived[name]
+            assert rdecl.expr is not None
+            deps = {dep for dep in _derived_relation_deps(rdecl.expr) if dep in relation_decl_names}
+            if not all(dep in p_relations for dep in deps):
+                continue
+            _materialize_derived_relation(rdecl, p_sets, p_params, p_relations, diagnostics)
+            sources[name] = _derived_relation_source(rdecl.expr)
+            remaining.remove(name)
+            progressed = True
+            break
+        if not progressed:
+            blocked = ", ".join(sorted(remaining))
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"derived relation dependency cycle or unresolved dependency: {blocked}",
+                    span=problem.span,
+                    help=[
+                        "Derived relations must depend only on base or acyclic derived relations."
+                    ],
+                )
+            )
+            break
+
+    return sources
+
+
+def _materialize_derived_relation(
+    rdecl: ir.KRelationDecl,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> None:
+    if rdecl.expr is None:
+        return
+
+    binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...]
+    where: ir.KBoolExpr | None
+    if isinstance(rdecl.expr, ir.KPairsRelationExpr):
+        binders = rdecl.expr.binders
+        where = rdecl.expr.where
+    elif isinstance(rdecl.expr, ir.KFilterRelationExpr):
+        binders = (rdecl.expr.binder,)
+        where = rdecl.expr.where
+    else:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unsupported derived relation expression for `{rdecl.name}`",
+                span=rdecl.span,
+            )
+        )
+        return
+
+    envs = _iter_static_binder_envs(
+        binders, p_sets=p_sets, p_relations=p_relations, span=rdecl.span, diagnostics=diagnostics
+    )
+    field_names = [field.name for field in rdecl.fields]
+    tuples: list[tuple[object, ...]] = []
+    seen: set[tuple[object, ...]] = set()
+
+    for env in envs:
+        if where is not None:
+            include = _eval_static_bool(
+                where,
+                p_sets=p_sets,
+                p_params=p_params,
+                p_relations=p_relations,
+                env=env,
+                diagnostics=diagnostics,
+            )
+            if include is None or not include:
+                continue
+
+        values: list[object] = []
+        missing: list[str] = []
+        for field_name in field_names:
+            if field_name not in env:
+                missing.append(field_name)
+            else:
+                values.append(str(env[field_name]))
+        if missing:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"derived relation `{rdecl.name}` has unbound output field(s)",
+                    span=rdecl.span,
+                    help=[f"Bind: {', '.join(missing)}"],
+                )
+            )
+            return
+
+        normalized = tuple(values)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        tuples.append(normalized)
+
+    p_relations[rdecl.name] = tuple(tuples)
+
+
+def _iter_static_binder_envs(
+    binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...],
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> list[dict[str, object]]:
+    envs: list[dict[str, object]] = [{}]
+    for binder in binders:
+        if isinstance(binder, ir.KTupleCompBinder):
+            tuples = p_relations.get(binder.domain_relation)
+            if tuples is None:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"unknown relation `{binder.domain_relation}` in derived relation",
+                        span=span,
+                    )
+                )
+                return []
+            next_envs: list[dict[str, object]] = []
+            for base_env in envs:
+                for values in sorted(tuples, key=lambda item: tuple(str(value) for value in item)):
+                    if len(values) != len(binder.vars):
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2201",
+                                message=f"relation `{binder.domain_relation}` arity mismatch",
+                                span=span,
+                            )
+                        )
+                        return []
+                    bound = dict(base_env)
+                    for var, value in zip(binder.vars, values, strict=True):
+                        bound[var] = value
+                    next_envs.append(bound)
+            envs = next_envs
+            continue
+
+        set_values = p_sets.get(binder.domain_set)
+        if set_values is None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"unknown set `{binder.domain_set}` in derived relation",
+                    span=span,
+                )
+            )
+            return []
+        next_envs = []
+        for base_env in envs:
+            for value in sorted(set_values, key=str):
+                bound = dict(base_env)
+                bound[binder.var] = value
+                next_envs.append(bound)
+        envs = next_envs
+    return envs
+
+
+def _derived_relation_deps(expr: ir.KRelationExpr) -> set[str]:
+    deps: set[str] = set()
+    if isinstance(expr, ir.KPairsRelationExpr):
+        for binder in expr.binders:
+            if isinstance(binder, ir.KTupleCompBinder):
+                deps.add(binder.domain_relation)
+        if expr.where is not None:
+            _collect_relation_deps(expr.where, deps)
+    elif isinstance(expr, ir.KFilterRelationExpr):
+        deps.add(expr.binder.domain_relation)
+        if expr.where is not None:
+            _collect_relation_deps(expr.where, deps)
+    return deps
+
+
+def _collect_relation_deps(expr: ir.KExpr, deps: set[str]) -> None:
+    if isinstance(expr, ir.KFuncCall):
+        deps.add(expr.name)
+        for arg in expr.args:
+            _collect_relation_deps(arg, deps)
+    elif isinstance(expr, ir.KMethodCall):
+        _collect_relation_deps(expr.target, deps)
+        for arg in expr.args:
+            _collect_relation_deps(arg, deps)
+    elif isinstance(expr, (ir.KNot, ir.KNeg)):
+        _collect_relation_deps(expr.expr, deps)
+    elif isinstance(
+        expr, (ir.KAnd, ir.KOr, ir.KImplies, ir.KCompare, ir.KAdd, ir.KSub, ir.KMul, ir.KDiv)
+    ):
+        _collect_relation_deps(expr.left, deps)
+        _collect_relation_deps(expr.right, deps)
+    elif isinstance(expr, (ir.KIfThenElse, ir.KBoolIfThenElse)):
+        _collect_relation_deps(expr.cond, deps)
+        _collect_relation_deps(expr.then_expr, deps)
+        _collect_relation_deps(expr.else_expr, deps)
+
+
+def _derived_relation_source(expr: ir.KRelationExpr) -> str:
+    if isinstance(expr, ir.KPairsRelationExpr):
+        return "pairs"
+    if isinstance(expr, ir.KFilterRelationExpr):
+        return "filter"
+    return type(expr).__name__
+
+
+def _eval_static_bool(
+    expr: ir.KBoolExpr,
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> bool | None:
+    if isinstance(expr, ir.KBoolLit):
+        return expr.value
+    if isinstance(expr, ir.KName):
+        value = _eval_static_value(
+            expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return value if isinstance(value, bool) else None
+    if isinstance(expr, ir.KNot):
+        value = _eval_static_bool(
+            expr.expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if value is None else not value
+    if isinstance(expr, ir.KAnd):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else left and right
+    if isinstance(expr, ir.KOr):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else left or right
+    if isinstance(expr, ir.KImplies):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else (not left) or right
+    if isinstance(expr, ir.KCompare):
+        compare_left = _eval_static_value(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        compare_right = _eval_static_value(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if compare_left is None or compare_right is None:
+            return None
+        if expr.op in {"=", "=="}:
+            return compare_left == compare_right
+        if expr.op == "!=":
+            return compare_left != compare_right
+        if isinstance(compare_left, (int, float)) and isinstance(compare_right, (int, float)):
+            if expr.op == "<":
+                return float(compare_left) < float(compare_right)
+            if expr.op == "<=":
+                return float(compare_left) <= float(compare_right)
+            if expr.op == ">":
+                return float(compare_left) > float(compare_right)
+            if expr.op == ">=":
+                return float(compare_left) >= float(compare_right)
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message="derived relation comparison requires numeric operands",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KFuncCall):
+        if expr.name in p_relations:
+            args: list[str] = []
+            for arg in expr.args:
+                value = _eval_static_value(
+                    arg,
+                    p_sets=p_sets,
+                    p_params=p_params,
+                    p_relations=p_relations,
+                    env=env,
+                    diagnostics=diagnostics,
+                )
+                if value is None:
+                    return None
+                args.append(str(value))
+            return tuple(args) in p_relations[expr.name]
+        value = _eval_static_value(
+            expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return value if isinstance(value, bool) else None
+    if isinstance(expr, ir.KBoolIfThenElse):
+        cond = _eval_static_bool(
+            expr.cond,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if cond is None:
+            return None
+        branch = expr.then_expr if cond else expr.else_expr
+        return _eval_static_bool(
+            branch,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+    diagnostics.append(
+        Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2201",
+            message=f"unsupported derived relation predicate `{type(expr).__name__}`",
+            span=expr.span,
+        )
+    )
+    return None
+
+
+def _eval_static_value(
+    expr: ir.KExpr,
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> object | None:
+    if isinstance(expr, ir.KNumLit):
+        return float(expr.value)
+    if isinstance(expr, ir.KBoolLit):
+        return expr.value
+    if isinstance(expr, ir.KName):
+        if expr.name in env:
+            return env[expr.name]
+        if expr.name in p_params:
+            return p_params[expr.name]
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unknown static value `{expr.name}` in derived relation",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KFuncCall):
+        if expr.name == "size" and len(expr.args) == 1 and isinstance(expr.args[0], ir.KName):
+            name = expr.args[0].name
+            if name in p_sets:
+                return float(len(p_sets[name]))
+            if name in p_relations:
+                return float(len(p_relations[name]))
+        if expr.name in p_params:
+            return _static_param_call_value(expr, p_params, p_sets, p_relations, env, diagnostics)
+        if expr.name in p_relations:
+            return _eval_static_bool(
+                expr,
+                p_sets=p_sets,
+                p_params=p_params,
+                p_relations=p_relations,
+                env=env,
+                diagnostics=diagnostics,
+            )
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unknown static call `{expr.name}` in derived relation",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KAdd):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "+", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KSub):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "-", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KMul):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "*", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KDiv):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "/", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KNeg):
+        value = _eval_static_value(
+            expr.expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return -float(value) if isinstance(value, (int, float)) else None
+    if isinstance(expr, ir.KIfThenElse):
+        cond = _eval_static_bool(
+            expr.cond,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if cond is None:
+            return None
+        branch = expr.then_expr if cond else expr.else_expr
+        return _eval_static_value(
+            branch,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+    return None
+
+
+def _static_param_call_value(
+    expr: ir.KFuncCall,
+    p_params: Mapping[str, object],
+    p_sets: Mapping[str, list[object]],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> object | None:
+    value = p_params.get(expr.name)
+    if value is None:
+        return None
+    for arg in expr.args:
+        key = _eval_static_value(
+            arg,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if key is None or not isinstance(value, Mapping):
+            return None
+        value = value.get(str(key))
+    return value
+
+
+def _eval_static_numeric_binary(
+    left_expr: ir.KExpr,
+    right_expr: ir.KExpr,
+    op: str,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> float | None:
+    left = _eval_static_value(
+        left_expr,
+        p_sets=p_sets,
+        p_params=p_params,
+        p_relations=p_relations,
+        env=env,
+        diagnostics=diagnostics,
+    )
+    right = _eval_static_value(
+        right_expr,
+        p_sets=p_sets,
+        p_params=p_params,
+        p_relations=p_relations,
+        env=env,
+        diagnostics=diagnostics,
+    )
+    if not isinstance(left, (int, float)) or not isinstance(right, (int, float)):
+        return None
+    if op == "+":
+        return float(left) + float(right)
+    if op == "-":
+        return float(left) - float(right)
+    if op == "*":
+        return float(left) * float(right)
+    if op == "/":
+        return float(left) / float(right)
+    return None
 
 
 def _check_shape(value: object, dims: list[str], sets: dict[str, list[object]]) -> bool:
