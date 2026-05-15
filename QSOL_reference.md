@@ -231,7 +231,7 @@ Unknowns expose methods to interact with them in expressions:
 Aggregates (`sum`, `count`, `any`, `all`) use **comprehensions** that support optional `where` and `else` clauses to filter and provide defaults:
 
 ```
-aggregate( expression for var in Set [where condition] [else fallback] )
+aggregate( expression for var in Set [for var2 in Set2 ...] [where condition] [else fallback] )
 ```
 
 *   **`where`** filters which elements participate.
@@ -251,7 +251,41 @@ count(w in Workers where Hired.has(w))
 
 // Are all assigned workers experienced?
 all(IsExperienced[w] for w in Workers where Assigned.has(w))
+
+// Sum over a static Cartesian product
+sum(Cost[w, t] for w in Workers for t in Tasks)
 ```
+
+### 5.5. Static Relations
+
+Relations declare finite static tuple data inside a problem:
+
+```qsol
+relation Edge(u: V, v: V);
+relation Contains(set: Sets, element: Universe);
+```
+
+Each field references a declared set. Relation names share the problem namespace
+with sets, params, and finds. Relations are static: they are loaded from scenario
+data and cannot depend on decision variables.
+
+Relation membership calls return `Bool`:
+
+```qsol
+Edge(u, v)
+not Edge(u, v)
+```
+
+Tuple binders destructure relation tuples in comprehensions and quantifiers:
+
+```qsol
+all(Edge(u, v) for (u, v) in Edge)
+forall (u, v) in Edge: Edge(u, v)
+count((u, v) in Edge where Edge(v, u))
+```
+
+Record binders and field access such as `for e in Edge` / `e.u` are not part of
+this version.
 
 > [!IMPORTANT]
 > **Quantifiers (`forall`, `exists`) do NOT support `where` or `else`.**
@@ -441,7 +475,18 @@ MaxCost = 100.0
 Alice = { T1 = 10.0, T2 = 50.0 }
 Bob   = { T1 = 20.0, T2 = 20.0 }
 ...
+
+# Concrete Data for Relations
+[scenarios.default.relations]
+Edge = [
+  { u = "Alice", v = "Bob" },
+  { u = "Bob", v = "Charlie" },
+]
 ```
+
+Relation entries may also use compact tuple arrays, for example
+`Edge = [["Alice", "Bob"], ["Bob", "Charlie"]]`. Relation values must match
+declared field arity and belong to each field's declared set.
 
 ### Runtimes
 *   **`local-dimod`**: Runs locally using simulated annealing or exact solvers. Great for testing.

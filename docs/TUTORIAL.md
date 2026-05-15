@@ -69,6 +69,18 @@ Items = ["apple", "banana", "cherry"]
 Weights = { apple = 2.5, banana = 1.0, cherry = 3.0 }
 ```
 
+For tuple-shaped static data, declare a `relation` in the model and provide
+rows under `scenarios.<name>.relations`:
+
+```qsol
+relation Edge(u: Items, v: Items);
+```
+
+```toml
+[scenarios.default.relations]
+Edge = [{ u = "apple", v = "banana" }]
+```
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

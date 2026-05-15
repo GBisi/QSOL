@@ -11,6 +11,7 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
             continue
 
         sets: list[ir.KSetDecl] = []
+        relations: list[ir.KRelationDecl] = []
         params: list[ir.KParamDecl] = []
         finds: list[ir.KFindDecl] = []
         constraints: list[ir.KConstraint] = []
@@ -26,6 +27,21 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                         hi=_lower_num(stmt.expr.hi),
                     )
                 sets.append(ir.KSetDecl(span=stmt.span, name=stmt.name, expr=set_expr))
+            elif isinstance(stmt, ast.RelationDecl):
+                relations.append(
+                    ir.KRelationDecl(
+                        span=stmt.span,
+                        name=stmt.name,
+                        fields=tuple(
+                            ir.KRelationField(
+                                span=field.span,
+                                name=field.name,
+                                set_name=field.set_name,
+                            )
+                            for field in stmt.fields
+                        ),
+                    )
+                )
             elif isinstance(stmt, ast.ParamDecl):
                 scalar_kind = (
                     stmt.value_type.kind
@@ -70,6 +86,7 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                 span=item.span,
                 name=item.name,
                 sets=tuple(sets),
+                relations=tuple(relations),
                 params=tuple(params),
                 finds=tuple(finds),
                 constraints=tuple(constraints),
@@ -157,6 +174,14 @@ def _lower_bool(expr: ast.BoolExpr) -> ir.KBoolExpr:
             domain_set=expr.domain_set,
             expr=_lower_bool(expr.expr),
         )
+    if isinstance(expr, ast.TupleQuantifier):
+        return ir.KTupleQuantifier(
+            span=expr.span,
+            kind=expr.kind,
+            vars=expr.vars,
+            domain_relation=expr.domain_relation,
+            expr=_lower_bool(expr.expr),
+        )
 
     if isinstance(expr, ast.BoolIfThenElse):
         return ir.KBoolIfThenElse(
@@ -206,11 +231,23 @@ def _lower_num(expr: ast.NumExpr) -> ir.KNumExpr:
     if isinstance(expr, ast.NumAggregate):
         if not isinstance(expr.comp, ast.NumComprehension):
             raise TypeError("Count aggregate should be desugared before lowering")
+        k_binders = tuple(_lower_comp_binder(b) for b in expr.comp.binders)
         comp = ir.KNumComprehension(
             span=expr.comp.span,
             term=_lower_num(expr.comp.term),
-            var=expr.comp.var,
-            domain_set=expr.comp.domain_set,
+            binders=k_binders,
         )
         return ir.KSum(span=expr.span, comp=comp)
     raise TypeError(f"Unsupported numeric expression: {type(expr)}")
+
+
+def _lower_comp_binder(
+    binder: ast.CompBinder | ast.TupleCompBinder,
+) -> ir.KCompBinder | ir.KTupleCompBinder:
+    if isinstance(binder, ast.TupleCompBinder):
+        return ir.KTupleCompBinder(
+            span=binder.span,
+            vars=binder.vars,
+            domain_relation=binder.domain_relation,
+        )
+    return ir.KCompBinder(span=binder.span, var=binder.var, domain_set=binder.domain_set)

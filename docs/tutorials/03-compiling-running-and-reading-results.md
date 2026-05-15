@@ -60,7 +60,20 @@ i4 = 2
 Field rules:
 - `schema_version`: currently must be `"1"`.
 - `entrypoint`: optional CLI-equivalent defaults (`scenario`/`scenarios`/`all_scenarios`, `runtime`, `backend`, `plugins`, `runtime_options`, `solutions`, `energy_min`, `energy_max`, `out`, `format`, `combine_mode`, `failure_policy`).
-- `scenarios.<name>`: scenario payload (`problem`, `sets`, `params`, optional `execution`, optional `solve`).
+- `scenarios.<name>`: scenario payload (`problem`, `sets`, `relations`, `params`, optional `execution`, optional `solve`).
+
+Static relations are supplied under `scenarios.<name>.relations`:
+
+```toml
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+```
+
+The compact tuple form is accepted when values are ordered like the relation
+declaration fields: `Edge = [["a", "b"], ["b", "c"]]`.
 
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.

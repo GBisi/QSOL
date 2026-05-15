@@ -232,6 +232,43 @@ class DimodCodegen:
                 diagnostics=diagnostics,
             )
             return
+        if isinstance(expr, ir.KTupleQuantifier):
+            if expr.kind == "forall":
+                for next_env in self._iter_relation_binder_envs(
+                    problem,
+                    expr.vars,
+                    expr.domain_relation,
+                    env,
+                    expr.span,
+                    "quantifier",
+                    diagnostics,
+                ):
+                    self._emit_constraint(problem, expr.expr, cqm, binaries, diagnostics, next_env)
+                return
+
+            indicators = []
+            for next_env in self._iter_relation_binder_envs(
+                problem, expr.vars, expr.domain_relation, env, expr.span, "quantifier", diagnostics
+            ):
+                indicator = self._bool_expr(
+                    problem, expr.expr, binaries, diagnostics, next_env, cqm=cqm
+                )
+                if indicator is None:
+                    diagnostics.append(
+                        self._unsupported(expr.span, "unsupported exists quantifier body")
+                    )
+                    return
+                indicators.append(indicator)
+            self._add_numeric_constraint(
+                cqm,
+                lhs=sum(indicators, 0.0),
+                rhs=1.0,
+                op=">=",
+                label=self._constraint_label(expr.span),
+                span=expr.span,
+                diagnostics=diagnostics,
+            )
+            return
 
         if isinstance(expr, ir.KAnd):
             self._emit_constraint(problem, expr.left, cqm, binaries, diagnostics, env)
@@ -450,6 +487,29 @@ class DimodCodegen:
             for value in sorted(vals, key=str):
                 next_env = dict(env)
                 next_env[expr.var] = value
+                inner = self._soft_penalty(
+                    problem,
+                    expr.expr,
+                    binaries,
+                    diagnostics,
+                    next_env,
+                    cqm=cqm,
+                )
+                if inner is None:
+                    return None
+                acc += inner
+            return acc
+        if isinstance(expr, ir.KTupleQuantifier):
+            acc = 0.0
+            for next_env in self._iter_relation_binder_envs(
+                problem,
+                expr.vars,
+                expr.domain_relation,
+                env,
+                expr.span,
+                "soft quantifier",
+                diagnostics,
+            ):
                 inner = self._soft_penalty(
                     problem,
                     expr.expr,
@@ -1020,16 +1080,10 @@ class DimodCodegen:
                 )
                 return None
         if isinstance(expr, ir.KSum):
-            vals = problem.set_values.get(expr.comp.domain_set)
-            if vals is None:
-                diagnostics.append(
-                    self._unsupported(expr.span, f"unknown set `{expr.comp.domain_set}` in sum")
-                )
-                return None
             acc = 0.0
-            for val in sorted(vals, key=str):
-                next_env = dict(env)
-                next_env[expr.comp.var] = val
+            for next_env in self._iter_binder_envs(
+                problem, expr.comp.binders, env, expr.span, "sum", diagnostics
+            ):
                 term = self._num_expr(
                     problem,
                     expr.comp.term,
@@ -1048,6 +1102,77 @@ class DimodCodegen:
         )
         return None
 
+    def _iter_binder_envs(
+        self,
+        problem: ir.GroundProblem,
+        binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...],
+        env: Mapping[str, object],
+        span: Span,
+        context: str,
+        diagnostics: list[Diagnostic],
+    ) -> list[dict[str, object]]:
+        envs: list[dict[str, object]] = [dict(env)]
+        for binder in binders:
+            if isinstance(binder, ir.KTupleCompBinder):
+                relation_envs: list[dict[str, object]] = []
+                for base_env in envs:
+                    relation_envs.extend(
+                        self._iter_relation_binder_envs(
+                            problem,
+                            binder.vars,
+                            binder.domain_relation,
+                            base_env,
+                            span,
+                            context,
+                            diagnostics,
+                        )
+                    )
+                envs = relation_envs
+                continue
+            vals = problem.set_values.get(binder.domain_set)
+            if vals is None:
+                diagnostics.append(
+                    self._unsupported(span, f"unknown set `{binder.domain_set}` in {context}")
+                )
+                return []
+            set_envs: list[dict[str, object]] = []
+            for base_env in envs:
+                for val in sorted(vals, key=str):
+                    bound_env = dict(base_env)
+                    bound_env[binder.var] = val
+                    set_envs.append(bound_env)
+            envs = set_envs
+        return envs
+
+    def _iter_relation_binder_envs(
+        self,
+        problem: ir.GroundProblem,
+        vars: tuple[str, ...],
+        relation_name: str,
+        env: Mapping[str, object],
+        span: Span,
+        context: str,
+        diagnostics: list[Diagnostic],
+    ) -> list[dict[str, object]]:
+        tuples = problem.relation_values.get(relation_name)
+        if tuples is None:
+            diagnostics.append(
+                self._unsupported(span, f"unknown relation `{relation_name}` in {context}")
+            )
+            return []
+        out: list[dict[str, object]] = []
+        for values in sorted(tuples, key=lambda item: tuple(str(value) for value in item)):
+            if len(values) != len(vars):
+                diagnostics.append(
+                    self._unsupported(span, f"relation `{relation_name}` arity mismatch")
+                )
+                return []
+            next_env = dict(env)
+            for name, value in zip(vars, values, strict=True):
+                next_env[name] = value
+            out.append(next_env)
+        return out
+
     def _bool_func_call(
         self,
         problem: ir.GroundProblem,
@@ -1055,6 +1180,9 @@ class DimodCodegen:
         diagnostics: list[Diagnostic],
         env: Mapping[str, object],
     ) -> float | None:
+        relation_value = self._relation_call_value(problem, expr, diagnostics, env)
+        if relation_value is not None:
+            return 1.0 if relation_value else 0.0
         label = self._indexed_scalar_label(problem, expr, diagnostics, env)
         if label is not None:
             return None
@@ -1065,6 +1193,24 @@ class DimodCodegen:
         if isinstance(value, bool):
             return 1.0 if value else 0.0
         return None
+
+    def _relation_call_value(
+        self,
+        problem: ir.GroundProblem,
+        expr: ir.KFuncCall,
+        diagnostics: list[Diagnostic],
+        env: Mapping[str, object],
+    ) -> bool | None:
+        tuples = problem.relation_values.get(expr.name)
+        if tuples is None:
+            return None
+        args: list[str] = []
+        for arg in expr.args:
+            value = self._resolve_name_arg(problem, arg, diagnostics, env)
+            if value is None:
+                return None
+            args.append(value)
+        return tuple(args) in tuples
 
     def _num_func_call(
         self,

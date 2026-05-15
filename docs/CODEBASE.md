@@ -39,8 +39,8 @@ Pipeline from source to runtime result:
 
 ### 3.1 Frontend IR (`src/qsol/lower/ir.py`)
 
-- `KernelIR`: symbolic model after lowering
-- `GroundIR`: kernel IR + concrete sets/params
+- `KernelIR`: symbolic model after lowering, including set and relation declarations
+- `GroundIR`: kernel IR + concrete sets/relations/params
 - `BackendArtifacts`: exported file paths/stats
 
 ### 3.2 Targeting Types (`src/qsol/targeting/types.py`)

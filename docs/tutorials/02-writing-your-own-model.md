@@ -99,7 +99,34 @@ uv run qsol solve \
 
 The second command uses `entrypoint.runtime` from config. Add CLI `--runtime` to override.
 
-## 5. Backend-v1 Safety Checklist
+## 5. Relation-Based Data
+
+Use `relation` when your input is naturally tuple-shaped, such as graph edges or
+set membership. Example:
+
+```qsol
+problem RelationGraphIndependentSet {
+  set V;
+  relation Edge(u: V, v: V);
+
+  find Pick : Subset(V);
+
+  must all(Edge(u, v) for (u, v) in Edge);
+  maximize count(v in V where Pick.has(v));
+}
+```
+
+Relation data lives in config TOML:
+
+```toml
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+```
+
+## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:
 
@@ -111,7 +138,7 @@ To reduce unsupported diagnostics:
 
 > For a complete list of unsupported patterns, see [Backend V1 Limits](../../docs/BACKEND_V1_LIMITS.md).
 
-## 6. Incremental Extensions
+## 7. Incremental Extensions
 
 Try one at a time and rerun `inspect check` and `targets check`:
 

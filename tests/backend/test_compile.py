@@ -116,6 +116,96 @@ v3 = { v1 = 0, v2 = 3, v3 = 0 }
     assert Path(weighted_unit.artifacts.bqm_path or "").exists()
 
 
+def test_compile_supports_static_relation_iteration_and_membership(tmp_path: Path) -> None:
+    source = """
+problem IndependentSet {
+  set V;
+  relation Edge(u: V, v: V);
+
+  find Pick : Subset(V);
+
+  must all(Edge(u, v) for (u, v) in Edge);
+  must forall u in V: forall v in V: Edge(u, v) => Edge(v, u);
+  maximize count(v in V where Pick.has(v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "IndependentSet"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "a" },
+  { u = "b", v = "c" },
+  { u = "c", v = "b" },
+]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-rel"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="independent_set.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_tuple_relation_count_objective(tmp_path: Path) -> None:
+    source = """
+problem ReciprocalEdges {
+  set V;
+  relation Edge(u: V, v: V);
+
+  minimize count((u, v) in Edge where Edge(v, u));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ReciprocalEdges"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "a"], ["b", "c"]]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-rel-count"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="reciprocal_edges.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
 def test_compile_supports_model_vs_model_equality_without_objective(tmp_path: Path) -> None:
     source = """
 problem PartitionEqualSum {

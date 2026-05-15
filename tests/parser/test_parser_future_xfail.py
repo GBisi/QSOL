@@ -9,8 +9,7 @@ These tests document intent and drive implementation — they are not allowed
 to be silently passing or silently deleted.
 """
 
-import pytest
-
+from qsol.parse import ast
 from qsol.parse.parser import parse_to_ast
 
 # ---------------------------------------------------------------------------
@@ -18,12 +17,8 @@ from qsol.parse.parser import parse_to_ast
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="multi-generator comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_two_gen_sum() -> None:
-    """sum(Cost[u,v] for u in U for v in V) should parse after Milestone 1."""
+def test_two_gen_sum_parses_with_binder_list() -> None:
+    """sum(Cost[u,v] for u in U for v in V) parses with two binders."""
     text = """
 problem P {
   set U;
@@ -32,16 +27,21 @@ problem P {
   minimize sum(Cost[u, v] for u in U for v in V);
 }
 """
-    parse_to_ast(text, filename="xfail_two_gen_sum.qsol")
-    # must not raise
+    program = parse_to_ast(text, filename="two_gen_sum.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    objective = problem.stmts[-1]
+    assert isinstance(objective, ast.Objective)
+    assert isinstance(objective.expr, ast.NumAggregate)
+    assert isinstance(objective.expr.comp, ast.NumComprehension)
+    assert [(b.var, b.domain_set) for b in objective.expr.comp.binders] == [
+        ("u", "U"),
+        ("v", "V"),
+    ]
 
 
-@pytest.mark.xfail(
-    reason="multi-generator comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_two_gen_sum_with_where() -> None:
-    """sum(Cost[u,v] for u in V for v in V where u != v) should parse after Milestone 1."""
+def test_two_gen_sum_with_where_parses() -> None:
+    """sum(Cost[u,v] for u in V for v in V where u != v) parses."""
     text = """
 problem P {
   set V;
@@ -49,60 +49,85 @@ problem P {
   minimize sum(Cost[u, v] for u in V for v in V where u != v);
 }
 """
-    parse_to_ast(text, filename="xfail_two_gen_sum_where.qsol")
+    program = parse_to_ast(text, filename="two_gen_sum_where.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    objective = problem.stmts[-1]
+    assert isinstance(objective, ast.Objective)
+    assert isinstance(objective.expr, ast.NumAggregate)
+    assert isinstance(objective.expr.comp, ast.NumComprehension)
+    assert len(objective.expr.comp.binders) == 2
+    assert objective.expr.comp.where is not None
 
 
-@pytest.mark.xfail(
-    reason="multi-generator comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_two_gen_any() -> None:
-    """any(Allowed[i,j] for i in I for j in J) should parse after Milestone 1."""
+def test_two_gen_any_parses() -> None:
+    """any(Allowed[i,j] for i in I for j in J) parses."""
     text = """
 problem P {
   set I;
   set J;
-  param Allowed[I, J] : Bool = true;
-  must any(Allowed[i, j] for i in I for j in J);
+  find Assign : Mapping(I -> J);
+  must any(Assign.is(i, j) for i in I for j in J);
 }
 """
-    parse_to_ast(text, filename="xfail_two_gen_any.qsol")
+    program = parse_to_ast(text, filename="two_gen_any.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[-1]
+    assert isinstance(constraint, ast.Constraint)
+    assert isinstance(constraint.expr, ast.BoolAggregate)
+    assert isinstance(constraint.expr.comp, ast.BoolComprehension)
+    assert [(b.var, b.domain_set) for b in constraint.expr.comp.binders] == [
+        ("i", "I"),
+        ("j", "J"),
+    ]
 
 
-@pytest.mark.xfail(
-    reason="multi-generator comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_two_gen_all_with_where() -> None:
-    """all(Constraint[i,j] for i in I for j in J where Active[i]) should parse after Milestone 1."""
+def test_two_gen_all_with_where_parses() -> None:
+    """all(Constraint[i,j] for i in I for j in J where Active[i]) parses."""
     text = """
 problem P {
   set I;
   set J;
-  param Constraint[I, J] : Bool = true;
-  param Active[I] : Bool = true;
-  must all(Constraint[i, j] for i in I for j in J where Active[i]);
+  find Assign : Mapping(I -> J);
+  find Active : Subset(I);
+  must all(Assign.is(i, j) for i in I for j in J where Active.has(i));
 }
 """
-    parse_to_ast(text, filename="xfail_two_gen_all_where.qsol")
+    program = parse_to_ast(text, filename="two_gen_all_where.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[-1]
+    assert isinstance(constraint, ast.Constraint)
+    assert isinstance(constraint.expr, ast.BoolAggregate)
+    assert isinstance(constraint.expr.comp, ast.BoolComprehension)
+    assert len(constraint.expr.comp.binders) == 2
+    assert constraint.expr.comp.where is not None
 
 
-@pytest.mark.xfail(
-    reason="multi-generator comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_three_gen_any() -> None:
-    """any(Allowed[i,j,k] for i in I for j in J for k in K) should parse after Milestone 1."""
+def test_three_gen_any_parses() -> None:
+    """any(Allowed[i,j,k] for i in I for j in J for k in K) parses."""
     text = """
 problem P {
   set I;
   set J;
   set K;
-  param Allowed[I, J, K] : Bool = true;
-  must any(Allowed[i, j, k] for i in I for j in J for k in K);
+  find Active : Subset(I);
+  must any(Active.has(i) for i in I for j in J for k in K);
 }
 """
-    parse_to_ast(text, filename="xfail_three_gen_any.qsol")
+    program = parse_to_ast(text, filename="three_gen_any.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[-1]
+    assert isinstance(constraint, ast.Constraint)
+    assert isinstance(constraint.expr, ast.BoolAggregate)
+    assert isinstance(constraint.expr.comp, ast.BoolComprehension)
+    assert [(b.var, b.domain_set) for b in constraint.expr.comp.binders] == [
+        ("i", "I"),
+        ("j", "J"),
+        ("k", "K"),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -110,12 +135,8 @@ problem P {
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="relation declarations not yet implemented",
-    strict=True,
-)
-def test_xfail_relation_declaration() -> None:
-    """relation Edge(u: V, v: V); should parse after Milestone 2."""
+def test_relation_declaration_parses() -> None:
+    """relation Edge(u: V, v: V); parses to a relation declaration."""
     text = """
 problem P {
   set V;
@@ -124,15 +145,20 @@ problem P {
   must true;
 }
 """
-    parse_to_ast(text, filename="xfail_relation_decl.qsol")
+    program = parse_to_ast(text, filename="relation_decl.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    relation = problem.stmts[1]
+    assert isinstance(relation, ast.RelationDecl)
+    assert relation.name == "Edge"
+    assert [(field.name, field.set_name) for field in relation.fields] == [
+        ("u", "V"),
+        ("v", "V"),
+    ]
 
 
-@pytest.mark.xfail(
-    reason="relation membership calls not yet implemented",
-    strict=True,
-)
-def test_xfail_relation_membership_call() -> None:
-    """Edge(u, v) membership call in constraint should parse after Milestone 2."""
+def test_relation_membership_call_parses() -> None:
+    """Edge(u, v) membership call parses after a relation declaration."""
     text = """
 problem P {
   set V;
@@ -141,15 +167,15 @@ problem P {
   must forall u in V: forall v in V: not (Pick.has(u) and Pick.has(v) and Edge(u, v));
 }
 """
-    parse_to_ast(text, filename="xfail_relation_call.qsol")
+    program = parse_to_ast(text, filename="relation_call.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[-1]
+    assert isinstance(constraint, ast.Constraint)
 
 
-@pytest.mark.xfail(
-    reason="tuple binders in comprehensions not yet implemented",
-    strict=True,
-)
-def test_xfail_tuple_binder_in_count() -> None:
-    """count((u,v) in Edge where Pick.has(u) and Pick.has(v)) after Milestone 2."""
+def test_tuple_binder_in_count_parses() -> None:
+    """count((u,v) in Edge where Pick.has(u) and Pick.has(v)) parses."""
     text = """
 problem P {
   set V;
@@ -158,4 +184,14 @@ problem P {
   minimize count((u, v) in Edge where Pick.has(u) and Pick.has(v));
 }
 """
-    parse_to_ast(text, filename="xfail_tuple_binder_count.qsol")
+    program = parse_to_ast(text, filename="tuple_binder_count.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    objective = problem.stmts[-1]
+    assert isinstance(objective, ast.Objective)
+    assert isinstance(objective.expr, ast.NumAggregate)
+    assert isinstance(objective.expr.comp, ast.CountComprehension)
+    binder = objective.expr.comp.binders[0]
+    assert isinstance(binder, ast.TupleCompBinder)
+    assert binder.vars == ("u", "v")
+    assert binder.domain_relation == "Edge"

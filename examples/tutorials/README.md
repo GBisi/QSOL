@@ -14,6 +14,10 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `minimum_graph_coloring.qsol.toml`
 - `scalar_bool_demo.qsol`
 - `scalar_bool_demo.qsol.toml`
+- `relation_graph_independent_set.qsol`
+- `relation_graph_independent_set.qsol.toml`
+- `relation_set_packing.qsol`
+- `relation_set_packing.qsol.toml`
 
 ## Run
 
@@ -77,6 +81,24 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol solve \
+  examples/tutorials/relation_graph_independent_set.qsol \
+  --config examples/tutorials/relation_graph_independent_set.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/relation_graph_independent_set \
+  --runtime-option sampler=exact
+```
+
+```bash
+uv run qsol solve \
+  examples/tutorials/relation_set_packing.qsol \
+  --config examples/tutorials/relation_set_packing.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/relation_set_packing \
+  --runtime-option sampler=exact
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -103,6 +125,13 @@ Commands succeed and write artifacts under `outdir/*`, including:
 - `scalar_bool_demo.qsol.toml`
   - `scenarios.default.sets.Machines`
   - `scenarios.default.params.Capacity`
+- `relation_graph_independent_set.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+- `relation_set_packing.qsol.toml`
+  - `scenarios.baseline.sets.Sets`
+  - `scenarios.baseline.sets.Items`
+  - `scenarios.baseline.relations.Contains`
 
 ## Related
 

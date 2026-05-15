@@ -1,0 +1,14 @@
+use stdlib.logic;
+
+problem RelationSetPacking {
+  set Sets;
+  set Items;
+  relation Contains(s: Sets, item: Items);
+
+  find Chosen : Subset(Sets);
+
+  must forall item in Items:
+    sum(indicator(Chosen.has(s)) for s in Sets where Contains(s, item)) <= 1;
+
+  maximize count(s in Sets where Chosen.has(s));
+}

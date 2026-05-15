@@ -1,0 +1,21 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "RelationGraphIndependentSet"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c", "d"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "a" },
+  { u = "b", v = "c" },
+  { u = "c", v = "b" },
+  { u = "c", v = "d" },
+  { u = "d", v = "c" },
+]

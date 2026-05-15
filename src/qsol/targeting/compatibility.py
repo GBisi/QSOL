@@ -80,6 +80,16 @@ def _collect_expr_capabilities(expr: ir.KExpr, capabilities: set[str]) -> None:
         _collect_expr_capabilities(expr.expr, capabilities)
         return
 
+    if isinstance(expr, ir.KTupleQuantifier):
+        capability = (
+            "constraint.quantifier.forall.v1"
+            if expr.kind == "forall"
+            else "constraint.quantifier.exists.v1"
+        )
+        capabilities.add(capability)
+        _collect_expr_capabilities(expr.expr, capabilities)
+        return
+
     if isinstance(expr, ir.KAnd):
         capabilities.add("expression.bool.and.v1")
         _collect_expr_capabilities(expr.left, capabilities)

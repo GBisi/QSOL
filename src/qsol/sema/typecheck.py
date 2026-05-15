@@ -15,6 +15,7 @@ from qsol.sema.types import (
     ElemOfType,
     IntRangeType,
     ParamType,
+    RelationType,
     SetType,
     Type,
     UnknownInstanceType,
@@ -213,6 +214,14 @@ class TypeChecker:
                 symbol = scope.lookup(expr.name)
                 if (
                     symbol is not None
+                    and symbol.kind == SymbolKind.RELATION
+                    and isinstance(symbol.type, RelationType)
+                ):
+                    out = self._relation_call_type(
+                        expr, symbol.type, scope, binders, diagnostics, tmap
+                    )
+                elif (
+                    symbol is not None
                     and symbol.kind in {SymbolKind.PARAM, SymbolKind.FIND}
                     and isinstance(symbol.type, ParamType)
                 ):
@@ -316,10 +325,21 @@ class TypeChecker:
                     )
                 )
             out = BOOL
+        elif isinstance(expr, ast.TupleQuantifier):
+            body_scope = dict(binders)
+            tuple_binder = ast.TupleCompBinder(
+                span=expr.span,
+                vars=expr.vars,
+                domain_relation=expr.domain_relation,
+            )
+            self._extend_tuple_binder(scope, body_scope, tuple_binder, expr.span, diagnostics)
+            body_ty = self._expr_type(expr.expr, scope, body_scope, diagnostics, tmap)
+            if not isinstance(body_ty, type(BOOL)):
+                diagnostics.append(self._type_err(expr.expr.span, "quantifier body must be Bool"))
+            out = BOOL
         elif isinstance(expr, ast.BoolAggregate):
-            binder_ty = self._binder_type(scope, expr.comp.domain_set)
             inner = dict(binders)
-            inner[expr.comp.var] = binder_ty
+            self._extend_comp_binders(scope, inner, expr.comp.binders, expr.comp.span, diagnostics)
             term_ty = self._expr_type(expr.comp.term, scope, inner, diagnostics, tmap)
             if not isinstance(term_ty, type(BOOL)):
                 diagnostics.append(
@@ -339,9 +359,8 @@ class TypeChecker:
                     )
             out = BOOL
         elif isinstance(expr, ast.BoolComprehension):
-            binder_ty = self._binder_type(scope, expr.domain_set)
             body_scope = dict(binders)
-            body_scope[expr.var] = binder_ty
+            self._extend_comp_binders(scope, body_scope, expr.binders, expr.span, diagnostics)
             term_ty = self._expr_type(expr.term, scope, body_scope, diagnostics, tmap)
             if not isinstance(term_ty, type(BOOL)):
                 diagnostics.append(
@@ -353,26 +372,13 @@ class TypeChecker:
                 if not isinstance(where_ty, type(BOOL)):
                     diagnostics.append(self._type_err(expr.where.span, "where clause must be Bool"))
 
-            if self._lookup_set(scope, expr.domain_set) is None:
-                suggestion = self._did_you_mean(expr.domain_set, self._set_names(scope))
-                help_items = [f"Declare set `{expr.domain_set}` before using it."]
-                if suggestion is not None:
-                    help_items.append(f"Did you mean `{suggestion}`?")
-                diagnostics.append(
-                    Diagnostic(
-                        severity=Severity.ERROR,
-                        code="QSOL2001",
-                        message=f"unknown set `{expr.domain_set}` in comprehension",
-                        span=expr.span,
-                        help=help_items,
-                    )
-                )
             out = CompType(elem_type=BOOL)
         elif isinstance(expr, ast.NumAggregate):
-            binder_ty = self._binder_type(scope, expr.comp.domain_set)
             inner = dict(binders)
-            inner[expr.comp.var] = binder_ty
             if isinstance(expr.comp, ast.NumComprehension):
+                self._extend_comp_binders(
+                    scope, inner, expr.comp.binders, expr.comp.span, diagnostics
+                )
                 term_ty = self._expr_type(expr.comp.term, scope, inner, diagnostics, tmap)
                 if not is_numeric(term_ty):
                     diagnostics.append(
@@ -392,7 +398,15 @@ class TypeChecker:
                         )
                 out = REAL if expr.kind == "sum" else IntRangeType(0, 2**31 - 1)
             else:
-                if expr.comp.var_ref != expr.comp.var:
+                # CountComprehension
+                self._extend_comp_binders(
+                    scope, inner, expr.comp.binders, expr.comp.span, diagnostics
+                )
+                first_binder = expr.comp.binders[0]
+                if (
+                    isinstance(first_binder, ast.CompBinder)
+                    and expr.comp.var_ref != first_binder.var
+                ):
                     diagnostics.append(
                         self._type_err(
                             expr.comp.span, "count binder and counted variable must match"
@@ -555,6 +569,132 @@ class TypeChecker:
         )
         return ElemOfType(set_name=set_name, numeric_kind=numeric_kind)
 
+    def _extend_comp_binders(
+        self,
+        scope: Scope,
+        binders: dict[str, Type],
+        comp_binders: tuple[ast.CompBinder | ast.TupleCompBinder, ...],
+        span: Span,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        for binder in comp_binders:
+            if isinstance(binder, ast.TupleCompBinder):
+                self._extend_tuple_binder(scope, binders, binder, span, diagnostics)
+                continue
+            self._define_comp_var(
+                binders,
+                binder.var,
+                self._binder_type(scope, binder.domain_set),
+                span,
+                diagnostics,
+            )
+            if self._lookup_set(scope, binder.domain_set) is None:
+                self._unknown_domain_diagnostic(
+                    scope, binder.domain_set, "set", "comprehension", span, diagnostics
+                )
+
+    def _define_comp_var(
+        self,
+        binders: dict[str, Type],
+        name: str,
+        ty: Type,
+        span: Span,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if name in binders:
+            diagnostics.append(self._type_err(span, f"duplicate binder `{name}` in comprehension"))
+        binders[name] = ty
+
+    def _extend_tuple_binder(
+        self,
+        scope: Scope,
+        binders: dict[str, Type],
+        binder: ast.TupleCompBinder,
+        span: Span,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        symbol = scope.lookup(binder.domain_relation)
+        if (
+            symbol is None
+            or symbol.kind != SymbolKind.RELATION
+            or not isinstance(symbol.type, RelationType)
+        ):
+            self._unknown_domain_diagnostic(
+                scope, binder.domain_relation, "relation", "comprehension", span, diagnostics
+            )
+            return
+        if len(binder.vars) != len(symbol.type.fields):
+            diagnostics.append(
+                self._type_err(
+                    span,
+                    f"relation `{binder.domain_relation}` tuple binder expects "
+                    f"{len(symbol.type.fields)} variable(s)",
+                )
+            )
+            return
+        for name, relation_field in zip(binder.vars, symbol.type.fields, strict=True):
+            self._define_comp_var(
+                binders,
+                name,
+                ElemOfType(
+                    relation_field.set_type.name,
+                    numeric_kind=relation_field.set_type.numeric_kind,
+                ),
+                span,
+                diagnostics,
+            )
+
+    def _unknown_domain_diagnostic(
+        self,
+        scope: Scope,
+        name: str,
+        kind: str,
+        context: str,
+        span: Span,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        candidates = self._set_names(scope) if kind == "set" else self._relation_names(scope)
+        suggestion = self._did_you_mean(name, candidates)
+        help_items = [f"Declare {kind} `{name}` before using it."]
+        if suggestion is not None:
+            help_items.append(f"Did you mean `{suggestion}`?")
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2001",
+                message=f"unknown {kind} `{name}` in {context}",
+                span=span,
+                help=help_items,
+            )
+        )
+
+    def _relation_call_type(
+        self,
+        expr: ast.FuncCall,
+        relation_type: RelationType,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        if len(expr.args) != len(relation_type.fields):
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"relation `{expr.name}` expects {len(relation_type.fields)} argument(s)",
+                )
+            )
+        for idx, arg in enumerate(expr.args):
+            arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+            if idx >= len(relation_type.fields):
+                continue
+            expected_set = relation_type.fields[idx].set_type.name
+            if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                diagnostics.append(
+                    self._type_err(arg.span, f"expected element of `{expected_set}`")
+                )
+        return BOOL
+
     def _scenario_const_int_type(
         self,
         expr: ast.NumExpr,
@@ -687,6 +827,16 @@ class TypeChecker:
         cur: Scope | None = scope
         while cur is not None:
             names.update(name for name, sym in cur.symbols.items() if sym.kind == SymbolKind.SET)
+            cur = cur.parent
+        return sorted(names)
+
+    def _relation_names(self, scope: Scope) -> list[str]:
+        names: set[str] = set()
+        cur: Scope | None = scope
+        while cur is not None:
+            names.update(
+                name for name, sym in cur.symbols.items() if sym.kind == SymbolKind.RELATION
+            )
             cur = cur.parent
         return sorted(names)
 

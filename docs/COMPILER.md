@@ -50,9 +50,10 @@ When running `qsol build` or `qsol solve`, the compiler generates an output dire
 ## 3. Intermediate Representations (IR)
 
 ### Kernel IR (KIR)
-A symbolic representation where sets and parameters are still abstract names. This is useful for analyzing the structure of the model without specific data.
+A symbolic representation where sets, relations, and parameters are still abstract names. This is useful for analyzing the structure of the model without specific data.
 
 ### Ground IR (GIR)
-A concrete representation where all sets are finite collections of values, and all expressions are fully expanded. This is the input to the backend plugins.
+A concrete representation where all sets are finite collections of values, static relations are finite tuples, and all expressions are fully expanded. This is the input to the backend plugins.
 
 Derived sets are recorded with their source (`Range`) and are not loaded from scenario data. Range members are native integers in GIR so range binders can participate in numeric expressions.
+Static relation declarations are loaded from scenario `relations` data during grounding. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.

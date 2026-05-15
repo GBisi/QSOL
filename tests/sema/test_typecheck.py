@@ -218,6 +218,90 @@ problem P {
     )
 
 
+def test_relation_fields_and_membership_typecheck() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  must forall u in V: forall v in V: Edge(u, v) or not Edge(v, u);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_ok.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_relation_membership_rejects_wrong_arity() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  must forall u in V: Edge(u);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_arity.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "relation `Edge` expects 2 argument(s)" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_relation_membership_rejects_wrong_argument_set() -> None:
+    text = """
+problem P {
+  set A;
+  set B;
+  relation Edge(u: A, v: A);
+  must forall a in A: forall b in B: Edge(a, b);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_arg_set.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "expected element of `A`" in d.message for d in unit.diagnostics
+    )
+
+
+def test_relation_tuple_binder_types_body() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  find Pick : Subset(V);
+  must all(not (Pick.has(u) and Pick.has(v)) for (u, v) in Edge);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_tuple_binder.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_relation_declaration_rejects_unknown_set_and_duplicate_fields() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, u: Missing);
+  must true;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_decl_bad.qsol"))
+    messages = [d.message for d in unit.diagnostics]
+    assert any("redefinition of `u`" in msg for msg in messages)
+    assert any("unknown set `Missing` in relation `Edge`" in msg for msg in messages)
+
+
+def test_relation_tuple_binder_rejects_wrong_arity() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  must forall (u, v, w) in Edge: true;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="relation_tuple_bad.qsol"))
+    assert any(
+        d.code == "QSOL2101" and "tuple binder expects 2 variable(s)" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_unknown_function_or_predicate_call_is_rejected_after_macro_pass() -> None:
     text = """
 problem P {

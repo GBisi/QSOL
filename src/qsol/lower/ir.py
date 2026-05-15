@@ -17,6 +17,18 @@ class KSetDecl(KNode):
     expr: KSetExpr | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class KRelationField(KNode):
+    name: str
+    set_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class KRelationDecl(KNode):
+    name: str
+    fields: tuple[KRelationField, ...]
+
+
 class KSetExpr(KNode):
     pass
 
@@ -209,17 +221,99 @@ class KQuantifier(KBoolExpr):
 
 
 @dataclass(frozen=True, slots=True)
-class KNumComprehension(KNode):
-    term: KNumExpr
+class KTupleQuantifier(KBoolExpr):
+    kind: str
+    vars: tuple[str, ...]
+    domain_relation: str
+    expr: KBoolExpr
+
+
+@dataclass(frozen=True, slots=True)
+class KCompBinder(KNode):
+    """One `for VAR in DOMAIN` binder in a kernel IR comprehension."""
+
     var: str
     domain_set: str
 
 
 @dataclass(frozen=True, slots=True)
+class KTupleCompBinder(KNode):
+    vars: tuple[str, ...]
+    domain_relation: str
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class KNumComprehension(KNode):
+    term: KNumExpr
+    binders: tuple[KCompBinder | KTupleCompBinder, ...]
+
+    def __init__(
+        self,
+        span: Span,
+        term: KNumExpr,
+        binders: tuple[KCompBinder | KTupleCompBinder, ...] | None = None,
+        *,
+        var: str | None = None,
+        domain_set: str | None = None,
+    ) -> None:
+        if binders is None:
+            if var is None or domain_set is None:
+                raise TypeError("KNumComprehension requires binders or var/domain_set")
+            binders = (KCompBinder(span=span, var=var, domain_set=domain_set),)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "term", term)
+        object.__setattr__(self, "binders", binders)
+
+    @property
+    def var(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, KCompBinder):
+            raise AttributeError("tuple comprehension binders do not have var")
+        return binder.var
+
+    @property
+    def domain_set(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, KCompBinder):
+            raise AttributeError("tuple comprehension binders do not have domain_set")
+        return binder.domain_set
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class KBoolComprehension(KNode):
     term: KBoolExpr
-    var: str
-    domain_set: str
+    binders: tuple[KCompBinder | KTupleCompBinder, ...]
+
+    def __init__(
+        self,
+        span: Span,
+        term: KBoolExpr,
+        binders: tuple[KCompBinder | KTupleCompBinder, ...] | None = None,
+        *,
+        var: str | None = None,
+        domain_set: str | None = None,
+    ) -> None:
+        if binders is None:
+            if var is None or domain_set is None:
+                raise TypeError("KBoolComprehension requires binders or var/domain_set")
+            binders = (KCompBinder(span=span, var=var, domain_set=domain_set),)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "term", term)
+        object.__setattr__(self, "binders", binders)
+
+    @property
+    def var(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, KCompBinder):
+            raise AttributeError("tuple comprehension binders do not have var")
+        return binder.var
+
+    @property
+    def domain_set(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, KCompBinder):
+            raise AttributeError("tuple comprehension binders do not have domain_set")
+        return binder.domain_set
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +341,7 @@ class KProblem(KNode):
     finds: tuple[KFindDecl, ...]
     constraints: tuple[KConstraint, ...]
     objectives: tuple[KObjective, ...]
+    relations: tuple[KRelationDecl, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +357,7 @@ class GroundProblem(KNode):
     finds: tuple[KFindDecl, ...]
     constraints: tuple[KConstraint, ...]
     objectives: tuple[KObjective, ...]
+    relation_values: dict[str, tuple[tuple[object, ...], ...]] = field(default_factory=dict)
     derived_sets: dict[str, str] = field(default_factory=dict)
 
 

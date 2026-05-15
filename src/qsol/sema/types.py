@@ -30,6 +30,18 @@ class SetType(Type):
 
 
 @dataclass(frozen=True, slots=True)
+class RelationFieldType:
+    name: str
+    set_type: SetType
+
+
+@dataclass(frozen=True, slots=True)
+class RelationType(Type):
+    name: str
+    fields: tuple[RelationFieldType, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ElemOfType(Type):
     set_name: str
     numeric_kind: str | None = None

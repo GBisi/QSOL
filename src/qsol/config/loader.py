@@ -247,6 +247,7 @@ def materialize_instance_payload(*, config: QsolConfig, scenario_name: str) -> d
 
     payload: dict[str, object] = {
         "sets": copy.deepcopy(scenario.sets),
+        "relations": copy.deepcopy(scenario.relations),
         "params": copy.deepcopy(scenario.params),
     }
     if scenario.problem is not None:
@@ -399,6 +400,7 @@ def _parse_scenarios(raw: object, *, path: str) -> dict[str, ScenarioConfig]:
         )
 
         sets = _parse_optional_mapping(scenario_table, "sets", scenario_path)
+        relations = _parse_optional_mapping(scenario_table, "relations", scenario_path)
         params = _parse_optional_mapping(scenario_table, "params", scenario_path)
         execution = _parse_execution(
             scenario_table.get("execution"), path=f"{scenario_path}.execution"
@@ -408,6 +410,7 @@ def _parse_scenarios(raw: object, *, path: str) -> dict[str, ScenarioConfig]:
         scenarios[scenario_name] = ScenarioConfig(
             problem=problem,
             sets=sets,
+            relations=relations,
             params=params,
             execution=execution,
             solve=solve,

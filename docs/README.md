@@ -8,7 +8,7 @@ Welcome to the QSOL documentation. Start here to find the right guide for your n
 | :--- | :--- |
 | [README](../README.md) | Project overview, installation, and first example |
 | [Tutorial](TUTORIAL.md) | Guided introduction to writing, compiling, and running a QSOL model |
-| [Tutorials](tutorials/README.md) | Step-by-step tutorial series (first program → custom unknowns) |
+| [Tutorials](tutorials/README.md) | Step-by-step tutorial series (first program → custom unknowns, including relation data examples) |
 
 ## Language
 

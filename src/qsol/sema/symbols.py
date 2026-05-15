@@ -11,6 +11,7 @@ class SymbolKind(str, Enum):
     UNKNOWN_DEF = "unknown_def"
     PROBLEM = "problem"
     SET = "set"
+    RELATION = "relation"
     PARAM = "param"
     FIND = "find"
     BINDER = "binder"
