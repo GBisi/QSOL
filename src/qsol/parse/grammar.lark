@@ -37,6 +37,7 @@ block_problem: sep* problem_stmt_list?
 problem_stmt_list: problem_stmt (sep+ problem_stmt)* sep*
 
 problem_stmt: set_decl
+            | relation_decl
             | param_decl
             | find_decl
             | constraint_stmt
@@ -94,6 +95,10 @@ set_initializer: "=" set_expr
 set_expr: range_set_expr
 range_set_expr: "Range" "(" num_expr "," num_expr ")"
 
+relation_decl: "relation" NAME "(" relation_fields ")"
+relation_fields: relation_field ("," relation_field)*
+relation_field: NAME ":" NAME
+
 param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
 param_indexing: "[" name_list "]"
 name_list: NAME ("," NAME)*
@@ -147,6 +152,8 @@ objective_stmt: ("minimize" | "maximize") num_expr
 
 quantifier: "forall" NAME "in" NAME ":" bool_expr
           | "exists" NAME "in" NAME ":" bool_expr
+          | "forall" tuple_binder "in" NAME ":" bool_expr
+          | "exists" tuple_binder "in" NAME ":" bool_expr
 
 // -----------------------
 // Aggregates + comprehensions (STRICT BY TYPE)
@@ -160,17 +167,24 @@ count_agg: "count" "(" comp_count ")"
 any_agg: "any" "(" comp_bool ")"
 all_agg: "all" "(" comp_bool ")"
 
-// Comprehensions: term for x in X [where pred] [else alt]
-comp_num: num_expr "for" NAME "in" NAME comp_tail_num?
-comp_bool: bool_expr "for" NAME "in" NAME comp_tail_bool?
-comp_count: NAME "for" NAME "in" NAME comp_tail_bool?   // count(x for x in X where ...)
-          | NAME "in" NAME comp_tail_bool?              // count(x in X where ...)
+// Comprehensions: term for x in X [for y in Y ...] [where pred] [else alt]
+// comp_binders is one-or-more binders; single binder is the backward-compatible case.
+comp_binders: comp_binder+
+comp_binder: "for" NAME "in" NAME              -> set_comp_binder
+           | "for" tuple_binder "in" NAME      -> tuple_comp_binder
+tuple_binder: "(" NAME "," NAME ("," NAME)* ")"
+
+comp_num: num_expr comp_binders comp_tail_num?
+comp_bool: bool_expr comp_binders comp_tail_bool?
+comp_count: NAME comp_binders comp_tail_bool?   // count(x for x in X [for y in Y] where ...)
+          | NAME "in" NAME comp_tail_bool?       // count(x in X where ...) shorthand
+          | tuple_binder "in" NAME comp_tail_bool?
 
 comp_tail_num: where_clause else_clause_num?
              | else_clause_num
 
 comp_tail_bool: where_clause else_clause_bool?
-              | else_clause_bool
+               | else_clause_bool
 
 where_clause: "where" bool_expr
 else_clause_num: "else" num_expr
@@ -270,8 +284,8 @@ arg_list: call_arg ("," call_arg)*
 call_arg: comp_arg_num
         | comp_arg_bool
         | expr
-comp_arg_num: num_expr "for" NAME "in" NAME comp_tail_num?
-comp_arg_bool: bool_expr "for" NAME "in" NAME comp_tail_bool?
+comp_arg_num: num_expr comp_binders comp_tail_num?
+comp_arg_bool: bool_expr comp_binders comp_tail_bool?
 ?expr: bool_expr | num_expr
 
 literal: BOOL

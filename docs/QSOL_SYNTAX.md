@@ -103,7 +103,43 @@ Usage notes:
 - Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
 - Scalar call/index forms such as `C[]` and `Flag()` are rejected with `QSOL2101`.
 
-### 3.3 Finds
+### 3.3 Relations
+
+```qsol
+relation Edge(u: Nodes, v: Nodes);
+relation Contains(set: Sets, element: Items);
+```
+
+Relations are finite, static data. Fields must reference declared sets. Use
+relation membership calls as boolean expressions:
+
+```qsol
+Edge(u, v)
+not Edge(v, u)
+```
+
+Tuple binders destructure relation rows:
+
+```qsol
+forall (u, v) in Edge: Edge(u, v)
+count((u, v) in Edge where Edge(v, u))
+all(Edge(u, v) for (u, v) in Edge)
+```
+
+Scenario TOML supplies relation data under `scenarios.<name>.relations`.
+
+```toml
+[scenarios.triangle.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+```
+
+Compact tuple arrays are also accepted: `Edge = [["a", "b"], ["b", "c"]]`.
+Record binders (`for e in Edge`, `e.u`) are not supported yet.
+
+### 3.4 Finds
 
 ```qsol
 find Pick : Subset(Workers);

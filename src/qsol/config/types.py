@@ -64,6 +64,7 @@ class SolveSettings:
 class ScenarioConfig:
     problem: str | None = None
     sets: dict[str, object] = field(default_factory=dict)
+    relations: dict[str, object] = field(default_factory=dict)
     params: dict[str, object] = field(default_factory=dict)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     solve: SolveConfig = field(default_factory=SolveConfig)

@@ -61,6 +61,18 @@ class SetDecl(ProblemStmt):
     expr: SetExpr | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class RelationField(Node):
+    name: str
+    set_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class RelationDecl(ProblemStmt):
+    name: str
+    fields: tuple[RelationField, ...]
+
+
 class SetExpr(Node):
     pass
 
@@ -324,30 +336,156 @@ class Quantifier(BoolExpr):
 
 
 @dataclass(frozen=True, slots=True)
-class NumComprehension(Node):
-    term: NumExpr
+class TupleQuantifier(BoolExpr):
+    kind: str
+    vars: tuple[str, ...]
+    domain_relation: str
+    expr: BoolExpr
+
+
+@dataclass(frozen=True, slots=True)
+class CompBinder(Node):
+    """One `for VAR in DOMAIN` binder inside a comprehension."""
+
     var: str
     domain_set: str
+
+
+@dataclass(frozen=True, slots=True)
+class TupleCompBinder(Node):
+    """One tuple destructuring binder over a relation."""
+
+    vars: tuple[str, ...]
+    domain_relation: str
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class NumComprehension(Node):
+    term: NumExpr
+    binders: tuple["CompBinder | TupleCompBinder", ...]
     where: BoolExpr | None = None
     else_term: NumExpr | None = None
 
+    def __init__(
+        self,
+        span: Span,
+        term: NumExpr,
+        binders: tuple["CompBinder | TupleCompBinder", ...] | None = None,
+        *,
+        var: str | None = None,
+        domain_set: str | None = None,
+        where: BoolExpr | None = None,
+        else_term: NumExpr | None = None,
+    ) -> None:
+        if binders is None:
+            if var is None or domain_set is None:
+                raise TypeError("NumComprehension requires binders or var/domain_set")
+            binders = (CompBinder(span=span, var=var, domain_set=domain_set),)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "term", term)
+        object.__setattr__(self, "binders", binders)
+        object.__setattr__(self, "where", where)
+        object.__setattr__(self, "else_term", else_term)
 
-@dataclass(frozen=True, slots=True)
+    @property
+    def var(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have var")
+        return binder.var
+
+    @property
+    def domain_set(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have domain_set")
+        return binder.domain_set
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class BoolComprehension(Node):
     term: BoolExpr
-    var: str
-    domain_set: str
+    binders: tuple["CompBinder | TupleCompBinder", ...]
     where: BoolExpr | None = None
     else_term: BoolExpr | None = None
 
+    def __init__(
+        self,
+        span: Span,
+        term: BoolExpr,
+        binders: tuple["CompBinder | TupleCompBinder", ...] | None = None,
+        *,
+        var: str | None = None,
+        domain_set: str | None = None,
+        where: BoolExpr | None = None,
+        else_term: BoolExpr | None = None,
+    ) -> None:
+        if binders is None:
+            if var is None or domain_set is None:
+                raise TypeError("BoolComprehension requires binders or var/domain_set")
+            binders = (CompBinder(span=span, var=var, domain_set=domain_set),)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "term", term)
+        object.__setattr__(self, "binders", binders)
+        object.__setattr__(self, "where", where)
+        object.__setattr__(self, "else_term", else_term)
 
-@dataclass(frozen=True, slots=True)
+    @property
+    def var(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have var")
+        return binder.var
+
+    @property
+    def domain_set(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have domain_set")
+        return binder.domain_set
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class CountComprehension(Node):
     var_ref: str
-    var: str
-    domain_set: str
+    binders: tuple["CompBinder | TupleCompBinder", ...]
     where: BoolExpr | None = None
     else_term: BoolExpr | None = None
+
+    def __init__(
+        self,
+        span: Span,
+        var_ref: str,
+        binders: tuple["CompBinder | TupleCompBinder", ...] | None = None,
+        *,
+        var: str | None = None,
+        domain_set: str | None = None,
+        where: BoolExpr | None = None,
+        else_term: BoolExpr | None = None,
+    ) -> None:
+        if binders is None:
+            if var is None or domain_set is None:
+                raise TypeError("CountComprehension requires binders or var/domain_set")
+            binders = (CompBinder(span=span, var=var, domain_set=domain_set),)
+        object.__setattr__(self, "span", span)
+        object.__setattr__(self, "var_ref", var_ref)
+        object.__setattr__(self, "binders", binders)
+        object.__setattr__(self, "where", where)
+        object.__setattr__(self, "else_term", else_term)
+
+    @property
+    def var(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have var")
+        return binder.var
+
+    @property
+    def domain_set(self) -> str:
+        binder = self.binders[0]
+        if not isinstance(binder, CompBinder):
+            raise AttributeError("tuple comprehension binders do not have domain_set")
+        return binder.domain_set
 
 
 @dataclass(frozen=True, slots=True)

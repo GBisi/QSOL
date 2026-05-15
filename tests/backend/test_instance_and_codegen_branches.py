@@ -93,7 +93,6 @@ def test_load_instance_requires_object_payload(tmp_path: Path) -> None:
 
 
 def test_instance_selection_execution_config_and_range_errors() -> None:
-    span = _span()
     assert read_execution_config({}).runtime is None
     assert (
         read_execution_config(
@@ -101,6 +100,94 @@ def test_instance_selection_execution_config_and_range_errors() -> None:
         ).runtime
         == "local-dimod"
     )
+
+
+def test_relation_instance_shape_diagnostics() -> None:
+    span = _span()
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="V"),),
+                relations=(
+                    ir.KRelationDecl(
+                        span=span,
+                        name="Edge",
+                        fields=(
+                            ir.KRelationField(span=span, name="u", set_name="V"),
+                            ir.KRelationField(span=span, name="v", set_name="V"),
+                        ),
+                    ),
+                ),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    missing = instantiate_ir(kernel, {"problem": "P", "sets": {"V": ["a"]}})
+    assert any("missing relation values for `Edge`" in d.message for d in missing.diagnostics)
+
+    non_array = instantiate_ir(
+        kernel,
+        {"problem": "P", "sets": {"V": ["a"]}, "relations": {"Edge": "bad"}},
+    )
+    assert any("relation `Edge` must be an array" in d.message for d in non_array.diagnostics)
+
+    missing_field_set_kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(),
+                relations=(
+                    ir.KRelationDecl(
+                        span=span,
+                        name="Edge",
+                        fields=(ir.KRelationField(span=span, name="u", set_name="V"),),
+                    ),
+                ),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+    missing_field_set = instantiate_ir(
+        missing_field_set_kernel,
+        {"problem": "P", "relations": {"Edge": [{"u": "a"}]}},
+    )
+    assert any("missing set values for `V`" in d.message for d in missing_field_set.diagnostics)
+
+    wrong_shape = instantiate_ir(
+        kernel,
+        {
+            "problem": "P",
+            "sets": {"V": ["a"]},
+            "relations": {"Edge": [{"u": "a"}, ["a"], "bad"], "Extra": []},
+        },
+    )
+    messages = [d.message for d in wrong_shape.diagnostics]
+    assert any("unknown relation `Extra`" in msg for msg in messages)
+    assert any("wrong fields" in msg for msg in messages)
+    assert any("wrong arity" in msg for msg in messages)
+    assert any("must be an object or array" in msg for msg in messages)
+
+    bad_elem = instantiate_ir(
+        kernel,
+        {
+            "problem": "P",
+            "sets": {"V": ["a"]},
+            "relations": {"Edge": [{"u": "a", "v": "z"}]},
+        },
+    )
+    assert any("outside its declared set" in d.message for d in bad_elem.diagnostics)
 
     kernel = ir.KernelIR(
         span=span,

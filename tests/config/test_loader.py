@@ -56,6 +56,30 @@ def test_load_config_parses_minimal_schema(tmp_path: Path) -> None:
     assert config.scenarios["base"].sets["A"] == ["a1", "a2"]
 
 
+def test_load_config_and_materialize_payload_preserve_relations(tmp_path: Path) -> None:
+    config_path = tmp_path / "demo.qsol.toml"
+    _write_text(
+        config_path,
+        """
+        schema_version = "1"
+
+        [scenarios.base]
+        problem = "Demo"
+
+        [scenarios.base.sets]
+        V = ["a", "b"]
+
+        [scenarios.base.relations]
+        Edge = [{ u = "a", v = "b" }]
+        """,
+    )
+
+    config = load_config(config_path)
+    assert config.scenarios["base"].relations["Edge"] == [{"u": "a", "v": "b"}]
+    payload = materialize_instance_payload(config=config, scenario_name="base")
+    assert payload["relations"] == {"Edge": [{"u": "a", "v": "b"}]}
+
+
 def test_discover_config_path_none_found(tmp_path: Path) -> None:
     model_path = tmp_path / "demo.qsol"
     model_path.write_text("problem Demo {}\n", encoding="utf-8")

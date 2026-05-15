@@ -2,7 +2,36 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from qsol.diag.source import Span
 from qsol.parse import ast
+
+
+def _quantify_binders(
+    *,
+    span: Span,
+    kind: str,
+    binders: tuple[ast.CompBinder | ast.TupleCompBinder, ...],
+    body: ast.BoolExpr,
+) -> ast.BoolExpr:
+    out = body
+    for binder in reversed(binders):
+        if isinstance(binder, ast.TupleCompBinder):
+            out = ast.TupleQuantifier(
+                span=span,
+                kind=kind,
+                vars=binder.vars,
+                domain_relation=binder.domain_relation,
+                expr=out,
+            )
+        else:
+            out = ast.Quantifier(
+                span=span,
+                kind=kind,
+                var=binder.var,
+                domain_set=binder.domain_set,
+                expr=out,
+            )
+    return out
 
 
 def desugar_program(program: ast.Program) -> ast.Program:
@@ -51,6 +80,8 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
         return replace(expr, left=left, right=right)
     if isinstance(expr, ast.Quantifier):
         return replace(expr, expr=_desugar_bool(expr.expr))
+    if isinstance(expr, ast.TupleQuantifier):
+        return replace(expr, expr=_desugar_bool(expr.expr))
     if isinstance(expr, ast.BoolAggregate):
         comp = expr.comp
         term = _desugar_bool(comp.term)
@@ -72,12 +103,11 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
                 )
             else:
                 body = else_term if else_term is not None else term
-            return ast.Quantifier(
+            return _quantify_binders(
                 span=expr.span,
                 kind="exists",
-                var=comp.var,
-                domain_set=comp.domain_set,
-                expr=body,
+                binders=comp.binders,
+                body=body,
             )
 
         if where is None and else_term is None:
@@ -94,12 +124,11 @@ def _desugar_bool(expr: ast.BoolExpr) -> ast.BoolExpr:
             )
         else:
             body_all = else_term if else_term is not None else term
-        return ast.Quantifier(
+        return _quantify_binders(
             span=expr.span,
             kind="forall",
-            var=comp.var,
-            domain_set=comp.domain_set,
-            expr=body_all,
+            binders=comp.binders,
+            body=body_all,
         )
     if isinstance(expr, ast.BoolIfThenElse):
         return replace(
@@ -145,8 +174,7 @@ def _desugar_num(expr: ast.NumExpr) -> ast.NumExpr:
                 comp=ast.NumComprehension(
                     span=comp.span,
                     term=ast.NumLit(span=comp.span, value=1),
-                    var=comp.var,
-                    domain_set=comp.domain_set,
+                    binders=comp.binders,
                     where=comp.where,
                     else_term=None,
                 ),
@@ -170,8 +198,7 @@ def _desugar_num(expr: ast.NumExpr) -> ast.NumExpr:
             comp=ast.NumComprehension(
                 span=comp.span,
                 term=term,
-                var=comp.var,
-                domain_set=comp.domain_set,
+                binders=comp.binders,
                 where=where,
                 else_term=else_term,
             ),

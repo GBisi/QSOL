@@ -184,6 +184,7 @@ def test_parse_args_positive_int_and_load_instance_payload(
     assert exeq._load_instance_payload(config_path, None) == {
         "problem": "Demo",
         "sets": {"A": ["a1"]},
+        "relations": {},
         "params": {},
     }
     bad_path = tmp_path / "bad.qsol.toml"

@@ -13,6 +13,8 @@ from qsol.sema.types import (
     ElemOfType,
     IntRangeType,
     ParamType,
+    RelationFieldType,
+    RelationType,
     SetType,
     Type,
     UnknownInstanceType,
@@ -82,6 +84,53 @@ class Resolver:
                     diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
                 else:
                     scope.define(symbol)
+
+        for stmt in problem.stmts:
+            if isinstance(stmt, ast.RelationDecl):
+                fields: list[RelationFieldType] = []
+                seen_fields: dict[str, Span] = {}
+                for field in stmt.fields:
+                    if field.name in seen_fields:
+                        diagnostics.append(
+                            self._dup(field.span, field.name, previous=seen_fields[field.name])
+                        )
+                    else:
+                        seen_fields[field.name] = field.span
+
+                    set_symbol = scope.lookup(field.set_name)
+                    if (
+                        set_symbol is None
+                        or set_symbol.kind != SymbolKind.SET
+                        or not isinstance(set_symbol.type, SetType)
+                    ):
+                        suggestion = self._did_you_mean(field.set_name, self._set_candidates(scope))
+                        help_items = ["Relation fields must reference declared sets."]
+                        if suggestion is not None:
+                            help_items.append(f"Did you mean `{suggestion}`?")
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2001",
+                                message=f"unknown set `{field.set_name}` in relation `{stmt.name}`",
+                                span=field.span,
+                                help=help_items,
+                            )
+                        )
+                    else:
+                        fields.append(RelationFieldType(field.name, set_symbol.type))
+
+                existing = scope.symbols.get(stmt.name)
+                if existing is not None:
+                    diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
+                else:
+                    scope.define(
+                        Symbol(
+                            stmt.name,
+                            SymbolKind.RELATION,
+                            RelationType(stmt.name, tuple(fields)),
+                            stmt.span,
+                        )
+                    )
 
         for stmt in problem.stmts:
             if isinstance(stmt, ast.ParamDecl):

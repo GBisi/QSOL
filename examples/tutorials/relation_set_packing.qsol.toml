@@ -1,0 +1,21 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "RelationSetPacking"
+
+[scenarios.baseline.sets]
+Sets = ["s1", "s2", "s3"]
+Items = ["i1", "i2", "i3"]
+
+[scenarios.baseline.relations]
+Contains = [
+  { s = "s1", item = "i1" },
+  { s = "s1", item = "i2" },
+  { s = "s2", item = "i2" },
+  { s = "s2", item = "i3" },
+  { s = "s3", item = "i1" },
+]

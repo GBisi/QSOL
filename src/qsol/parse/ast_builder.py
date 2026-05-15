@@ -253,6 +253,20 @@ class ASTBuilder:
                 lo=cast(ast.NumExpr, self._from_tree(c[0])),
                 hi=cast(ast.NumExpr, self._from_tree(c[1])),
             )
+        if data == "relation_decl":
+            return ast.RelationDecl(
+                span=self._span(node),
+                name=self._name(c[0]),
+                fields=tuple(cast(list[ast.RelationField], self._from_tree(c[1]))),
+            )
+        if data == "relation_fields":
+            return [cast(ast.RelationField, self._from_tree(ch)) for ch in c]
+        if data == "relation_field":
+            return ast.RelationField(
+                span=self._span(node),
+                name=self._name(c[0]),
+                set_name=self._name(c[1]),
+            )
 
         if data == "param_decl":
             name = self._name(c[0])
@@ -388,6 +402,14 @@ class ASTBuilder:
         if data == "quantifier":
             head = self._slice(node).lstrip()
             kind = "forall" if head.startswith("forall") else "exists"
+            if isinstance(c[0], Tree) and c[0].data == "tuple_binder":
+                return ast.TupleQuantifier(
+                    span=self._span(node),
+                    kind=kind,
+                    vars=cast(tuple[str, ...], self._from_tree(c[0])),
+                    domain_relation=self._name(c[1]),
+                    expr=cast(ast.BoolExpr, self._from_tree(c[2])),
+                )
             return ast.Quantifier(
                 span=self._span(node),
                 kind=kind,
@@ -425,53 +447,65 @@ class ASTBuilder:
                 comp=cast(ast.BoolComprehension, self._from_tree(c[0])),
             )
 
+        if data == "comp_binders":
+            return [cast(ast.CompBinder | ast.TupleCompBinder, self._from_tree(ch)) for ch in c]
+        if data == "tuple_binder":
+            return tuple(self._name(ch) for ch in c)
+        if data == "set_comp_binder":
+            return ast.CompBinder(
+                span=self._span(node),
+                var=self._name(c[0]),
+                domain_set=self._name(c[1]),
+            )
+        if data == "tuple_comp_binder":
+            return ast.TupleCompBinder(
+                span=self._span(node),
+                vars=cast(tuple[str, ...], self._from_tree(c[0])),
+                domain_relation=self._name(c[1]),
+            )
+
         if data == "comp_num":
             num_term = cast(ast.NumExpr, self._from_tree(c[0]))
-            num_var = self._name(c[1])
-            num_domain = self._name(c[2])
+            num_binders = cast(list[ast.CompBinder], self._from_tree(c[1]))
             num_where: ast.BoolExpr | None = None
             num_else_term: ast.NumExpr | None = None
-            if len(c) == 4:
+            if len(c) == 3:
                 num_where, num_else_term = cast(
-                    tuple[ast.BoolExpr | None, ast.NumExpr | None], self._from_tree(c[3])
+                    tuple[ast.BoolExpr | None, ast.NumExpr | None], self._from_tree(c[2])
                 )
             return ast.NumComprehension(
                 span=self._span(node),
                 term=num_term,
-                var=num_var,
-                domain_set=num_domain,
+                binders=tuple(num_binders),
                 where=num_where,
                 else_term=num_else_term,
             )
 
         if data == "comp_bool":
             bool_term = cast(ast.BoolExpr, self._from_tree(c[0]))
-            bool_var = self._name(c[1])
-            bool_domain = self._name(c[2])
+            bool_binders = cast(list[ast.CompBinder], self._from_tree(c[1]))
             bool_where: ast.BoolExpr | None = None
             bool_else_term: ast.BoolExpr | None = None
-            if len(c) == 4:
+            if len(c) == 3:
                 bool_where, bool_else_term = cast(
-                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[3])
+                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[2])
                 )
             return ast.BoolComprehension(
                 span=self._span(node),
                 term=bool_term,
-                var=bool_var,
-                domain_set=bool_domain,
+                binders=tuple(bool_binders),
                 where=bool_where,
                 else_term=bool_else_term,
             )
 
         if data == "comp_arg_num":
             num_term = cast(ast.NumExpr, self._from_tree(c[0]))
-            num_var = self._name(c[1])
-            num_domain = self._name(c[2])
+            arg_num_binders = cast(list[ast.CompBinder], self._from_tree(c[1]))
             arg_num_where: ast.BoolExpr | None = None
             arg_num_else_term: ast.NumExpr | None = None
-            if len(c) == 4:
+            if len(c) == 3:
                 arg_num_where, arg_num_else_term = cast(
-                    tuple[ast.BoolExpr | None, ast.NumExpr | None], self._from_tree(c[3])
+                    tuple[ast.BoolExpr | None, ast.NumExpr | None], self._from_tree(c[2])
                 )
             return ast.NumAggregate(
                 span=self._span(node),
@@ -479,8 +513,7 @@ class ASTBuilder:
                 comp=ast.NumComprehension(
                     span=self._span(node),
                     term=num_term,
-                    var=num_var,
-                    domain_set=num_domain,
+                    binders=tuple(arg_num_binders),
                     where=arg_num_where,
                     else_term=arg_num_else_term,
                 ),
@@ -489,44 +522,62 @@ class ASTBuilder:
 
         if data == "comp_arg_bool":
             bool_term = cast(ast.BoolExpr, self._from_tree(c[0]))
-            bool_var = self._name(c[1])
-            bool_domain = self._name(c[2])
+            arg_bool_binders = cast(list[ast.CompBinder], self._from_tree(c[1]))
             arg_bool_where: ast.BoolExpr | None = None
             arg_bool_else_term: ast.BoolExpr | None = None
-            if len(c) == 4:
+            if len(c) == 3:
                 arg_bool_where, arg_bool_else_term = cast(
-                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[3])
+                    tuple[ast.BoolExpr | None, ast.BoolExpr | None], self._from_tree(c[2])
                 )
 
             return ast.BoolComprehension(
                 span=self._span(node),
                 term=bool_term,
-                var=bool_var,
-                domain_set=bool_domain,
+                binders=tuple(arg_bool_binders),
                 where=arg_bool_where,
                 else_term=arg_bool_else_term,
             )
 
         if data == "comp_count":
-            var_ref = self._name(c[0])
-            count_var = var_ref
-            count_domain = ""
+            tuple_count = bool(c and isinstance(c[0], Tree) and c[0].data == "tuple_binder")
+            var_ref = "__tuple__" if tuple_count else self._name(c[0])
+            count_binders: list[ast.CompBinder | ast.TupleCompBinder]
             count_tail_idx: int | None = None
 
-            if len(c) == 2:
-                count_domain = self._name(c[1])
-            elif len(c) == 3 and isinstance(c[2], Tree):
-                count_domain = self._name(c[1])
-                count_tail_idx = 2
-            elif len(c) == 3:
-                count_var = self._name(c[1])
-                count_domain = self._name(c[2])
-            elif len(c) == 4:
-                count_var = self._name(c[1])
-                count_domain = self._name(c[2])
-                count_tail_idx = 3
+            # Alternative 1: NAME comp_binders [comp_tail_bool]
+            # Distinguish from alt 2 by checking if c[1] is a comp_binders Tree.
+            if len(c) >= 2 and isinstance(c[1], Tree) and c[1].data == "comp_binders":
+                count_binders = cast(
+                    list[ast.CompBinder | ast.TupleCompBinder], self._from_tree(c[1])
+                )
+                if len(c) == 3:
+                    count_tail_idx = 2
+            elif tuple_count:
+                tuple_tree = cast(Tree[object] | Token, c[0])
+                tuple_vars = cast(tuple[str, ...], self._from_tree(tuple_tree))
+                count_binders = [
+                    ast.TupleCompBinder(
+                        span=self._span(tuple_tree),
+                        vars=tuple_vars,
+                        domain_relation=self._name(c[1]),
+                    )
+                ]
+                var_ref = tuple_vars[0]
+                if len(c) == 3:
+                    count_tail_idx = 2
             else:
-                raise TypeError("invalid count comprehension shape")
+                # Alternative 2: NAME "in" NAME [comp_tail_bool]
+                # c = [NAME, NAME] or [NAME, NAME, comp_tail_bool]
+                # (the "in" keyword is consumed by the parser, not a child)
+                count_binders = [
+                    ast.CompBinder(
+                        span=self._span(node),
+                        var=var_ref,
+                        domain_set=self._name(c[1]),
+                    )
+                ]
+                if len(c) == 3:
+                    count_tail_idx = 2
 
             count_where: ast.BoolExpr | None = None
             count_else_term: ast.BoolExpr | None = None
@@ -538,8 +589,7 @@ class ASTBuilder:
             return ast.CountComprehension(
                 span=self._span(node),
                 var_ref=var_ref,
-                var=count_var,
-                domain_set=count_domain,
+                binders=tuple(count_binders),
                 where=count_where,
                 else_term=count_else_term,
             )

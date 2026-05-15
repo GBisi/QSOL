@@ -74,12 +74,19 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
 
     set_values_raw = instance.get("sets")
     set_values = cast(dict[str, object], set_values_raw) if isinstance(set_values_raw, dict) else {}
+    relation_values_raw = instance.get("relations")
+    relation_values = (
+        cast(dict[str, object], relation_values_raw)
+        if isinstance(relation_values_raw, dict)
+        else {}
+    )
     params_raw = instance.get("params")
     params_payload = cast(dict[str, object], params_raw) if isinstance(params_raw, dict) else {}
     out: list[GroundProblem] = []
 
     for problem in problems:
         p_sets: dict[str, list[object]] = {}
+        p_relations: dict[str, tuple[tuple[object, ...], ...]] = {}
         p_params: dict[str, object] = {}
         p_derived_sets: dict[str, str] = {}
 
@@ -167,6 +174,22 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
             if pdecl.indices:
                 _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
 
+        declared_relation_names = {decl.name for decl in problem.relations}
+        for supplied_name in relation_values:
+            if supplied_name not in declared_relation_names:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"unknown relation `{supplied_name}` in scenario data",
+                        span=problem.span,
+                        help=["Remove this relation or declare it in the problem."],
+                    )
+                )
+
+        for rdecl in problem.relations:
+            _materialize_relation(rdecl, relation_values, p_sets, p_relations, diagnostics)
+
         grounded_finds = tuple(
             _ground_find(
                 find,
@@ -182,6 +205,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 span=problem.span,
                 name=problem.name,
                 set_values=p_sets,
+                relation_values=p_relations,
                 params=p_params,
                 finds=grounded_finds,
                 constraints=_fold_size_in_constraints(
@@ -304,6 +328,140 @@ def _materialize_param(
         value = normalized
 
     p_params[pdecl.name] = value
+
+
+def _materialize_relation(
+    rdecl: ir.KRelationDecl,
+    relations_payload: Mapping[str, object],
+    p_sets: dict[str, list[object]],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> None:
+    raw = relations_payload.get(rdecl.name)
+    if raw is None:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"missing relation values for `{rdecl.name}`",
+                span=rdecl.span,
+                help=[f"Add `relations.{rdecl.name}` as an array in the instance payload."],
+            )
+        )
+        return
+    if not isinstance(raw, list):
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"relation `{rdecl.name}` must be an array",
+                span=rdecl.span,
+                help=["Use an array of field objects or compact tuples."],
+            )
+        )
+        return
+
+    field_names = [field.name for field in rdecl.fields]
+    field_sets = [field.set_name for field in rdecl.fields]
+    allowed_by_field: list[frozenset[str]] = []
+    for set_name in field_sets:
+        values = p_sets.get(set_name)
+        if values is None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"missing set values for `{set_name}` used by relation `{rdecl.name}`",
+                    span=rdecl.span,
+                    help=[f"Add `sets.{set_name}` before relation `{rdecl.name}`."],
+                )
+            )
+            return
+        allowed_by_field.append(frozenset(str(value) for value in values))
+
+    tuples: list[tuple[object, ...]] = []
+    seen: set[tuple[object, ...]] = set()
+    for idx, entry in enumerate(raw):
+        tuple_values: list[object]
+        if isinstance(entry, Mapping):
+            keys = {str(key) for key in entry.keys()}
+            expected = set(field_names)
+            missing = sorted(expected - keys)
+            extra = sorted(keys - expected)
+            if missing or extra:
+                detail = []
+                if missing:
+                    detail.append(f"missing: {', '.join(missing)}")
+                if extra:
+                    detail.append(f"extra: {', '.join(extra)}")
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"relation `{rdecl.name}` tuple {idx} has wrong fields",
+                        span=rdecl.span,
+                        help=["; ".join(detail)],
+                    )
+                )
+                continue
+            tuple_values = [
+                cast(Mapping[str, object], entry)[field_name] for field_name in field_names
+            ]
+        elif isinstance(entry, list):
+            if len(entry) != len(field_names):
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"relation `{rdecl.name}` tuple {idx} has wrong arity",
+                        span=rdecl.span,
+                        help=[f"Expected {len(field_names)} value(s)."],
+                    )
+                )
+                continue
+            tuple_values = list(entry)
+        else:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"relation `{rdecl.name}` tuple {idx} must be an object or array",
+                    span=rdecl.span,
+                    help=["Use `{ field = value }` objects or compact arrays."],
+                )
+            )
+            continue
+
+        normalized = tuple(str(value) for value in tuple_values)
+        bad_field: str | None = None
+        bad_value: object | None = None
+        for field_name, value, allowed in zip(
+            field_names, normalized, allowed_by_field, strict=True
+        ):
+            if value not in allowed:
+                bad_field = field_name
+                bad_value = value
+                break
+        if bad_field is not None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=(
+                        f"relation `{rdecl.name}` field `{bad_field}` has value "
+                        f"`{bad_value}` outside its declared set"
+                    ),
+                    span=rdecl.span,
+                    help=["Use only elements declared in the field set."],
+                )
+            )
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        tuples.append(normalized)
+
+    p_relations[rdecl.name] = tuple(tuples)
 
 
 def _check_shape(value: object, dims: list[str], sets: dict[str, list[object]]) -> bool:
@@ -861,6 +1019,18 @@ def _fold_size_in_expr(
             ),
         )
     if isinstance(expr, ir.KQuantifier):
+        return replace(
+            expr,
+            expr=_as_kbool(
+                _fold_size_in_expr(
+                    expr.expr,
+                    set_sizes=set_sizes,
+                    declared_sets=declared_sets,
+                    diagnostics=diagnostics,
+                )
+            ),
+        )
+    if isinstance(expr, ir.KTupleQuantifier):
         return replace(
             expr,
             expr=_as_kbool(

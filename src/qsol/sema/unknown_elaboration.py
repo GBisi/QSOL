@@ -304,6 +304,25 @@ class UnknownElaborator:
         self._used_find_names.add(candidate)
         return candidate
 
+    def _rewrite_comp_binders(
+        self,
+        binders: tuple[ast.CompBinder | ast.TupleCompBinder, ...],
+        *,
+        set_subst: dict[str, str],
+    ) -> tuple[ast.CompBinder | ast.TupleCompBinder, ...]:
+        rewritten: list[ast.CompBinder | ast.TupleCompBinder] = []
+        for binder in binders:
+            if isinstance(binder, ast.TupleCompBinder):
+                rewritten.append(binder)
+            else:
+                rewritten.append(
+                    replace(
+                        binder,
+                        domain_set=set_subst.get(binder.domain_set, binder.domain_set),
+                    )
+                )
+        return tuple(rewritten)
+
     def _rewrite_expr(
         self,
         expr: ast.Expr,
@@ -614,6 +633,20 @@ class UnknownElaborator:
                     ),
                 ),
             )
+        if isinstance(expr, ast.TupleQuantifier):
+            return replace(
+                expr,
+                expr=cast(
+                    ast.BoolExpr,
+                    self._rewrite_expr(
+                        expr.expr,
+                        current_instance=current_instance,
+                        value_subst=value_subst,
+                        set_subst=set_subst,
+                        call_stack=call_stack,
+                    ),
+                ),
+            )
         if isinstance(expr, ast.BoolAggregate):
             comp = expr.comp
             return replace(
@@ -630,7 +663,7 @@ class UnknownElaborator:
                             call_stack=call_stack,
                         ),
                     ),
-                    domain_set=set_subst.get(comp.domain_set, comp.domain_set),
+                    binders=self._rewrite_comp_binders(comp.binders, set_subst=set_subst),
                     where=cast(
                         ast.BoolExpr | None,
                         self._rewrite_expr(
@@ -670,7 +703,7 @@ class UnknownElaborator:
                         call_stack=call_stack,
                     ),
                 ),
-                domain_set=set_subst.get(expr.domain_set, expr.domain_set),
+                binders=self._rewrite_comp_binders(expr.binders, set_subst=set_subst),
                 where=cast(
                     ast.BoolExpr | None,
                     self._rewrite_expr(
@@ -712,7 +745,7 @@ class UnknownElaborator:
                             call_stack=call_stack,
                         ),
                     ),
-                    domain_set=set_subst.get(num_comp.domain_set, num_comp.domain_set),
+                    binders=self._rewrite_comp_binders(num_comp.binders, set_subst=set_subst),
                     where=cast(
                         ast.BoolExpr | None,
                         self._rewrite_expr(
@@ -741,7 +774,7 @@ class UnknownElaborator:
             else:
                 rewritten_num_comp = replace(
                     num_comp,
-                    domain_set=set_subst.get(num_comp.domain_set, num_comp.domain_set),
+                    binders=self._rewrite_comp_binders(num_comp.binders, set_subst=set_subst),
                     where=cast(
                         ast.BoolExpr | None,
                         self._rewrite_expr(
@@ -929,8 +962,7 @@ class UnknownElaborator:
             comp=ast.NumComprehension(
                 span=span,
                 term=num_term,
-                var=comp.var,
-                domain_set=comp.domain_set,
+                binders=comp.binders,
                 where=comp.where,
                 else_term=else_term,
             ),

@@ -44,6 +44,52 @@ def test_lower_symbolic_skips_non_problem_items() -> None:
     assert lowered.problems[0].name == "P"
 
 
+def test_comprehension_compat_properties_and_tuple_errors() -> None:
+    span = _span()
+    set_binder = ast.CompBinder(span=span, var="x", domain_set="A")
+    tuple_binder = ast.TupleCompBinder(span=span, vars=("u", "v"), domain_relation="Edge")
+
+    num_comp = ast.NumComprehension(
+        span=span, term=ast.NumLit(span=span, value=1), binders=(set_binder,)
+    )
+    assert num_comp.var == "x"
+    assert num_comp.domain_set == "A"
+    bool_comp = ast.BoolComprehension(
+        span=span, term=ast.BoolLit(span=span, value=True), binders=(tuple_binder,)
+    )
+    count_comp = ast.CountComprehension(span=span, var_ref="u", binders=(tuple_binder,))
+    with pytest.raises(AttributeError):
+        _ = bool_comp.var
+    with pytest.raises(AttributeError):
+        _ = bool_comp.domain_set
+    with pytest.raises(AttributeError):
+        _ = count_comp.var
+    with pytest.raises(AttributeError):
+        _ = count_comp.domain_set
+
+    k_set_binder = ir.KCompBinder(span=span, var="x", domain_set="A")
+    k_tuple_binder = ir.KTupleCompBinder(span=span, vars=("u", "v"), domain_relation="Edge")
+    k_num_comp = ir.KNumComprehension(
+        span=span, term=ir.KNumLit(span=span, value=1), binders=(k_set_binder,)
+    )
+    assert k_num_comp.var == "x"
+    assert k_num_comp.domain_set == "A"
+    k_bool_comp = ir.KBoolComprehension(
+        span=span, term=ir.KBoolLit(span=span, value=True), binders=(k_tuple_binder,)
+    )
+    k_num_tuple_comp = ir.KNumComprehension(
+        span=span, term=ir.KNumLit(span=span, value=1), binders=(k_tuple_binder,)
+    )
+    with pytest.raises(AttributeError):
+        _ = k_bool_comp.var
+    with pytest.raises(AttributeError):
+        _ = k_bool_comp.domain_set
+    with pytest.raises(AttributeError):
+        _ = k_num_tuple_comp.var
+    with pytest.raises(AttributeError):
+        _ = k_num_tuple_comp.domain_set
+
+
 def test_private_lower_helpers_cover_remaining_expression_branches() -> None:
     span = _span()
     assert isinstance(_lower_expr(ast.BoolLit(span=span, value=True)), ir.KBoolLit)
