@@ -24,4 +24,5 @@ logs/
 outdir/
 
 # Git worktrees
+.worktrees
 .worktrees/
