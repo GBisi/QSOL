@@ -146,11 +146,21 @@ find Assignment : Mapping(Tasks -> Workers);
 find Enabled : Bool;
 find Makespan : Int[0 .. MaxTime];
 find Load[Workers] : Int[0 .. MaxTime];
+find Flow[Arc] : Int[0 .. size(Arc)];
 ```
 
 `Bool` scalar finds are boolean expressions. Bounded `Int[lo .. hi]` scalar finds
 are numeric expressions. Indexed scalar finds are read with bracket access, for
-example `Load[w]`. Unbounded `find x : Int` is rejected.
+example `Load[w]`. Relation-indexed scalar finds create one decision per
+grounded relation tuple and are read with one argument per relation field, for
+example `Flow[u, v]` inside `for (u, v) in Arc`.
+
+`Int` decision bounds are grounded before backend compilation. Bounds may use
+integer literals, numeric scalar params, indexed params over static binders,
+`size(Set)`, `size(Relation)`, static `sum`/`count` aggregates, static `if`
+expressions, relation membership calls, and arithmetic over those forms. Bounds
+must not depend on decisions or unknown view methods such as `Pick.has(j)`.
+Unbounded `find x : Int` is rejected.
 
 ### 4.4. Constraints
 

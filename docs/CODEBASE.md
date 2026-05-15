@@ -26,9 +26,9 @@ Pipeline from source to runtime result:
 - `src/qsol/compiler/`: frontend + targeting pipeline orchestration
 - `src/qsol/targeting/`: plugin interfaces, registry, selection, compatibility
 - `src/qsol/parse/`: grammar, parser, AST, AST builder, module loader
-- `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, static validation
-- `src/qsol/lower/`: desugaring + kernel IR lowering
-- `src/qsol/backend/`: instance grounding + dimod codegen/export primitives
+- `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, groundability checks, static validation
+- `src/qsol/lower/`: desugaring + kernel IR lowering, including aggregate normalization inside decision bounds
+- `src/qsol/backend/`: instance grounding, static bound evaluation, dimod codegen/export primitives
 - `src/qsol/config/`: config TOML parsing, scenario selection, and instance materialization
 - `src/qsol/stdlib/`: packaged unknown modules (`stdlib.*`)
 - `src/qsol/diag/`: diagnostics, spans, reporter

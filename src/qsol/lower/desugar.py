@@ -48,6 +48,19 @@ def desugar_program(program: ast.Program) -> ast.Program:
                     stmts.append(replace(stmt, expr=expr, guard=None))
                 elif isinstance(stmt, ast.Objective):
                     stmts.append(replace(stmt, expr=_desugar_num(stmt.expr)))
+                elif isinstance(stmt, ast.FindDecl) and isinstance(
+                    stmt.decision_type, ast.IntDecisionType
+                ):
+                    stmts.append(
+                        replace(
+                            stmt,
+                            decision_type=replace(
+                                stmt.decision_type,
+                                lo=_desugar_num(stmt.decision_type.lo),
+                                hi=_desugar_num(stmt.decision_type.hi),
+                            ),
+                        )
+                    )
                 else:
                     stmts.append(stmt)
             items.append(replace(item, stmts=stmts))

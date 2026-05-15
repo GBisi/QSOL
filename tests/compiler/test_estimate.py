@@ -60,6 +60,16 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
             ),
             ir.KFindDecl(
                 span=span,
+                name="Flow",
+                indices=("Edge",),
+                decision_type=ir.KIntDecisionType(
+                    span=span,
+                    lo=ir.KNumLit(span=span, value=0.0),
+                    hi=ir.KNumLit(span=span, value=2.0),
+                ),
+            ),
+            ir.KFindDecl(
+                span=span,
                 name="LateBound",
                 decision_type=ir.KIntDecisionType(
                     span=span,
@@ -89,10 +99,12 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
     assert report["decision_variables"]["enabled"]["domain_size"] == 2
     assert report["decision_variables"]["Load"]["instances"] == 2
     assert report["decision_variables"]["Load"]["domain_size"] == 3
+    assert report["decision_variables"]["Flow"]["instances"] == 1
+    assert report["decision_variables"]["Flow"]["domain_size"] == 3
     assert report["decision_variables"]["LateBound"]["domain_size"] is None
     assert report["constraints"] == {"explicit": 1, "mapping_exactly_one": 2}
     assert report["backend"] == {
         "status": "partial",
         "cqm_binary_variables": 5,
-        "cqm_integer_variables": 3,
+        "cqm_integer_variables": 4,
     }

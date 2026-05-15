@@ -147,6 +147,11 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.V`
   - `scenarios.baseline.relations.Edge`
   - `NonEdge` is derived with `pairs(...)` and is not supplied in TOML.
+- `job_sequencing.qsol.toml`
+  - `scenarios.baseline.sets.Jobs`
+  - `scenarios.baseline.params.Length`
+  - `scenarios.baseline.relations.Precedence`
+  - `Start` and `Makespan` use static aggregate `Int` bounds from `sum(Length[j] for j in Jobs)`.
 
 ## Related
 

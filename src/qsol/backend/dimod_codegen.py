@@ -1289,15 +1289,19 @@ class DimodCodegen:
         if not find.indices:
             return [(find.name, find.name)]
 
-        domains: list[list[object]] = []
+        domains: list[list[tuple[object, ...]]] = []
         for index_name in find.indices:
+            if index_name in problem.relation_values:
+                domains.append(list(problem.relation_values[index_name]))
+                continue
             values = problem.set_values.get(index_name)
             if values is None:
                 return []
-            domains.append(list(values))
+            domains.append([(value,) for value in values])
 
         labels: list[tuple[str, str]] = []
-        for tuple_values in product(*domains):
+        for domain_values in product(*domains):
+            tuple_values = tuple(value for group in domain_values for value in group)
             key = ",".join(str(value) for value in tuple_values)
             label = f"{find.name}[{key}]"
             meaning = f"{find.name}[{key}]"
@@ -1314,11 +1318,12 @@ class DimodCodegen:
         find = next((candidate for candidate in problem.finds if candidate.name == expr.name), None)
         if find is None or isinstance(find.decision_type, ir.KUnknownDecisionType):
             return None
-        if len(expr.args) != len(find.indices):
+        expected_arity = self._scalar_index_arity(problem, find)
+        if len(expr.args) != expected_arity:
             diagnostics.append(
                 self._unsupported(
                     expr.span,
-                    f"scalar decision `{expr.name}` expects {len(find.indices)} index argument(s)",
+                    f"scalar decision `{expr.name}` expects {expected_arity} index argument(s)",
                 )
             )
             return None
@@ -1329,6 +1334,16 @@ class DimodCodegen:
                 return None
             keys.append(key)
         return f"{expr.name}[{','.join(keys)}]"
+
+    def _scalar_index_arity(self, problem: ir.GroundProblem, find: ir.KFindDecl) -> int:
+        arity = 0
+        for index_name in find.indices:
+            relation_values = problem.relation_values.get(index_name)
+            if relation_values is not None:
+                arity += len(relation_values[0]) if relation_values else 0
+            else:
+                arity += 1
+        return arity
 
     def _resolve_name_arg(
         self,

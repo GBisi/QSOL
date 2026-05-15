@@ -140,6 +140,23 @@ relation Reciprocal(u: V, v: V) =
 Derived relation filters run during grounding. They may use params and relation
 membership calls, but not decisions such as `Pick.has(v)`.
 
+Static data can also define bounded integer decision domains:
+
+```qsol
+problem JobSequencing {
+  set Jobs;
+  param Length[Jobs] : Int[1 .. 100];
+
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+
+  minimize Makespan;
+}
+```
+
+The aggregate in the `Int` upper bound is evaluated from scenario data during
+grounding. Bounds may use static params, `size(...)`, relation membership, and
+static `sum`/`count`; they cannot reference decisions such as `Pick.has(j)`.
+
 ## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:

@@ -164,6 +164,8 @@ find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
 find Load[Workers] : Int[0 .. size(Tasks)];
+find Flow[Arc] : Int[0 .. size(Arc)];
+find TotalLength : Int[0 .. sum(Length[j] for j in Jobs)];
 ```
 
 `find` supports primitive unknowns (`Subset`, `Mapping`) and user-defined unknowns.
@@ -173,10 +175,13 @@ Scalar decisions are also valid:
 - `Bool` creates a binary scalar decision usable in boolean expressions.
 - `Int[lo .. hi]` creates a native bounded integer CQM variable usable in numeric expressions.
 - Indexed scalar decisions use bracket access, for example `Load[w]`.
+- Relation-indexed scalar decisions create one decision per relation tuple and use one bracket argument per relation field, for example `Flow[u, v]` inside `for (u, v) in Arc`.
 
-`Int` bounds must be scenario-time integer constants: integer literals, numeric scalar
-params, `size(Set)`, and arithmetic over those forms. Unknown-dependent bounds are
-rejected.
+`Int` bounds must be scenario-time integer constants. They may use literals,
+numeric params, indexed params over static binders, `size(Set)`,
+`size(Relation)`, static `sum`/`count`, static `if` expressions, relation
+membership over static values, and arithmetic over those forms.
+Decision-dependent bounds such as `sum(if Pick.has(j) then Weight[j] else 0 for j in Jobs)` are rejected.
 
 ## 4. Constraints and Objectives
 

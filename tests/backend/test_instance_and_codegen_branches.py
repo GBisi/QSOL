@@ -568,6 +568,48 @@ def test_instance_bound_expression_error_branches() -> None:
     )
     assert (
         _eval_num_expr(
+            ir.KFuncCall(span=span, name="size", args=(ir.KName(span=span, name="Edge"),)),
+            set_sizes={},
+            relation_values={"Edge": (("a", "b"), ("b", "c"))},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 2.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KName(span=span, name="item"),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+            env={"item": "a"},
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="Weight", args=(ir.KName(span=span, name="item"),)),
+            set_sizes={},
+            set_values={"Items": ["a"]},
+            params={"Weight": {"a": 7}},
+            diagnostics=diagnostics,
+            env={"item": "a"},
+        )
+        == 7.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="Flag", args=(ir.KName(span=span, name="item"),)),
+            set_sizes={},
+            set_values={"Items": ["a"]},
+            params={"Flag": {"a": True}},
+            diagnostics=diagnostics,
+            env={"item": "a"},
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
             ir.KAdd(
                 span=span,
                 left=ir.KNumLit(span=span, value=2.0),
@@ -626,6 +668,57 @@ def test_instance_bound_expression_error_branches() -> None:
             diagnostics=diagnostics,
         )
         == -4.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KIfThenElse(
+                span=span,
+                cond=ir.KBoolLit(span=span, value=True),
+                then_expr=ir.KNumLit(span=span, value=9.0),
+                else_expr=ir.KNumLit(span=span, value=0.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 9.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KSum(
+                span=span,
+                comp=ir.KNumComprehension(
+                    span=span,
+                    term=ir.KFuncCall(
+                        span=span,
+                        name="Weight",
+                        args=(ir.KName(span=span, name="item"),),
+                    ),
+                    binders=(ir.KCompBinder(span=span, var="item", domain_set="Items"),),
+                ),
+            ),
+            set_sizes={"Items": 2},
+            set_values={"Items": ["a", "b"]},
+            params={"Weight": {"a": 2, "b": 5}},
+            diagnostics=diagnostics,
+        )
+        == 7.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KSum(
+                span=span,
+                comp=ir.KNumComprehension(
+                    span=span,
+                    term=ir.KNumLit(span=span, value=1.0),
+                    binders=(ir.KCompBinder(span=span, var="item", domain_set="Items"),),
+                ),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
     )
     assert (
         _eval_num_expr(

@@ -36,6 +36,8 @@ It also generates implicit "exactly one" constraints to ensure each element in `
 find enabled : Bool;
 find T : Int[0 .. 10];
 find Load[Machines] : Int[0 .. Capacity];
+find Flow[Arc] : Int[0 .. size(Arc)];
+find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
 ```
 
 The backend keeps CQM as the canonical model:
@@ -43,6 +45,7 @@ The backend keeps CQM as the canonical model:
 * `Bool` scalar decisions become native `dimod.Binary` variables.
 * `Int[lo .. hi]` scalar decisions become native `dimod.Integer` variables with the grounded bounds.
 * Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
+* Relation-indexed scalar decisions create one native CQM variable per grounded relation tuple, for example `Flow[a,b]`.
 
 The exported BQM is derived from the CQM for runtimes and export formats that require binary quadratic form.
 
@@ -74,6 +77,6 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 
 *   **Higher-Order Logic**: Complex nested quantifiers or non-linear expressions that cannot be reduced to quadratic forms may be unsupported or require significant auxiliary variables.
 *   **Continuous Variables**: Native continuous variables are not currently supported.
-*   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation.
+*   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation. Bounds may include static params, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Decision-dependent bounds are rejected before backend compilation.
 
 > For a complete list of unsupported patterns and workarounds, see [Backend V1 Limits](BACKEND_V1_LIMITS.md).

@@ -660,6 +660,68 @@ Total = 5
     assert Path(unit.artifacts.bqm_path or "").exists()
 
 
+def test_compile_supports_static_aggregate_int_bounds(tmp_path: Path) -> None:
+    source = """
+problem StaticAggregateBounds {
+  set Jobs;
+  relation Arc(u: Jobs, v: Jobs);
+  param Length[Jobs] : Int[0 .. 100];
+  param Cost[Jobs, Jobs] : Int[0 .. 100] = 1;
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+  find Flow[Arc] : Int[0 .. size(Arc)];
+  find SelectedCount : Int[0 .. count((u, v) in Arc where Cost[u, v] > 0)];
+
+  must Makespan >= SelectedCount;
+  minimize Makespan + SelectedCount + sum(Flow[u, v] for (u, v) in Arc);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticAggregateBounds"
+
+[scenarios.baseline.sets]
+Jobs = ["a", "b", "c"]
+
+[scenarios.baseline.params]
+Length = { a = 2, b = 3, c = 4 }
+
+[scenarios.baseline.relations]
+Arc = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_aggregate_bounds.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.ground_ir is not None
+    finds = {find.name: find for find in unit.ground_ir.problems[0].finds}
+    makespan = finds["Makespan"].decision_type
+    flow = finds["Flow"].decision_type
+    selected_count = finds["SelectedCount"].decision_type
+    assert makespan.hi.value == 9
+    assert flow.hi.value == 2
+    assert selected_count.hi.value == 2
+    assert unit.compiled_model is not None
+    cqm = unit.compiled_model.cqm
+    assert cqm.upper_bound("Makespan") == 9
+    assert cqm.upper_bound("SelectedCount") == 2
+    assert cqm.upper_bound("Flow[a,b]") == 2
+
+
 def test_derived_range_set_rejects_scenario_values(tmp_path: Path) -> None:
     source = """
 problem DerivedSet {

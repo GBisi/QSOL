@@ -31,6 +31,12 @@ class TypeCheckResult:
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class GroundabilityResult:
+    valid: bool
+    dependency: str | None = None
+
+
 class TypeChecker:
     def check(self, program: ast.Program, symbols: SymbolTable) -> TypeCheckResult:
         diagnostics: list[Diagnostic] = []
@@ -52,10 +58,20 @@ class TypeChecker:
                     elif isinstance(stmt, ast.FindDecl):
                         if isinstance(stmt.decision_type, ast.IntDecisionType):
                             self._scenario_const_int_type(
-                                stmt.decision_type.lo, scope, {}, diagnostics, typed.types
+                                stmt.decision_type.lo,
+                                scope,
+                                {},
+                                diagnostics,
+                                typed.types,
+                                bound_role="lower",
                             )
                             self._scenario_const_int_type(
-                                stmt.decision_type.hi, scope, {}, diagnostics, typed.types
+                                stmt.decision_type.hi,
+                                scope,
+                                {},
+                                diagnostics,
+                                typed.types,
+                                bound_role="upper",
                             )
                     elif isinstance(stmt, ast.RelationDecl) and stmt.expr is not None:
                         self._check_relation_expr(stmt, scope, diagnostics, typed.types)
@@ -549,11 +565,11 @@ class TypeChecker:
             return UNKNOWN
 
         symbol = scope.lookup(arg.name)
-        if symbol is None or symbol.kind != SymbolKind.SET:
+        if symbol is None or symbol.kind not in {SymbolKind.SET, SymbolKind.RELATION}:
             diagnostics.append(
                 self._type_err(
                     arg.span,
-                    f"size() expects a declared set identifier, got `{arg.name}`",
+                    f"size() expects a declared set or relation identifier, got `{arg.name}`",
                 )
             )
             return UNKNOWN
@@ -916,22 +932,218 @@ class TypeChecker:
         binders: dict[str, Type],
         diagnostics: list[Diagnostic],
         tmap: dict[int, str],
+        *,
+        bound_role: str | None = None,
     ) -> Type:
         ty = self._expr_type(expr, scope, binders, diagnostics, tmap)
         if not is_numeric(ty):
             diagnostics.append(
                 self._type_err(expr.span, "integer bounds must be scenario-time numeric constants")
             )
-        if not self._is_scenario_const_expr(expr, scope):
+        if bound_role is None:
+            if not self._is_legacy_scenario_const_expr(expr, scope):
+                diagnostics.append(
+                    self._groundability_err(
+                        expr.span,
+                        "integer bounds may use literals, scalar params, size(Set), and arithmetic only",
+                        None,
+                    )
+                )
+            return ty
+        result = self._groundability(expr, scope, binders)
+        if not result.valid:
             diagnostics.append(
-                self._type_err(
+                self._groundability_err(
                     expr.span,
-                    "integer bounds may use literals, scalar params, size(Set), and arithmetic only",
+                    f"Int {bound_role} bound is not scenario-time constant",
+                    result.dependency,
                 )
             )
         return ty
 
-    def _is_scenario_const_expr(self, expr: ast.Expr, scope: Scope) -> bool:
+    def _groundability(
+        self, expr: ast.Expr, scope: Scope, binders: dict[str, Type]
+    ) -> GroundabilityResult:
+        if isinstance(expr, (ast.BoolLit, ast.NumLit, ast.StringLit, ast.Literal)):
+            return GroundabilityResult(True)
+        if isinstance(expr, ast.NameRef):
+            if expr.name in binders:
+                return GroundabilityResult(True)
+            symbol = scope.lookup(expr.name)
+            if symbol is None:
+                return GroundabilityResult(False, f"unknown identifier `{expr.name}`")
+            if symbol.kind == SymbolKind.FIND:
+                return GroundabilityResult(False, f"decision `{expr.name}`")
+            return GroundabilityResult(
+                symbol.kind == SymbolKind.PARAM
+                and isinstance(symbol.type, ParamType)
+                and not symbol.type.indices,
+                f"non-static identifier `{expr.name}`",
+            )
+        if isinstance(expr, (ast.Not, ast.Neg)):
+            return self._groundability(expr.expr, scope, binders)
+        if isinstance(
+            expr, (ast.And, ast.Or, ast.Implies, ast.Compare, ast.Add, ast.Sub, ast.Mul, ast.Div)
+        ):
+            return self._merge_groundability(
+                self._groundability(expr.left, scope, binders),
+                self._groundability(expr.right, scope, binders),
+            )
+        if isinstance(expr, ast.IfThenElse):
+            return self._merge_groundability(
+                self._groundability(expr.cond, scope, binders),
+                self._groundability(expr.then_expr, scope, binders),
+                self._groundability(expr.else_expr, scope, binders),
+            )
+        if isinstance(expr, ast.BoolIfThenElse):
+            return self._merge_groundability(
+                self._groundability(expr.cond, scope, binders),
+                self._groundability(expr.then_expr, scope, binders),
+                self._groundability(expr.else_expr, scope, binders),
+            )
+        if isinstance(expr, ast.FuncCall):
+            if expr.name == "size":
+                if len(expr.args) != 1 or not isinstance(expr.args[0], ast.NameRef):
+                    return GroundabilityResult(False, "invalid size() argument")
+                symbol = scope.lookup(expr.args[0].name)
+                return GroundabilityResult(
+                    symbol is not None and symbol.kind in {SymbolKind.SET, SymbolKind.RELATION},
+                    f"non-static size() argument `{expr.args[0].name}`",
+                )
+            symbol = scope.lookup(expr.name)
+            if symbol is None:
+                return GroundabilityResult(False, f"unknown call `{expr.name}`")
+            if symbol.kind == SymbolKind.FIND:
+                return GroundabilityResult(False, f"decision `{expr.name}`")
+            if symbol.kind == SymbolKind.PARAM:
+                return self._merge_groundability(
+                    *(self._groundability(arg, scope, binders) for arg in expr.args)
+                )
+            if symbol.kind == SymbolKind.RELATION:
+                return self._merge_groundability(
+                    *(self._groundability(arg, scope, binders) for arg in expr.args)
+                )
+            return GroundabilityResult(False, f"non-static call `{expr.name}`")
+        if isinstance(expr, ast.MethodCall):
+            target = (
+                expr.target.name
+                if isinstance(expr.target, ast.NameRef)
+                else type(expr.target).__name__
+            )
+            return GroundabilityResult(False, f"{target}.{expr.name}")
+        if isinstance(expr, ast.Quantifier):
+            inner = dict(binders)
+            if self._lookup_set(scope, expr.domain_set) is None:
+                return GroundabilityResult(False, f"unknown set `{expr.domain_set}`")
+            inner[expr.var] = self._binder_type(scope, expr.domain_set)
+            return self._groundability(expr.expr, scope, inner)
+        if isinstance(expr, ast.TupleQuantifier):
+            return self._tuple_binder_groundability(
+                expr.vars, expr.domain_relation, expr.expr, expr.span, scope, binders
+            )
+        if isinstance(expr, ast.BoolAggregate):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.comp.binders)
+            return self._merge_groundability(
+                binder_result,
+                self._groundability(expr.comp.term, scope, inner),
+                self._groundability(expr.comp.where, scope, inner)
+                if expr.comp.where is not None
+                else GroundabilityResult(True),
+                self._groundability(expr.comp.else_term, scope, inner)
+                if expr.comp.else_term is not None
+                else GroundabilityResult(True),
+            )
+        if isinstance(expr, ast.BoolComprehension):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.binders)
+            return self._merge_groundability(
+                binder_result,
+                self._groundability(expr.term, scope, inner),
+                self._groundability(expr.where, scope, inner)
+                if expr.where is not None
+                else GroundabilityResult(True),
+            )
+        if isinstance(expr, ast.NumAggregate):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.comp.binders)
+            checks = [binder_result]
+            if isinstance(expr.comp, ast.NumComprehension):
+                checks.append(self._groundability(expr.comp.term, scope, inner))
+                if expr.comp.where is not None:
+                    checks.append(self._groundability(expr.comp.where, scope, inner))
+                if expr.comp.else_term is not None:
+                    checks.append(self._groundability(expr.comp.else_term, scope, inner))
+            else:
+                if expr.comp.where is not None:
+                    checks.append(self._groundability(expr.comp.where, scope, inner))
+            return self._merge_groundability(*checks)
+        return GroundabilityResult(False, f"unsupported expression `{type(expr).__name__}`")
+
+    def _binders_groundability(
+        self,
+        scope: Scope,
+        binders: dict[str, Type],
+        comp_binders: tuple[ast.CompBinder | ast.TupleCompBinder, ...],
+    ) -> GroundabilityResult:
+        for binder in comp_binders:
+            if isinstance(binder, ast.TupleCompBinder):
+                symbol = scope.lookup(binder.domain_relation)
+                if (
+                    symbol is None
+                    or symbol.kind != SymbolKind.RELATION
+                    or not isinstance(symbol.type, RelationType)
+                ):
+                    return GroundabilityResult(
+                        False, f"unknown relation `{binder.domain_relation}`"
+                    )
+                if len(binder.vars) != len(symbol.type.fields):
+                    return GroundabilityResult(False, f"relation `{binder.domain_relation}` arity")
+                for name, relation_field in zip(binder.vars, symbol.type.fields, strict=True):
+                    binders[name] = ElemOfType(
+                        relation_field.set_type.name,
+                        numeric_kind=relation_field.set_type.numeric_kind,
+                    )
+                continue
+            if self._lookup_set(scope, binder.domain_set) is None:
+                return GroundabilityResult(False, f"unknown set `{binder.domain_set}`")
+            binders[binder.var] = self._binder_type(scope, binder.domain_set)
+        return GroundabilityResult(True)
+
+    def _tuple_binder_groundability(
+        self,
+        vars: tuple[str, ...],
+        domain_relation: str,
+        expr: ast.Expr,
+        span: Span,
+        scope: Scope,
+        binders: dict[str, Type],
+    ) -> GroundabilityResult:
+        inner = dict(binders)
+        binder = ast.TupleCompBinder(span=span, vars=vars, domain_relation=domain_relation)
+        binder_result = self._binders_groundability(scope, inner, (binder,))
+        return self._merge_groundability(binder_result, self._groundability(expr, scope, inner))
+
+    def _merge_groundability(self, *results: GroundabilityResult) -> GroundabilityResult:
+        for result in results:
+            if not result.valid:
+                return result
+        return GroundabilityResult(True)
+
+    def _groundability_err(self, span: Span, message: str, dependency: str | None) -> Diagnostic:
+        notes = [f"The expression depends on {dependency}."] if dependency is not None else []
+        return Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2101",
+            message=message,
+            span=span,
+            notes=notes,
+            help=[
+                "Only input params, size(...), static relations, and aggregates over static domains are allowed in decision bounds."
+            ],
+        )
+
+    def _is_legacy_scenario_const_expr(self, expr: ast.Expr, scope: Scope) -> bool:
         if isinstance(expr, ast.NumLit):
             return True
         if isinstance(expr, ast.NameRef):
@@ -948,11 +1160,11 @@ class TypeChecker:
             symbol = scope.lookup(arg.name) if isinstance(arg, ast.NameRef) else None
             return symbol is not None and symbol.kind == SymbolKind.SET
         if isinstance(expr, (ast.Add, ast.Sub, ast.Mul, ast.Div)):
-            return self._is_scenario_const_expr(expr.left, scope) and self._is_scenario_const_expr(
-                expr.right, scope
-            )
+            return self._is_legacy_scenario_const_expr(
+                expr.left, scope
+            ) and self._is_legacy_scenario_const_expr(expr.right, scope)
         if isinstance(expr, ast.Neg):
-            return self._is_scenario_const_expr(expr.expr, scope)
+            return self._is_legacy_scenario_const_expr(expr.expr, scope)
         return False
 
     def _literal_type(self, lit: ast.Literal) -> Type:

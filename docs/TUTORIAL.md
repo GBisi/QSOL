@@ -92,6 +92,16 @@ relation NonEdge(u: Items, v: Items) =
 Derived relations are not supplied in TOML. Their filters may use static params
 and relation membership calls, but not decisions such as `Picked.has(item)`.
 
+Bounded integer decisions can use scenario-time static aggregate bounds:
+
+```qsol
+param Length[Items] : Int[1 .. 100];
+find Makespan : Int[0 .. sum(Length[item] for item in Items)];
+```
+
+The compiler evaluates that bound during grounding. Decision-dependent bounds
+are rejected so backend integer domains remain explicit and reproducible.
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

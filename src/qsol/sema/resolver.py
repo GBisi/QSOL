@@ -164,27 +164,34 @@ class Resolver:
             elif isinstance(stmt, ast.FindDecl):
                 index_types: list[SetType] = []
                 for index_name in stmt.indices:
-                    set_symbol = scope.lookup(index_name)
+                    index_symbol = scope.lookup(index_name)
                     if (
-                        set_symbol is None
-                        or set_symbol.kind != SymbolKind.SET
-                        or not isinstance(set_symbol.type, SetType)
+                        index_symbol is not None
+                        and index_symbol.kind == SymbolKind.RELATION
+                        and isinstance(index_symbol.type, RelationType)
+                    ):
+                        index_types.extend(field.set_type for field in index_symbol.type.fields)
+                        continue
+                    if (
+                        index_symbol is None
+                        or index_symbol.kind != SymbolKind.SET
+                        or not isinstance(index_symbol.type, SetType)
                     ):
                         suggestion = self._did_you_mean(index_name, self._set_candidates(scope))
-                        help_items = ["Find indices must reference declared sets."]
+                        help_items = ["Find indices must reference declared sets or relations."]
                         if suggestion is not None:
                             help_items.append(f"Did you mean `{suggestion}`?")
                         diagnostics.append(
                             Diagnostic(
                                 severity=Severity.ERROR,
                                 code="QSOL2001",
-                                message=f"unknown set `{index_name}` in find indexing",
+                                message=f"unknown set or relation `{index_name}` in find indexing",
                                 span=stmt.span,
                                 help=help_items,
                             )
                         )
                     else:
-                        index_types.append(set_symbol.type)
+                        index_types.append(index_symbol.type)
 
                 if isinstance(stmt.decision_type, ast.BoolDecisionType):
                     find_type: Type = (

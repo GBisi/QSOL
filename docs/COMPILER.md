@@ -19,7 +19,7 @@ The pipeline consists of the following stages:
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
 1.  **Loading**: Reads data from the TOML file.
 2.  **Binding**: Maps data values to model `set` and `param` declarations.
-3.  **Grounding**: Evaluates derived `Range` sets and derived static relations, materializes scalar/indexed params, resolves bounded scalar decision domains, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
+3.  **Grounding**: Evaluates derived `Range` sets and derived static relations, materializes scalar/indexed params, resolves bounded scalar decision domains including scenario-time static aggregate bounds, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
 
 ### Backend / Targeting
 1.  **Target Selection**: Identifies the target runtime and backend (e.g., `local-dimod` + `dimod-cqm-v1`).
@@ -57,3 +57,5 @@ A concrete representation where all sets are finite collections of values, stati
 
 Derived sets are recorded with their source (`Range`) and are not loaded from scenario data. Range members are native integers in GIR so range binders can participate in numeric expressions.
 Base relation declarations are loaded from scenario `relations` data during grounding. Derived relation declarations are then evaluated in dependency order from static sets, params, base relations, and earlier derived relations. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.
+
+Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.

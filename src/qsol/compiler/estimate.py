@@ -131,7 +131,10 @@ def _indexed_count(problem: ir.GroundProblem, indices: tuple[str, ...]) -> int:
     if not indices:
         return 1
     count = 0
-    domains = [problem.set_values.get(index_name, []) for index_name in indices]
+    domains = [
+        problem.relation_values.get(index_name, problem.set_values.get(index_name, []))
+        for index_name in indices
+    ]
     for _values in product(*domains):
         count += 1
     return count

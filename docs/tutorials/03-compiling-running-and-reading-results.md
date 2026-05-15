@@ -75,6 +75,11 @@ Edge = [
 The compact tuple form is accepted when values are ordered like the relation
 declaration fields: `Edge = [["a", "b"], ["b", "c"]]`.
 
+Bounded `Int` decisions can use static scenario data in their bounds. For
+example, `Int[0 .. sum(Length[j] for j in Jobs)]` is grounded after `Jobs` and
+`Length` are loaded, while a bound that references a decision such as
+`Pick.has(j)` is rejected during frontend checks.
+
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.
 - If one file exists, use it.
