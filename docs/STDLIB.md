@@ -40,7 +40,22 @@ use stdlib.logic;
 *   **`indicator(b: Bool): Real`**
     *   Returns `1` if `b` is true, `0` otherwise.
 
-## 2. Mappings & Permutations
+## 2. Compiler Builtins
+
+These names are handled by the compiler rather than loaded from `stdlib`:
+
+*   **`abs(expr)`**
+    *   Supported in `minimize abs(expr)` and `must abs(expr) <= C`.
+*   **`max(term for ...)`**
+    *   Supported in `minimize max(term for ...)`.
+*   **`min(term for ...)`**
+    *   Supported in `maximize min(term for ...)`.
+
+They lower to generated scalar `Int` auxiliaries and hard constraints when finite
+bounds are available. They are not user-defined macros and do not require a
+`use stdlib...` import.
+
+## 3. Mappings & Permutations
 
 These modules provide specialized unknown types for mapping problems.
 

@@ -102,6 +102,17 @@ find Makespan : Int[0 .. sum(Length[item] for item in Items)];
 The compiler evaluates that bound during grounding. Decision-dependent bounds
 are rejected so backend integer domains remain explicit and reproducible.
 
+For balance and makespan objectives, QSOL also provides compiler-owned
+piecewise builtins in supported contexts:
+
+```qsol
+minimize abs(balance);
+minimize max(load[item] for item in Items);
+```
+
+These lower to generated bounded auxiliaries and hard constraints before backend
+compilation.
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

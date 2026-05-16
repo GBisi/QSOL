@@ -20,6 +20,8 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `relation_set_packing.qsol.toml`
 - `derived_max_clique.qsol`
 - `derived_max_clique.qsol.toml`
+- `job_sequencing_max.qsol`
+- `job_sequencing_max.qsol.toml`
 
 ## Run
 
@@ -110,6 +112,15 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol solve \
+  examples/tutorials/job_sequencing_max.qsol \
+  --config examples/tutorials/job_sequencing_max.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/job_sequencing_max \
+  --runtime-option sampler=exact
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -152,6 +163,11 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.params.Length`
   - `scenarios.baseline.relations.Precedence`
   - `Start` and `Makespan` use static aggregate `Int` bounds from `sum(Length[j] for j in Jobs)`.
+- `job_sequencing_max.qsol.toml`
+  - `scenarios.baseline.sets.Jobs`
+  - `scenarios.baseline.params.Length`
+  - `scenarios.baseline.relations.Precedence`
+  - `minimize max(Finish[j] for j in Jobs)` generates a bounded piecewise auxiliary.
 
 ## Related
 

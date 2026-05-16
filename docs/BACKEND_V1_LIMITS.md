@@ -9,6 +9,7 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 *   **Quantifiers**: `forall`, `exists`, `sum`, `count` are supported.
 *   **Static relations**: Tuple binders over grounded relations are supported. Base relations come from scenario data; derived relations are evaluated during grounding. Relation membership calls evaluate against static relation values.
 *   **Grounded integer bounds**: Bounded `Int` decisions may use scenario-time static aggregate bounds such as `sum(Length[j] for j in Jobs)`, `count((u, v) in Edge where Weight[u, v] > 0)`, and `size(Edge)`. Bounds that reference decisions or unknown view methods are rejected.
+*   **Safe piecewise builtins**: `minimize abs(e)`, `must abs(e) <= C`, `minimize max(term for ...)`, and `maximize min(term for ...)` are supported when the compiler can create finite bounded `Int` auxiliaries.
 
 ## 2. Arithmetic Limitations
 
@@ -33,3 +34,4 @@ If you encounter `QSOL3001`, you have likely used a construct that cannot be low
 *   **Dynamic Sets**: `sum(x for x in S if Var.has(x))` (filtering a set based on a variable) is not supported directly; use `indicator` masks instead: `sum(if Var.has(x) then x else 0 for x in S)`.
 *   **Relation Size Blowups**: Relation iteration is static, but a large base or derived relation can still produce many grounded constraints or objective terms.
 *   **Aggregate Bound Blowups**: Aggregate bounds are evaluated during grounding. Large static domains or relations can increase grounding time even though they do not add backend expression degree by themselves.
+*   **Unsupported Piecewise Contexts**: `maximize abs(e)`, `minimize min(...)`, `maximize max(...)`, `abs(e) >= C`, non-affine expressions that would exceed backend degree, and missing finite auxiliary bounds are rejected with `QSOL3101`.

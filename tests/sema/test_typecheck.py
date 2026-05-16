@@ -139,6 +139,40 @@ problem P {
     )
 
 
+def test_piecewise_builtins_accept_numeric_arguments() -> None:
+    text = """
+problem P {
+  set Machines;
+  find Balance : Int[-10 .. 10];
+  find Load[Machines] : Int[0 .. 10];
+  must abs(Balance) <= 5;
+  minimize max(Load[m] for m in Machines) + min(Balance, 3);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="piecewise_ok.qsol"))
+    assert not any(
+        d.code == "QSOL2101"
+        and ("abs()" in d.message or "min()" in d.message or "max()" in d.message)
+        for d in unit.diagnostics
+    )
+
+
+def test_piecewise_builtins_reject_bool_arguments() -> None:
+    text = """
+problem P {
+  set Machines;
+  find Enabled : Bool;
+  find Load[Machines] : Int[0 .. 10];
+  must abs(Enabled) <= 1;
+  minimize max(Enabled for m in Machines);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="piecewise_bad.qsol"))
+    messages = [d.message for d in unit.diagnostics if d.code == "QSOL2101"]
+    assert any("abs() argument must be numeric" in message for message in messages)
+    assert any("max() aggregate term must be numeric" in message for message in messages)
+
+
 def test_scalar_numeric_param_bare_name_is_numeric() -> None:
     text = """
 problem P {

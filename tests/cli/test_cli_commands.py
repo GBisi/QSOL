@@ -171,7 +171,7 @@ problem Scalar {
   find enabled : Bool;
   find Load[V] : Int[0 .. Total];
   must enabled;
-  minimize sum(Load[v] for v in V);
+  minimize max(Load[v] for v in V);
 }
 """.strip()
         + "\n",
@@ -204,7 +204,13 @@ Total = 5
     assert estimate_payload[0]["sets"]["Positions"]["derived"] is True
     assert estimate_payload[0]["relations"]["Pair"]["derived"] is True
     assert estimate_payload[0]["relations"]["Pair"]["source"] == "pairs"
-    assert estimate_payload[0]["backend"]["cqm_integer_variables"] == 2
+    aux_names = [
+        name
+        for name in estimate_payload[0]["decision_variables"]
+        if name.startswith("__qsol_piecewise_max_")
+    ]
+    assert len(aux_names) == 1
+    assert estimate_payload[0]["backend"]["cqm_integer_variables"] == 3
 
     check_result = runner.invoke(
         app,

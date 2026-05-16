@@ -46,6 +46,7 @@ The backend keeps CQM as the canonical model:
 * `Int[lo .. hi]` scalar decisions become native `dimod.Integer` variables with the grounded bounds.
 * Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
 * Relation-indexed scalar decisions create one native CQM variable per grounded relation tuple, for example `Flow[a,b]`.
+* Compiler-lowered piecewise builtins create generated scalar `Int` auxiliaries named like `__qsol_piecewise_abs_0` or `__qsol_piecewise_max_0`.
 
 The exported BQM is derived from the CQM for runtimes and export formats that require binary quadratic form.
 
@@ -73,10 +74,21 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 *   `should expr` adds a penalty to the objective if `expr` is violated (weight 10.0).
 *   `nice expr` adds a smaller penalty (weight 1.0).
 
+Piecewise numeric builtins are lowered before backend code generation in these
+contexts:
+
+* `minimize abs(e)` introduces `z >= e`, `z >= -e`, then minimizes `z`.
+* `must abs(e) <= C` lowers to `e <= C` and `-e <= C`.
+* `minimize max(term for ...)` introduces `T >= term` for every grounded binder row, then minimizes `T`.
+* `maximize min(term for ...)` introduces `Z <= term` for every grounded binder row, then maximizes `Z`.
+
+Generated auxiliaries are visible in lowered/ground IR and estimator output.
+
 ## 5. Limitations
 
 *   **Higher-Order Logic**: Complex nested quantifiers or non-linear expressions that cannot be reduced to quadratic forms may be unsupported or require significant auxiliary variables.
 *   **Continuous Variables**: Native continuous variables are not currently supported.
 *   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation. Bounds may include static params, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Decision-dependent bounds are rejected before backend compilation.
+*   **Piecewise Contexts**: Unsupported piecewise contexts are rejected with `QSOL3101`, including `maximize abs(...)`, `minimize min(...)`, `maximize max(...)`, `abs(...) >= C`, and forms without finite auxiliary bounds.
 
 > For a complete list of unsupported patterns and workarounds, see [Backend V1 Limits](BACKEND_V1_LIMITS.md).

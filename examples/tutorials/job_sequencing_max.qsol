@@ -1,0 +1,15 @@
+problem JobSequencingMax {
+  set Jobs;
+  relation Precedence(before: Jobs, after: Jobs);
+
+  param Length[Jobs] : Int[1 .. 100];
+
+  find Start[Jobs] : Int[0 .. sum(Length[j] for j in Jobs)];
+  find Finish[Jobs] : Int[0 .. sum(Length[j] for j in Jobs)];
+
+  must forall j in Jobs: Finish[j] = Start[j] + Length[j];
+  must forall (before, after) in Precedence:
+    Finish[before] <= Start[after];
+
+  minimize max(Finish[j] for j in Jobs);
+}

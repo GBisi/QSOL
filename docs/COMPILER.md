@@ -13,7 +13,8 @@ The pipeline consists of the following stages:
 4.  **Name Resolution**: Links identifiers to their definitions and builds a symbol table.
 5.  **Type Checking**: Verifies type safety of expressions and constraints.
 6.  **Validation**: Checks for semantic errors (e.g., unused variables, invalid constructs).
-7.  **Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
+7.  **Desugaring and Piecewise Lowering**: Normalizes guards/aggregates and lowers supported compiler-owned piecewise builtins (`abs`, aggregate `min`/`max`) into generated scalar `Int` decisions plus explicit constraints.
+8.  **Kernel Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
 
 ### Middle / Grounding
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
@@ -59,3 +60,12 @@ Derived sets are recorded with their source (`Range`) and are not loaded from sc
 Base relation declarations are loaded from scenario `relations` data during grounding. Derived relation declarations are then evaluated in dependency order from static sets, params, base relations, and earlier derived relations. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.
 
 Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
+
+Supported piecewise numeric forms are lowered before KIR:
+
+- `minimize abs(e)` becomes a generated aux decision with two hard constraints.
+- `must abs(e) <= C` becomes two ordinary comparisons.
+- `minimize max(term for ...)` and `maximize min(term for ...)` become one generated aux decision plus a generated `forall` constraint over the aggregate binders.
+
+The generated aux decisions are ordinary scalar `Int` finds in KIR/GIR, so
+model-size estimates and backend artifacts account for them.

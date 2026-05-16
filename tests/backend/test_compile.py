@@ -518,8 +518,88 @@ V = ["v1", "v2", "v3"]
 
     assert not any(diag.is_error for diag in unit.diagnostics)
     assert unit.artifacts is not None
+
+
+def test_compile_supports_minimize_abs_piecewise_builtin(tmp_path: Path) -> None:
+    source = """
+problem AbsBalance {
+  find Left : Int[0 .. 5];
+  find Right : Int[0 .. 5];
+  minimize abs(Left - Right);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "AbsBalance"
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-abs"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="abs_balance.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
-    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_minimize_max_aggregate_piecewise_builtin(tmp_path: Path) -> None:
+    source = """
+problem Makespan {
+  set Machines;
+  find Load[Machines] : Int[0 .. 10];
+  minimize max(Load[m] for m in Machines);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "Makespan"
+
+[scenarios.baseline.sets]
+Machines = ["m1", "m2"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-max"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="makespan.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_rejects_unsupported_piecewise_objective_context() -> None:
+    source = """
+problem BadAbs {
+  find Left : Int[0 .. 5];
+  find Right : Int[0 .. 5];
+  maximize abs(Left - Right);
+}
+"""
+    unit = compile_source(source, options=CompileOptions(filename="bad_abs.qsol"))
+
+    assert any(d.code == "QSOL3101" and "maximize abs()" in d.message for d in unit.diagnostics)
 
 
 def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:

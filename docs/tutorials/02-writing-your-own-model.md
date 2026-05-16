@@ -157,13 +157,30 @@ The aggregate in the `Int` upper bound is evaluated from scenario data during
 grounding. Bounds may use static params, `size(...)`, relation membership, and
 static `sum`/`count`; they cannot reference decisions such as `Pick.has(j)`.
 
+Compiler-owned piecewise builtins cover common balancing and makespan patterns
+without manual auxiliary variables:
+
+```qsol
+problem MachineLoads {
+  set Machines;
+  find Load[Machines] : Int[0 .. 10];
+
+  minimize max(Load[m] for m in Machines);
+}
+```
+
+The supported first-pass forms are `minimize abs(expr)`, `must abs(expr) <= C`,
+`minimize max(term for ...)`, and `maximize min(term for ...)`. The compiler
+generates bounded scalar auxiliaries and hard constraints before backend
+compilation.
+
 ## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:
 
 - Prefer primitive-friendly formulations and keep custom unknown definitions simple (`rep` + `laws` + `view`).
 - Keep hard constraints to supported numeric comparisons and atom-like predicates.
-- Use `sum` + arithmetic in objectives.
+- Use `sum` + arithmetic in objectives, or the supported piecewise objective forms when they remove manual auxiliaries.
 - Validate early with `targets check` on concrete scenarios.
 - Custom unknowns in `find` are supported through frontend elaboration into primitive finds and generated constraints.
 

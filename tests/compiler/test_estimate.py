@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from qsol.compiler.estimate import estimate_ground_ir
+from qsol.compiler.options import CompileOptions
+from qsol.compiler.pipeline import compile_source
 from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.parse import ast
@@ -108,3 +110,28 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
         "cqm_binary_variables": 5,
         "cqm_integer_variables": 4,
     }
+
+
+def test_estimate_reports_piecewise_generated_aux_decision() -> None:
+    source = """
+problem AbsBalance {
+  find Balance : Int[-5 .. 5];
+  minimize abs(Balance);
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="abs_balance.qsol",
+            instance_payload={"problem": "AbsBalance"},
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+    aux_names = [
+        name for name in report["decision_variables"] if name.startswith("__qsol_piecewise_abs_")
+    ]
+    assert len(aux_names) == 1
+    assert report["decision_variables"][aux_names[0]]["kind"] == "Int"
+    assert report["constraints"]["explicit"] == 2

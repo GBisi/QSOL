@@ -247,7 +247,23 @@ x * y
 x / y
 if cond then num_a else num_b
 size(V)
+abs(expr)
+max(load[m] for m in Machines)
+min(score[a] for a in Agents)
 ```
+
+Piecewise builtins are compiler-owned numeric forms. The supported backend-safe
+contexts are:
+
+```qsol
+minimize abs(balance)
+must abs(balance) <= Limit
+minimize max(load[m] for m in Machines)
+maximize min(score[a] for a in Agents)
+```
+
+The first pass rejects unsupported contexts such as `maximize abs(...)`,
+`minimize min(...)`, `maximize max(...)`, and `abs(...) >= C`.
 
 ### 5.3 Calls and member access
 

@@ -1,0 +1,21 @@
+schema_version = "1"
+
+[entrypoint]
+problem = "JobSequencingMax"
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "JobSequencingMax"
+
+[scenarios.baseline.sets]
+Jobs = ["cut", "assemble", "inspect"]
+
+[scenarios.baseline.params]
+Length = { cut = 2, assemble = 4, inspect = 1 }
+
+[scenarios.baseline.relations]
+Precedence = [
+  { before = "cut", after = "assemble" },
+  { before = "assemble", after = "inspect" },
+]

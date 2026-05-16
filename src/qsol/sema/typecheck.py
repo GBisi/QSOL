@@ -207,7 +207,9 @@ class TypeChecker:
                         )
             out = BOOL
         elif isinstance(expr, ast.FuncCall):
-            if expr.name == "size":
+            if expr.name in {"abs", "min", "max"} and expr.call_style == "paren":
+                out = self._piecewise_builtin_type(expr, scope, binders, diagnostics, tmap)
+            elif expr.name == "size":
                 out = self._size_call_type(expr, scope, binders, diagnostics, tmap)
             elif expr.call_style == "bracket":
                 symbol = scope.lookup(expr.name)
@@ -443,6 +445,95 @@ class TypeChecker:
 
         tmap[id(expr)] = self._repr_type(out)
         return out
+
+    def _piecewise_builtin_type(
+        self,
+        expr: ast.FuncCall,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        if expr.name == "abs":
+            if len(expr.args) != 1:
+                for arg in expr.args:
+                    self._expr_type(arg, scope, binders, diagnostics, tmap)
+                diagnostics.append(self._type_err(expr.span, "abs() expects exactly one argument"))
+                return UNKNOWN
+            arg_ty = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+            if not is_numeric(arg_ty):
+                diagnostics.append(
+                    self._type_err(expr.args[0].span, "abs() argument must be numeric")
+                )
+                return UNKNOWN
+            return arg_ty
+
+        if len(expr.args) == 1:
+            arg = expr.args[0]
+            if isinstance(arg, ast.NumAggregate):
+                inner = dict(binders)
+                if isinstance(arg.comp, ast.NumComprehension):
+                    self._extend_comp_binders(
+                        scope, inner, arg.comp.binders, arg.comp.span, diagnostics
+                    )
+                    term_ty = self._expr_type(arg.comp.term, scope, inner, diagnostics, tmap)
+                    if not is_numeric(term_ty):
+                        diagnostics.append(
+                            self._type_err(
+                                arg.comp.term.span,
+                                f"{expr.name}() aggregate term must be numeric",
+                            )
+                        )
+                        return UNKNOWN
+                    if arg.comp.where is not None:
+                        where_ty = self._expr_type(arg.comp.where, scope, inner, diagnostics, tmap)
+                        if not isinstance(where_ty, type(BOOL)):
+                            diagnostics.append(
+                                self._type_err(arg.comp.where.span, "where clause must be Bool")
+                            )
+                    if arg.comp.else_term is not None:
+                        else_ty = self._expr_type(
+                            arg.comp.else_term, scope, inner, diagnostics, tmap
+                        )
+                        if not is_numeric(else_ty):
+                            diagnostics.append(
+                                self._type_err(arg.comp.else_term.span, "else term must be numeric")
+                            )
+                    return term_ty
+                diagnostics.append(
+                    self._type_err(arg.span, f"{expr.name}() aggregate expects numeric terms")
+                )
+                return UNKNOWN
+
+            arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"{expr.name}() expects two numeric arguments or one numeric comprehension",
+                )
+            )
+            return arg_ty if is_numeric(arg_ty) else UNKNOWN
+
+        if len(expr.args) != 2:
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"{expr.name}() expects two numeric arguments or one numeric comprehension",
+                )
+            )
+            return UNKNOWN
+
+        left = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+        right = self._expr_type(expr.args[1], scope, binders, diagnostics, tmap)
+        promoted = promote_numeric(left, right)
+        if promoted is None:
+            diagnostics.append(
+                self._type_err(expr.span, f"{expr.name}() arguments must be numeric")
+            )
+            return UNKNOWN
+        return promoted
 
     def _method_type(
         self,
