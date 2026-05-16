@@ -396,6 +396,31 @@ def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
     assert (outdir / "capability_report.json").exists()
 
 
+def test_build_rejects_invalid_output_format(tmp_path: Path) -> None:
+    model = tmp_path / "demo.qsol"
+    _write_model(model)
+    config = tmp_path / "demo.qsol.toml"
+    _write_config(config)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "build",
+            str(model),
+            "-c",
+            str(config),
+            "-f",
+            "cqm",
+            "-n",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "error[QSOL4001]: invalid output format" in result.stdout
+    assert "output format must be `qubo` or `ising`" in result.stdout
+
+
 def test_targets_capabilities_unknown_id_error() -> None:
     runner = CliRunner()
     result = runner.invoke(

@@ -1,0 +1,15 @@
+predicate exactly_k(k: Real, terms: Comp(Real)): Bool = terms = k;
+
+function weighted_score(weight: Real): Real = weight;
+
+unknown ExactSubset(X, k) {
+  rep {
+    inner : Subset(X);
+  }
+  laws {
+    must count(x in X where inner.has(x)) = k;
+  }
+  view {
+    predicate has(x: Elem(X)): Bool = inner.has(x);
+  }
+}

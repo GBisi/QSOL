@@ -666,6 +666,8 @@ def test_resolve_output_format_and_runtime_options_from_entrypoint() -> None:
 
     assert resolve_output_format(config=config, cli_format=None) == "ising"
     assert resolve_output_format(config=config, cli_format="qubo") == "qubo"
+    with pytest.raises(ValueError, match="output format must be `qubo` or `ising`"):
+        resolve_output_format(config=config, cli_format="cqm")
     assert resolve_runtime_options(
         config=config, cli_runtime_options={"num_reads": 10, "seed": 7}
     ) == {"sampler": "exact", "num_reads": 10, "seed": 7}

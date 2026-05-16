@@ -90,7 +90,7 @@ Graph/global helpers are visible through their lowered effects. `all_different`
 adds pairwise hard constraints, while `adjacent` and `nonedge` are rewritten to
 relation membership formulas before target support checks. `inspect estimate
 --json` reports relation arity/size, decision summaries, expression summary
-placeholders, backend CQM counts, and backend warnings.
+fields, backend CQM counts, and backend warnings.
 
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.
@@ -197,9 +197,9 @@ The primary result file. Contains:
 - `extensions.solutions`: Ranked solution rows with per-solution samples, selected assignments, and scalar values.
 
 #### `varmap.json`
-Maps your high-level QSOL variables to the solver's low-level indices.
-- Key: The high-level name (e.g., `ColorOf.is(n1, Red)`).
-- Value: The integer index used in the CQM/BQM.
+Maps backend variable labels to QSOL-level meanings.
+- Key: The backend label used in BQM/QUBO output, for example `Pick.has[i2]`.
+- Value: The readable source-level meaning, for example `Pick.has(i2)`.
 Useful for debugging raw solver outputs or understanding variable counts.
 
 #### `model.cqm` / `model.bqm`
@@ -262,7 +262,8 @@ Scenario/default plugin specs and CLI plugin specs are merged with exact-string 
 - `QSOL2001`: unknown symbol/module/import path
 - `QSOL2101`: type/arity mismatch, import cycles, or invalid imported top-level items
 - `QSOL2201`: scenario payload schema/shape mismatch after materialization
-- `QSOL3001`: backend unsupported language shape. See [Backend V1 Limits](../BACKEND_V1_LIMITS.md) for supported and unsupported patterns.
+- `QSOL3101`: unsupported piecewise/global-helper lowering context.
+- `QSOL4010`: unsupported required capability or backend shape for the selected target. See [Backend V1 Limits](../BACKEND_V1_LIMITS.md) for supported and unsupported patterns.
 - `QSOL4002`: config not found/ambiguous discovery
 - `QSOL4004`: config TOML load/validation failure
 - `QSOL4006`: runtime not resolved

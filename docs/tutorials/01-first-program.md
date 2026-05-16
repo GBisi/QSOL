@@ -120,7 +120,7 @@ This also writes `run.json`.
 
 After `solve` completes, check the output directory (`outdir/first_program/`):
 
-- **`run.json`** — The primary result file. Contains `energy` (objective value), `solution` (decoded high-level assignments like `Pick.has(i2)`), `is_feasible` (whether all hard constraints are satisfied), and `sample` (raw 0/1 variable values).
+- **`run.json`** — The primary result file. Contains `status`, `energy`, `best_sample`, `selected_assignments` (decoded high-level assignments like `Pick.has(i2)`), `scalars`, timing, runtime options, and ranked rows in `extensions.solutions`.
 - **`varmap.json`** — Maps each high-level QSOL variable name (e.g., `Pick.has(i1)`) to the solver's internal integer index. Useful for debugging or cross-checking raw samples.
 - **`explain.json`** — Compiler diagnostics (warnings, info) with source-level spans. Check this if a constraint behaves unexpectedly.
 - **`capability_report.json`** — Shows which model features (e.g., "quadratic constraints") the backend supports. Useful when `targets check` reports issues.

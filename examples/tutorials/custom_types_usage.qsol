@@ -1,0 +1,14 @@
+use custom_types;
+
+problem PickThree {
+  set Items;
+  param K : Real = 3;
+  param Weight[Items] : Real = 1;
+
+  find Pick : ExactSubset(Items, K);
+
+  must forall i in Items: Pick.has(i) => Weight[i] >= 0;
+  must exactly_k(K, 1 for i in Items where Pick.has(i));
+
+  maximize sum(weighted_score(Weight[i]) for i in Items where Pick.has(i));
+}

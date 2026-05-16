@@ -2,12 +2,12 @@
 
 The `qsol` command-line interface is the primary tool for compiling, inspecting, and solving QSOL models. It takes a declarative `.qsol` model file and a `.qsol.toml` configuration file through a multi-stage compiler pipeline, ultimately producing quantum-compatible artifacts and solve results.
 
-All examples in this document use the **graph coloring** tutorial as the running example:
+Most examples in this document use the small **first program** tutorial model:
 
 ```
 examples/tutorials/
-├── graph_coloring.qsol        # the model
-└── graph_coloring.qsol.toml   # config with "triangle" and "pentagon" scenarios
+├── first_program.qsol        # the model
+└── first_program.qsol.toml   # config with the "baseline" scenario
 ```
 
 ---
@@ -36,13 +36,15 @@ examples/tutorials/
 
 ## Global Options
 
-These options are available on **every** command:
+The root command supports shell completion options and `--help`/`-h`. Most
+leaf commands also support `--no-color`; compiler-facing leaf commands support
+`--log-level`.
 
 | Option                 | Short | Type    | Default   | Description                                           |
 |------------------------|-------|---------|-----------|-------------------------------------------------------|
-| `--no-color`           | `-n`  | flag    | off       | Disable ANSI color/style output (useful for piping).  |
-| `--log-level`          | `-l`  | enum    | `warning` | Set CLI log verbosity: `debug`, `info`, `warning`, `error`. |
 | `--help`               | `-h`  | flag    | —         | Show help message and exit.                           |
+| `--no-color`           | `-n`  | flag    | off       | Disable ANSI color/style output on leaf commands that expose it. |
+| `--log-level`          | `-l`  | enum    | `warning` | Set leaf-command log verbosity: `debug`, `info`, `warning`, `error`. |
 
 > **Tip:** Use `--log-level debug` to see the compiler's internal decision-making (config resolution, variable encoding, constraint lowering).
 
@@ -67,7 +69,7 @@ qsol build [OPTIONS] FILE
 | `FILE`              | —     | path     | *required*                       | Path to the `.qsol` model source file.                                      |
 | `--config`          | `-c`  | path     | auto-discovered `*.qsol.toml`    | Path to the TOML configuration file. If omitted, QSOL looks for `<model>.qsol.toml` or a single `*.qsol.toml` in the same directory. |
 | `--out`             | `-o`  | path     | `./outdir/<model_stem>`          | Output directory for all generated artifacts.                               |
-| `--format`          | `-f`  | string   | config entrypoint, then `qubo`   | Export format for the objective payload: `qubo`, `ising`, `bqm`, or `cqm`.  |
+| `--format`          | `-f`  | string   | config entrypoint, then `qubo`   | Human-readable export format for the objective payload. Use `qubo` or `ising`; binary `model.cqm` and `model.bqm` are always written. |
 | `--runtime`         | `-u`  | string   | config entrypoint value          | Runtime plugin identifier (e.g., `local-dimod`).                            |
 | `--plugin`          | `-p`  | string   | none                             | Load an extra plugin bundle from `module:attribute` (repeatable).           |
 | `--scenario`        | —     | string   | config entrypoint scenario       | Scenario name to build (repeatable for multi-scenario).                     |
@@ -77,10 +79,11 @@ qsol build [OPTIONS] FILE
 **Example:**
 
 ```bash
-$ qsol build examples/tutorials/graph_coloring.qsol \
-    -c examples/tutorials/graph_coloring.qsol.toml \
+$ qsol build examples/tutorials/first_program.qsol \
+    -c examples/tutorials/first_program.qsol.toml \
     --runtime local-dimod \
-    -o outdir/graph_coloring
+    --format qubo \
+    -o outdir/first_program
 ```
 
 **Example Output (stdout):**
@@ -90,18 +93,18 @@ $ qsol build examples/tutorials/graph_coloring.qsol \
 ┌────────────────────┬──────────────────────────────────────────────┐
 │ Key                │ Value                                        │
 ├────────────────────┼──────────────────────────────────────────────┤
-│ Scenario           │ triangle                                     │
+│ Scenario           │ baseline                                     │
 │ Runtime            │ local-dimod                                  │
 │ Backend            │ dimod-cqm-v1                                 │
-│ CQM                │ outdir/graph_coloring/model.cqm              │
-│ BQM                │ outdir/graph_coloring/model.bqm              │
-│ Format             │ outdir/graph_coloring/qubo.json              │
-│ VarMap             │ outdir/graph_coloring/varmap.json            │
-│ Explain            │ outdir/graph_coloring/explain.json           │
-│ Capability Report  │ outdir/graph_coloring/capability_report.json │
-│ num_constraints    │ 80                                           │
-│ num_interactions   │ 105                                          │
-│ num_variables      │ 45                                           │
+│ CQM                │ outdir/first_program/model.cqm               │
+│ BQM                │ outdir/first_program/model.bqm               │
+│ Format             │ outdir/first_program/qubo.json               │
+│ VarMap             │ outdir/first_program/varmap.json             │
+│ Explain            │ outdir/first_program/explain.json            │
+│ Capability Report  │ outdir/first_program/capability_report.json  │
+│ num_constraints    │ 1                                            │
+│ num_interactions   │ 6                                            │
+│ num_variables      │ 4                                            │
 └────────────────────┴──────────────────────────────────────────────┘
 ```
 
@@ -149,7 +152,7 @@ qsol solve [OPTIONS] FILE
 | `FILE`                  | —     | path     | *required*                       | Path to the `.qsol` model source file.                                       |
 | `--config`              | `-c`  | path     | auto-discovered `*.qsol.toml`    | Path to the TOML configuration file.                                         |
 | `--out`                 | `-o`  | path     | `./outdir/<model_stem>`          | Output directory for artifacts and run output.                               |
-| `--format`              | `-f`  | string   | config entrypoint, then `qubo`   | Export format for objective payload: `qubo`, `ising`, `bqm`, or `cqm`.       |
+| `--format`              | `-f`  | string   | config entrypoint, then `qubo`   | Human-readable export format for objective payload. Use `qubo` or `ising`; binary `model.cqm` and `model.bqm` are always written. |
 | `--runtime`             | `-u`  | string   | config entrypoint value          | Runtime plugin identifier.                                                   |
 | `--plugin`              | `-p`  | string   | none                             | Load an extra plugin bundle (repeatable).                                    |
 | `--runtime-option`      | `-x`  | key=val  | none                             | Pass runtime-specific options (repeatable). E.g., `-x sampler=exact`.        |
@@ -165,12 +168,11 @@ qsol solve [OPTIONS] FILE
 **Example:**
 
 ```bash
-$ qsol solve examples/tutorials/graph_coloring.qsol \
-    -c examples/tutorials/graph_coloring.qsol.toml \
+$ qsol solve examples/tutorials/first_program.qsol \
+    -c examples/tutorials/first_program.qsol.toml \
     --runtime local-dimod \
-    -x sampler=simulated-annealing \
-    -x num_reads=100 \
-    -o outdir/graph_coloring
+    -x sampler=exact \
+    -o outdir/first_program
 ```
 
 **Example Output (stdout):**
@@ -187,17 +189,21 @@ The `solve` command prints **three tables** to stdout:
 │ Status                   │ ok                                           │
 │ Runtime                  │ local-dimod                                  │
 │ Backend                  │ dimod-cqm-v1                                 │
-│ Runtime Parameters       │ num_reads=100                                │
-│                          │ sampler=simulated-annealing                  │
-│ Energy                   │ 0.0                                          │
+│ Runtime Parameters       │ energy_max=None                              │
+│                          │ energy_min=None                              │
+│                          │ num_reads=100                                │
+│                          │ sampler=exact                                │
+│                          │ seed=None                                    │
+│                          │ solutions=1                                  │
+│ Energy                   │ -13.0                                        │
 │ Solutions Requested      │ 1                                            │
 │ Solutions Returned       │ 1                                            │
 │ Energy Min               │                                              │
 │ Energy Max               │                                              │
 │ Energy Threshold Passed  │ True                                         │
 │ Timing (ms)              │ 5223.224                                     │
-│ Run Output               │ outdir/graph_coloring/run.json               │
-│ Capability Report        │ outdir/graph_coloring/capability_report.json │
+│ Run Output               │ outdir/first_program/run.json                │
+│ Capability Report        │ outdir/first_program/capability_report.json  │
 └──────────────────────────┴──────────────────────────────────────────────┘
 ```
 
@@ -209,7 +215,7 @@ The `solve` command prints **three tables** to stdout:
 | **Runtime**                | The runtime plugin used (e.g., `local-dimod` uses the dimod library locally).                                                            |
 | **Backend**                | The backend that compiled the model (e.g., `dimod-cqm-v1` compiles to CQM → BQM via penalty method).                                   |
 | **Runtime Parameters**     | The effective runtime configuration used for this run. Includes sampler type, `num_reads`, `seed`, etc. These come from `-x` flags, `--runtime-options-file`, or config defaults. |
-| **Energy**                 | The energy (objective value) of the **best** solution found. **Lower is better** for minimization problems. An energy of `0.0` means the objective function evaluates to zero — for graph coloring, this means zero same-color conflicts. |
+| **Energy**                 | The energy (objective value) of the **best** solution found. The runtime reports the backend energy after objective normalization; compare solutions from the same model/run rather than assuming this is the raw source expression value. |
 | **Solutions Requested**    | How many unique solutions were requested (from `--solutions` or config).                                                                 |
 | **Solutions Returned**     | How many unique solutions the sampler actually found and returned.                                                                       |
 | **Energy Min / Max**       | If `--energy-min` or `--energy-max` was set, these show the threshold bounds. Blank if not set.                                          |
@@ -225,7 +231,7 @@ The `solve` command prints **three tables** to stdout:
 ┌──────┬────────┬───────────┬─────────────┬─────────────┬────────┬──────────────────┬────────────────────────────────────────┐
 │ Rank │ Energy │ Selected  │ Occurrences │ Probability │ Status │ Scenario Energ…  │ Sample                                 │
 ├──────┼────────┼───────────┼─────────────┼─────────────┼────────┼──────────────────┼────────────────────────────────────────┤
-│ 1    │ 0.0    │ 5 selectd │ 1           │             │        │                  │ 5/45 active: ColorOf.is[N1,Red], Co... │
+│ 1    │ -13.0  │ 2 selected│ 1           │             │        │                  │ 2/4 active: Pick.has[i2], Pick.has[i3] │
 └──────┴────────┴───────────┴─────────────┴─────────────┴────────┴──────────────────┴────────────────────────────────────────┘
 ```
 
@@ -299,7 +305,7 @@ qsol inspect parse [OPTIONS] FILE
 **Example:**
 
 ```bash
-$ qsol inspect parse examples/tutorials/graph_coloring.qsol --json
+$ qsol inspect parse examples/tutorials/first_program.qsol --json
 ```
 
 **Example Output (abbreviated):**
@@ -314,22 +320,12 @@ $ qsol inspect parse examples/tutorials/graph_coloring.qsol --json
   ],
   "items": [
     {
-      "kind": "PredicateDecl",
-      "name": "can_coexist",
-      "params": [
-        {"name": "n1", "type": {"kind": "ElemType", "set_name": "Nodes"}},
-        {"name": "n2", "type": {"kind": "ElemType", "set_name": "Nodes"}},
-        {"name": "c",  "type": {"kind": "ElemType", "set_name": "Colors"}}
-      ],
-      "body": { "kind": "IfThenElse", "..." : "..." }
-    },
-    {
       "kind": "ProblemDecl",
-      "name": "GraphColoring",
+      "name": "FirstProgram",
       "body": {
-        "sets": ["Nodes", "Colors"],
-        "params": [{"name": "Edge", "...": "..."}],
-        "finds": [{"name": "ColorOf", "type": {"kind": "MappingType", "..."}}],
+        "sets": ["Items"],
+        "params": [{"name": "Value", "...": "..."}],
+        "finds": [{"name": "Pick", "type": {"kind": "SubsetType", "..."}}],
         "constraints": ["..."],
         "objectives": ["..."]
       }
@@ -368,7 +364,7 @@ qsol inspect check [OPTIONS] FILE
 **Example (no errors):**
 
 ```bash
-$ qsol inspect check examples/tutorials/graph_coloring.qsol
+$ qsol inspect check examples/tutorials/first_program.qsol
 No diagnostics.
 ```
 
@@ -414,7 +410,7 @@ qsol inspect lower [OPTIONS] FILE
 **Example:**
 
 ```bash
-$ qsol inspect lower examples/tutorials/graph_coloring.qsol --json
+$ qsol inspect lower examples/tutorials/first_program.qsol --json
 ```
 
 **Example Output (abbreviated):**
@@ -657,8 +653,8 @@ qsol targets check [OPTIONS] FILE
 **Example:**
 
 ```bash
-$ qsol targets check examples/tutorials/graph_coloring.qsol \
-    -c examples/tutorials/graph_coloring.qsol.toml \
+$ qsol targets check examples/tutorials/first_program.qsol \
+    -c examples/tutorials/first_program.qsol.toml \
     --runtime local-dimod
 ```
 
@@ -669,11 +665,11 @@ $ qsol targets check examples/tutorials/graph_coloring.qsol \
 ┌────────────────────┬──────────────────────────────────────────────┐
 │ Key                │ Value                                        │
 ├────────────────────┼──────────────────────────────────────────────┤
-│ Scenario           │ triangle                                     │
+│ Scenario           │ baseline                                     │
 │ Supported          │ yes                                          │
 │ Runtime            │ local-dimod                                  │
 │ Backend            │ dimod-cqm-v1                                 │
-│ Capability Report  │ outdir/graph_coloring/capability_report.json │
+│ Capability Report  │ outdir/first_program/capability_report.json  │
 └────────────────────┴──────────────────────────────────────────────┘
 ```
 

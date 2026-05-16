@@ -267,11 +267,16 @@ def materialize_instance_payload(*, config: QsolConfig, scenario_name: str) -> d
 
 
 def resolve_output_format(*, config: QsolConfig, cli_format: str | None) -> str:
-    if cli_format is not None:
-        return cli_format
-    if config.entrypoint.output_format is not None:
-        return config.entrypoint.output_format
-    return "qubo"
+    output_format = (
+        cli_format
+        if cli_format is not None
+        else config.entrypoint.output_format
+        if config.entrypoint.output_format is not None
+        else "qubo"
+    )
+    if output_format not in {"qubo", "ising"}:
+        raise ValueError("output format must be `qubo` or `ising`")
+    return output_format
 
 
 def resolve_runtime_options(

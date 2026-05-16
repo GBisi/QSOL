@@ -21,7 +21,7 @@ Pass these via `--runtime-option KEY=VALUE` or `-x KEY=VALUE`.
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `sampler` | `string` | `simulated-annealing` | The underlying solver to use (`simulated-annealing` or `exact`). |
-| `num_reads` | `int` | `10` | Number of samples to collect (only for `simulated-annealing`). |
+| `num_reads` | `int` | `100` | Number of samples to collect (only for `simulated-annealing`; exact enumeration reports the resolved value but does not use it for sampling). |
 | `seed` | `int` | `None` | Random seed for reproducibility. |
 
 ### `qiskit`
@@ -82,8 +82,10 @@ To see detailed capabilities of a runtime:
 qsol targets capabilities --runtime local-dimod
 ```
 
-To check if a specific model and scenario are compatible with a runtime/backend pair:
+To check if a specific model and scenario are compatible with a runtime/backend
+pair, select the runtime. The built-in backend defaults to `dimod-cqm-v1` in
+current CLI workflows:
 
 ```bash
-qsol targets check model.qsol --runtime local-dimod --backend dimod-cqm-v1
+qsol targets check model.qsol -c model.qsol.toml --runtime local-dimod
 ```

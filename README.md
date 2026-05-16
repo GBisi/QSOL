@@ -17,7 +17,7 @@ Traditional optimization often requires you to:
 QSOL takes a different approach:
 
 *   **No Low-Level Math**: You define **Sets**, **Constraints**, and **Objectives** using a syntax close to natural language — not vectors and matrices.
-*   **First-Class Unknowns**: The things you *want to find* — like a `Subset` or a `Mapping` — are expressed directly in QSOL as high-level declarations. You write `find ColorOf : Mapping(Nodes -> Colors)` and the compiler manages the underlying binary variables for you. *(See [QSOL Reference — Unknowns](QSOL_reference.md#43-unknowns-find))*
+*   **First-Class Unknowns**: The things you *want to find* — like a `Subset` or a `Mapping` — are expressed directly in QSOL as high-level declarations. You write `find ColorOf : Mapping(Nodes -> Colors)` and the compiler manages the underlying binary variables for you. *(See [QSOL Reference — Decisions and Unknowns](QSOL_reference.md#8-decisions-and-unknowns))*
 *   **Solver Agnostic**: Write one model, target anything from your laptop CPU to a Quantum Processing Unit (QPU) (both adiabatic or gate-based).
 
 ---
@@ -36,6 +36,9 @@ A QSOL program consists of 5 core components:
     *   The compiler automatically breaks these down into the binary variables that solvers need.
 4.  **Constraints** ⚖️: The rules the solution must (or should) follow.
     *   `must`: Hard constraints — the solution is invalid if violated.
+    *   `should` / `nice`: Soft preferences in the language surface. Backend
+        support for soft preferences is intentionally narrow in the current
+        v1 backend.
 
 QSOL also supports finite-domain scalar decisions when a model needs a bounded
 number or boolean switch directly:
@@ -66,7 +69,6 @@ before backend compilation. Graph structures such as `UndirectedGraph` and
 `DirectedGraph` expose static domains like `G.edges`, `G.non_edges`, `D.arcs`,
 and `D.non_arcs` for canonical graph iteration without creating solver
 variables.
-    *   `should` / `nice`: Soft preferences — penalized if violated, but not infeasible.
 5.  **Objectives** 🏆: The quantitative goal (e.g., `minimize` cost, `maximize` efficiency).
 
 > For the full language surface, see the [QSOL Language Reference](QSOL_reference.md).
@@ -75,18 +77,16 @@ variables.
 
 ## 🐣 Minimal Example: Graph Coloring
 
-Let's solve a classic! We want to assign a color to every node in a graph such that no two connected nodes share the same color, while using as few colors as possible.
+This example assigns a color to every node in a graph and minimizes same-color
+edge conflicts. It uses an objective penalty rather than hard quadratic edge
+constraints so it is runnable on the current `dimod-cqm-v1` backend.
 
 ### 1. The Model (`graph_coloring.qsol`)
 
 ```qsol
 use stdlib.logic;
 
-// Predicate: if an edge exists, both endpoints must not share color c
-predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
-    if Edge[n1, n2] = 1.0 then not (ColorOf.is(n1, c) and ColorOf.is(n2, c)) else true;
-
-// Function: count same-color conflicts on an edge (0 if no edge)
+// Count same-color conflicts on an edge (0 if no edge)
 function edge_conflicts(n1: Elem(Nodes), n2: Elem(Nodes)) =
     sum(if ColorOf.is(n1, c) and ColorOf.is(n2, c) then Edge[n1, n2] else 0 for c in Colors);
 
@@ -98,12 +98,6 @@ problem GraphColoring {
 
     find ColorOf : Mapping(Nodes -> Colors);
 
-    // Constraint: connected nodes must not share a color
-    must forall n1 in Nodes:
-        forall n2 in Nodes:
-            forall c in Colors:
-                can_coexist(n1, n2, c);
-
     // Objective: minimize total conflicts
     minimize sum(sum(edge_conflicts(n1, n2) for n2 in Nodes) for n1 in Nodes);
 }
@@ -111,11 +105,8 @@ problem GraphColoring {
 
 **Key observations:**
 *   `find ColorOf : Mapping(Nodes -> Colors)` — the **unknown**: "find a mapping that assigns exactly one color to each node".
-*   `indicator(b)` is a function from `stdlib.logic` that converts a boolean to a number: `1` if true, `0` if false. This lets you use logical conditions inside arithmetic expressions.
-*   `can_coexist(n1, n2, c)` — a custom **predicate** that encodes: *"nodes n1 and n2 may both be assigned color c"*. Here's how it works:
-    *   The `if Edge[n1, n2] = 1.0 then ... else true` conditional checks whether an edge exists. If it does, it enforces the boolean constraint; otherwise `true` (trivially satisfied).
-    *   `not (ColorOf.is(n1, c) and ColorOf.is(n2, c))` directly expresses: "it is not the case that both endpoints have color `c`". This is a **bool if-else** — the branches return `Bool` instead of numbers.
-*   `edge_conflicts(n1, n2)` — a custom **function** that counts how many colors both nodes share on an edge. Reused as the `minimize` objective.
+*   `edge_conflicts(n1, n2)` — a custom **function** that counts whether two nodes share a color on an edge. Reused as the `minimize` objective.
+*   The numeric `if ... then ... else ...` expression contributes the edge weight only when both endpoint color decisions are true.
 *   `predicate` and `function` are **macros** — the compiler inlines them at every call site, so they can reference problem-scoped names like `Edge`, `ColorOf`, and `Colors`.
 
 > For more on the QSOL syntax, see [QSOL Syntax Guide](docs/QSOL_SYNTAX.md). For the full standard library, see [stdlib reference](docs/STDLIB.md).

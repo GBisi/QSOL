@@ -1,0 +1,17 @@
+schema_version = "1"
+
+[entrypoint]
+problem = "PickThree"
+scenario = "baseline"
+runtime = "local-dimod"
+runtime_options = { sampler = "exact" }
+
+[scenarios.baseline]
+problem = "PickThree"
+
+[scenarios.baseline.sets]
+Items = ["a", "b", "c", "d"]
+
+[scenarios.baseline.params]
+K = 3
+Weight = { a = 4, b = 1, c = 7, d = 3 }

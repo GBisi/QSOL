@@ -1,10 +1,8 @@
 use stdlib.logic;
 
-// Predicate: if an edge exists, both endpoints must not share color c
-predicate can_coexist(n1: Elem(Nodes), n2: Elem(Nodes), c: Elem(Colors)) =
-    if Edge[n1, n2] = 1.0 then not (ColorOf.is(n1, c) and ColorOf.is(n2, c)) else true;
-
-// Function: count same-color conflicts on an edge (0 if no edge)
+// Count same-color conflicts on an edge. The model minimizes these conflicts
+// instead of using hard quadratic edge constraints so it remains compatible with
+// the current dimod-cqm-v1 backend.
 function edge_conflicts(n1: Elem(Nodes), n2: Elem(Nodes)) =
     sum(if ColorOf.is(n1, c) and ColorOf.is(n2, c) then Edge[n1, n2] else 0 for c in Colors);
 
@@ -22,12 +20,6 @@ problem GraphColoring {
     // 3. Unknowns: assign exactly one color to each node
     find ColorOf : Mapping(Nodes -> Colors);
 
-    // 4. Constraint: connected nodes must not share a color
-    must forall n1 in Nodes:
-        forall n2 in Nodes:
-            forall c in Colors:
-                can_coexist(n1, n2, c);
-
-    // 5. Objective: minimize total conflicts
+    // 4. Objective: minimize total same-color conflicts on edges
     minimize sum(sum(edge_conflicts(n1, n2) for n2 in Nodes) for n1 in Nodes);
 }

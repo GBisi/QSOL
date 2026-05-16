@@ -197,7 +197,7 @@ Items = ["a", "b", "c"]
             filename="all_different.qsol",
             instance_payload=instance_payload["scenarios"]["baseline"],
             outdir=str(outdir),
-            output_format="cqm",
+            output_format="qubo",
         ),
     )
 

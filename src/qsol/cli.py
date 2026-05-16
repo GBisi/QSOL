@@ -1334,7 +1334,7 @@ def build_cmd(
         None,
         "--format",
         "-f",
-        help="Export format for objective payload: qubo, ising, bqm, or cqm (defaults to config entrypoint, then qubo).",
+        help="Export format for human-readable objective payload: qubo or ising (defaults to config entrypoint, then qubo).",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
     plugin: list[str] = typer.Option(
@@ -1359,7 +1359,17 @@ def build_cmd(
         raise typer.Exit(code=1)
     resolved_outdir = _resolve_outdir(file, out, parsed_config)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
-    resolved_output_format = resolve_output_format(config=parsed_config, cli_format=output_format)
+    try:
+        resolved_output_format = resolve_output_format(
+            config=parsed_config, cli_format=output_format
+        )
+    except ValueError as exc:
+        _print_diags(
+            console,
+            None,
+            [_diag(file, code="QSOL4001", message="invalid output format", notes=[str(exc)])],
+        )
+        raise typer.Exit(code=1) from None
 
     try:
         selected_scenarios = resolve_selected_scenarios(
@@ -1559,7 +1569,7 @@ def solve_cmd(
         None,
         "--format",
         "-f",
-        help="Export format for objective payload: qubo, ising, bqm, or cqm (defaults to config entrypoint, then qubo).",
+        help="Export format for human-readable objective payload: qubo or ising (defaults to config entrypoint, then qubo).",
     ),
     runtime: str | None = typer.Option(None, "--runtime", "-u", help="Runtime plugin identifier."),
     plugin: list[str] = typer.Option(
@@ -1611,7 +1621,17 @@ def solve_cmd(
         raise typer.Exit(code=1) from None
     resolved_outdir = _resolve_outdir(file, out, parsed_config)
     _configure_logging(log_level, log_file=resolved_outdir / "qsol.log")
-    resolved_output_format = resolve_output_format(config=parsed_config, cli_format=output_format)
+    try:
+        resolved_output_format = resolve_output_format(
+            config=parsed_config, cli_format=output_format
+        )
+    except ValueError as exc:
+        _print_diags(
+            console,
+            None,
+            [_diag(file, code="QSOL4001", message="invalid output format", notes=[str(exc)])],
+        )
+        raise typer.Exit(code=1) from None
 
     cli_runtime_params, runtime_options_error = _parse_runtime_options(
         runtime_option_args=runtime_option,

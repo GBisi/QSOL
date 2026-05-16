@@ -58,15 +58,18 @@ predicate iff(a: Bool, b: Bool): Bool = (a and b) or (not a and not b);
 ### Functions (return Real)
 
 ```qsol
-function indicator(condition: Bool): Real = if condition then 1 else 0;
+function scaled_cost(cost: Real): Real = cost * 2;
 ```
 
 ### Usage
 
 ```qsol
 must iff(x, y);
-minimize indicator(x);
+minimize scaled_cost(10);
 ```
+
+For boolean-to-number indicator expressions, prefer importing
+`stdlib.logic` and using its built-in `indicator(...)` helper.
 
 ## 3. Packaging as Modules
 

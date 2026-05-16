@@ -12,6 +12,9 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `graph_coloring.qsol.toml`
 - `minimum_graph_coloring.qsol`
 - `minimum_graph_coloring.qsol.toml`
+- `custom_types.qsol`
+- `custom_types_usage.qsol`
+- `custom_types_usage.qsol.toml`
 - `scalar_bool_demo.qsol`
 - `scalar_bool_demo.qsol.toml`
 - `relation_graph_independent_set.qsol`
@@ -124,6 +127,16 @@ uv run qsol solve \
   --config examples/tutorials/job_sequencing_max.qsol.toml \
   --runtime local-dimod \
   --out outdir/job_sequencing_max \
+  --runtime-option sampler=simulated-annealing \
+  --runtime-option num_reads=100
+```
+
+```bash
+uv run qsol solve \
+  examples/tutorials/custom_types_usage.qsol \
+  --config examples/tutorials/custom_types_usage.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/custom_types_usage \
   --runtime-option sampler=exact
 ```
 
@@ -174,9 +187,16 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Workers`
   - `scenarios.baseline.params.Cost[worker][task]`
   - optional `entrypoint.runtime`
+- `graph_coloring.qsol.toml`
+  - `scenarios.triangle` and `scenarios.pentagon` provide graph nodes, colors, and adjacency weights.
+  - The model minimizes same-color edge conflicts so it is runnable on the current v1 backend.
 - `minimum_graph_coloring.qsol.toml`
   - `scenarios.triangle.sets.Nodes`
   - `Colors` is a derived `Range(1, size(Nodes))` set and is not supplied in TOML.
+  - The model uses a large same-color conflict penalty plus a color-index tie breaker, which keeps it compatible with `dimod-cqm-v1`.
+- `custom_types_usage.qsol.toml`
+  - `custom_types.qsol` defines `ExactSubset(X, k)`, `exactly_k`, and `weighted_score`.
+  - `scenarios.baseline.params.K` supplies the named cardinality parameter used as the unknown argument.
 - `scalar_bool_demo.qsol.toml`
   - `scenarios.default.sets.Machines`
   - `scenarios.default.params.Capacity`

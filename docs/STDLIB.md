@@ -24,7 +24,7 @@ use stdlib.logic;
 
 *   **`exactly(k: Real, terms: Comp(Real)): Bool`**
     *   Returns true if the sum of `terms` equals `k`.
-    *   Commonly used with boolean comprehensions: `exactly(1, S.has(x) for x in X)`.
+    *   Commonly used with numeric comprehensions: `exactly(1, 1 for x in X where S.has(x))`.
 
 *   **`atleast(k: Real, terms: Comp(Real)): Bool`**
     *   Returns true if the sum of `terms` is `>= k`.

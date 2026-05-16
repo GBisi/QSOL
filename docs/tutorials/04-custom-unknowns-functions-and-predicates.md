@@ -19,9 +19,9 @@ Create `examples/tutorials/custom_types.qsol`:
 
 ```qsol
 // Reusable helpers
-function indicator(b: Bool): Real = if b then 1 else 0;
-
 predicate exactly_k(k: Real, terms: Comp(Real)): Bool = terms = k;
+
+function weighted_score(weight: Real): Real = weight;
 
 // A subset that must contain exactly k elements
 unknown ExactSubset(X, k) {
@@ -33,7 +33,6 @@ unknown ExactSubset(X, k) {
   }
   view {
     predicate has(x: Elem(X)): Bool = inner.has(x);
-    function pick_score(x: Elem(X)): Real = indicator(inner.has(x));
   }
 }
 ```
@@ -53,18 +52,19 @@ use custom_types;
 
 problem PickThree {
   set Items;
+  param K : Real = 3;
   param Weight[Items] : Real = 1;
 
-  find Pick : ExactSubset(Items, 3);
+  find Pick : ExactSubset(Items, K);
 
   // Use unknown view predicate in constraints
   must forall i in Items: Pick.has(i) => Weight[i] >= 0;
 
   // Use top-level predicate macro with comprehension argument
-  must exactly_k(3, indicator(Pick.has(i)) for i in Items);
+  must exactly_k(K, 1 for i in Items where Pick.has(i));
 
-  // Use unknown view function in objective
-  maximize sum(Pick.pick_score(i) * Weight[i] for i in Items);
+  // Use top-level numeric helper in objective
+  maximize sum(weighted_score(Weight[i]) for i in Items where Pick.has(i));
 }
 ```
 
@@ -72,6 +72,7 @@ Import path reminder:
 
 - `use custom_types;` maps to `custom_types.qsol`.
 - Non-`stdlib.*` imports resolve from the importer directory, then process CWD.
+- User unknown type arguments are names, not literals. Use a parameter name such as `K`; do not write `ExactSubset(Items, 3)`.
 
 ## 4. Type Rules to Remember
 
@@ -93,9 +94,13 @@ After creating your module and problem:
 ```bash
 uv run qsol inspect parse examples/tutorials/custom_types_usage.qsol
 uv run qsol inspect check examples/tutorials/custom_types_usage.qsol
+uv run qsol targets check examples/tutorials/custom_types_usage.qsol \
+  -c examples/tutorials/custom_types_usage.qsol.toml \
+  --runtime local-dimod
 ```
 
-If you add scenario data/config, continue with `targets check`, `build`, and `solve` as in earlier tutorials.
+The repository includes `examples/tutorials/custom_types_usage.qsol.toml`, so
+you can continue with `build` and `solve` as in earlier tutorials.
 
 ## 7. Where to Go Next
 

@@ -43,11 +43,15 @@ When running `qsol build` or `qsol solve`, the compiler generates an output dire
 *   **`qubo.json` / `ising.json`**: The flattened optimization problem in JSON format (linear/quadratic terms), useful for debugging or portability.
 *   **`capability_report.json`**: A report of the capabilities required by the model and whether the selected backend supports them.
 *   **`run.json`** (for `solve`): The results of the execution, including:
+    *   **status**: Runtime status such as `ok`, `threshold_failed`, or `scenario_failed`.
     *   **energy**: The objective value of the best solution.
-    *   **sample**: The raw variable assignments.
+    *   **best_sample**: The raw binary variable assignment for the best ranked solution.
     *   **selected_assignments**: A user-friendly list of active variables (e.g., `Picked.has(apple)`).
     *   **scalars**: Decoded scalar `Bool`/`Int` decisions, including indexed scalar labels such as `Load[m1]`.
-*   **`solutions.json`** (optional): If multiple solutions are requested, they may be stored here.
+    *   **extensions.solutions**: Ranked solution rows when one or more solutions are requested.
+
+The current implementation stores ranked solutions inside `run.json`; it does
+not write a separate `solutions.json` file.
 
 ## 3. Intermediate Representations (IR)
 
