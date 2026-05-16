@@ -126,13 +126,81 @@ Edge = [
 ]
 ```
 
+When a relation can be computed from static data, derive it in the model instead
+of duplicating it in TOML:
+
+```qsol
+relation NonEdge(u: V, v: V) =
+  pairs(u in V, v in V where u != v and not Edge(u, v));
+
+relation Reciprocal(u: V, v: V) =
+  filter((u, v) in Edge where Edge(v, u));
+```
+
+Derived relation filters run during grounding. They may use params and relation
+membership calls, but not decisions such as `Pick.has(v)`.
+
+Static data can also define bounded integer decision domains:
+
+```qsol
+problem JobSequencing {
+  set Jobs;
+  param Length[Jobs] : Int[1 .. 100];
+
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+
+  minimize Makespan;
+}
+```
+
+The aggregate in the `Int` upper bound is evaluated from scenario data during
+grounding. Bounds may use static params, `size(...)`, relation membership, and
+static `sum`/`count`; they cannot reference decisions such as `Pick.has(j)`.
+
+Compiler-owned piecewise builtins cover common balancing and makespan patterns
+without manual auxiliary variables:
+
+```qsol
+problem MachineLoads {
+  set Machines;
+  find Load[Machines] : Int[0 .. 10];
+
+  minimize max(Load[m] for m in Machines);
+}
+```
+
+The supported first-pass forms are `minimize abs(expr)`, `must abs(expr) <= C`,
+`minimize max(term for ...)`, and `maximize min(term for ...)`. The compiler
+generates bounded scalar auxiliaries and hard constraints before backend
+compilation.
+
+Compiler-owned global and graph helpers keep common relation models compact:
+
+```qsol
+use stdlib.graph;
+
+problem CompactGraphModel {
+  set V;
+  relation Edge(u: V, v: V);
+
+  find Slot[V] : Int[0 .. size(V) - 1];
+
+  must all_different(Slot[v] for v in V);
+  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+}
+```
+
+`all_different` lowers to pairwise disequality constraints. `adjacent` and
+`nonedge` lower to ordinary static relation membership formulas before backend
+compilation.
+
 ## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:
 
 - Prefer primitive-friendly formulations and keep custom unknown definitions simple (`rep` + `laws` + `view`).
 - Keep hard constraints to supported numeric comparisons and atom-like predicates.
-- Use `sum` + arithmetic in objectives.
+- Use `sum` + arithmetic in objectives, or the supported piecewise objective forms when they remove manual auxiliaries.
 - Validate early with `targets check` on concrete scenarios.
 - Custom unknowns in `find` are supported through frontend elaboration into primitive finds and generated constraints.
 

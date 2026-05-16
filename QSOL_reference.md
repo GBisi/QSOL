@@ -146,11 +146,21 @@ find Assignment : Mapping(Tasks -> Workers);
 find Enabled : Bool;
 find Makespan : Int[0 .. MaxTime];
 find Load[Workers] : Int[0 .. MaxTime];
+find Flow[Arc] : Int[0 .. size(Arc)];
 ```
 
 `Bool` scalar finds are boolean expressions. Bounded `Int[lo .. hi]` scalar finds
 are numeric expressions. Indexed scalar finds are read with bracket access, for
-example `Load[w]`. Unbounded `find x : Int` is rejected.
+example `Load[w]`. Relation-indexed scalar finds create one decision per
+grounded relation tuple and are read with one argument per relation field, for
+example `Flow[u, v]` inside `for (u, v) in Arc`.
+
+`Int` decision bounds are grounded before backend compilation. Bounds may use
+integer literals, numeric scalar params, indexed params over static binders,
+`size(Set)`, `size(Relation)`, static `sum`/`count` aggregates, static `if`
+expressions, relation membership calls, and arithmetic over those forms. Bounds
+must not depend on decisions or unknown view methods such as `Pick.has(j)`.
+Unbounded `find x : Int` is rejected.
 
 ### 4.4. Constraints
 
@@ -214,10 +224,23 @@ Operate on `Real` or `Int` types.
     *   `sum(expr for x in S)`: Summation.
     *   `count(x in S where predicate)`: Count matching elements.
     *   `size(Set)`: The number of elements in a set.
+*   **Compiler-lowered piecewise builtins**:
+    *   `abs(expr)` is supported in `minimize abs(expr)` and `must abs(expr) <= C`.
+    *   `max(term for x in S)` is supported in `minimize max(term for x in S)`.
+    *   `min(term for x in S)` is supported in `maximize min(term for x in S)`.
+*   **Compiler-owned global helpers**:
+    *   `all_different(term for x in S)` lowers to pairwise disequality constraints for one finite set binder.
+    *   `adjacent(Edge, u, v)` and `nonedge(Edge, u, v)` are graph relation helpers from `stdlib.graph`.
 *   **Conditional**:
     *   `if condition then val_true else val_false` — works for both numeric and boolean branches.
     *   Numeric: `if cond then 1 else 0` (returns `Real`)
     *   Boolean: `if cond then true else false` (returns `Bool`)
+
+Piecewise builtins are compiler-owned, not stdlib macros. The first backend-safe
+lowering pass introduces generated scalar `Int` auxiliaries and explicit `must`
+constraints before backend compilation. Unsupported contexts such as
+`maximize abs(expr)`, `minimize min(...)`, `maximize max(...)`, `abs(expr) >= C`,
+or missing finite bounds are rejected with `QSOL3101`.
 
 ### 5.3. Interaction with Unknowns
 
@@ -263,11 +286,13 @@ Relations declare finite static tuple data inside a problem:
 ```qsol
 relation Edge(u: V, v: V);
 relation Contains(set: Sets, element: Universe);
+relation Pair(u: V, v: V) = pairs(u in V, v in V where u != v);
 ```
 
 Each field references a declared set. Relation names share the problem namespace
-with sets, params, and finds. Relations are static: they are loaded from scenario
-data and cannot depend on decision variables.
+with sets, params, and finds. Relations are static: base relations are loaded
+from scenario data, and derived relations are evaluated during grounding.
+Derived relation expressions cannot depend on decision variables.
 
 Relation membership calls return `Bool`:
 
@@ -283,6 +308,23 @@ all(Edge(u, v) for (u, v) in Edge)
 forall (u, v) in Edge: Edge(u, v)
 count((u, v) in Edge where Edge(v, u))
 ```
+
+Derived relations use `pairs(...)` to generate a static product and `filter(...)`
+to select rows from an existing relation:
+
+```qsol
+relation NonEdge(u: V, v: V) =
+  pairs(u in V, v in V where u != v and not Edge(u, v));
+
+relation Reciprocal(u: V, v: V) =
+  filter((u, v) in Edge where Edge(v, u));
+```
+
+Derived conditions may reference relation/set binders, scalar params, indexed
+params, relation membership calls, arithmetic, and comparisons over static
+values. They must not reference `find` decisions, unknown view methods such as
+`Subset.has`, or backend variables. Scenario TOML must not supply values for
+derived relations.
 
 Record binders and field access such as `for e in Edge` / `e.u` are not part of
 this version.
@@ -432,6 +474,18 @@ Advanced mapping types built on `Mapping`.
     // Route.map(city) gives the next city in the tour
     ```
 
+### 8.4. Route (`stdlib.route`)
+
+*   **`Route(Positions, V)`** wraps `BijectiveMapping(Positions, V)`.
+*   Views:
+    *   `at(p: Elem(Positions), v: Elem(V))`
+    *   `transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V))`
+
+### 8.5. Graph Helpers (`stdlib.graph`)
+
+`adjacent(Edge, u, v)` lowers to `Edge(u, v) or Edge(v, u)`.
+`nonedge(Edge, u, v)` lowers to `not Edge(u, v) and not Edge(v, u)`.
+
 ---
 
 ## 9. CLI & Configuration
@@ -442,7 +496,7 @@ The `qsol` CLI tool manages the compilation and solving process.
 
 *   **`qsol inspect parse <file>`**: Check for syntax errors. (Useful: `--json`)
 *   **`qsol inspect check <file>`**: Run type checking and validation.
-*   **`qsol inspect estimate <file> -c <config>`**: Estimate grounded set sizes, decision-variable counts, and backend CQM variable counts.
+*   **`qsol inspect estimate <file> -c <config>`**: Estimate grounded set/relation sizes, decision-variable counts, and backend CQM variable counts.
 *   **`qsol targets check <file>`**: Verify if the backend supports your model features.
 *   **`qsol targets check <file> --estimate`**: Include the estimate next to the target support report.
 *   **`qsol build <file>`**: Compile the model to artifacts (e.g., CQM/BQM files).

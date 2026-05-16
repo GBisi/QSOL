@@ -9,7 +9,7 @@ This backend supports:
 *   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
 *   **Objectives**: Linear and Quadratic objectives.
-*   **Static relations**: Relation values are grounded before backend compilation. Tuple iteration expands over the supplied relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
+*   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
 
 ## 2. Variable Mapping
 
@@ -36,6 +36,8 @@ It also generates implicit "exactly one" constraints to ensure each element in `
 find enabled : Bool;
 find T : Int[0 .. 10];
 find Load[Machines] : Int[0 .. Capacity];
+find Flow[Arc] : Int[0 .. size(Arc)];
+find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
 ```
 
 The backend keeps CQM as the canonical model:
@@ -43,6 +45,9 @@ The backend keeps CQM as the canonical model:
 * `Bool` scalar decisions become native `dimod.Binary` variables.
 * `Int[lo .. hi]` scalar decisions become native `dimod.Integer` variables with the grounded bounds.
 * Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
+* Relation-indexed scalar decisions create one native CQM variable per grounded relation tuple, for example `Flow[a,b]`.
+* Compiler-lowered piecewise builtins create generated scalar `Int` auxiliaries named like `__qsol_piecewise_abs_0` or `__qsol_piecewise_max_0`.
+* Compiler-owned global helpers are expanded before backend compilation. For example, `all_different(Slot[i] for i in Items)` becomes pairwise disequality constraints.
 
 The exported BQM is derived from the CQM for runtimes and export formats that require binary quadratic form.
 
@@ -62,6 +67,7 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 *   `A or B` -> `A + B - A*B` or via auxiliary variable `Z >= A`, `Z >= B`, `Z <= A + B`.
 *   `not A` -> `1 - A`
 *   `A implies B` -> `A <= B`
+*   Static relation guards are evaluated during grounded emission when all operands are scenario values.
 
 ## 4. Objectives and Soft Constraints
 
@@ -70,10 +76,21 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 *   `should expr` adds a penalty to the objective if `expr` is violated (weight 10.0).
 *   `nice expr` adds a smaller penalty (weight 1.0).
 
+Piecewise numeric builtins are lowered before backend code generation in these
+contexts:
+
+* `minimize abs(e)` introduces `z >= e`, `z >= -e`, then minimizes `z`.
+* `must abs(e) <= C` lowers to `e <= C` and `-e <= C`.
+* `minimize max(term for ...)` introduces `T >= term` for every grounded binder row, then minimizes `T`.
+* `maximize min(term for ...)` introduces `Z <= term` for every grounded binder row, then maximizes `Z`.
+
+Generated auxiliaries are visible in lowered/ground IR and estimator output.
+
 ## 5. Limitations
 
 *   **Higher-Order Logic**: Complex nested quantifiers or non-linear expressions that cannot be reduced to quadratic forms may be unsupported or require significant auxiliary variables.
 *   **Continuous Variables**: Native continuous variables are not currently supported.
-*   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation.
+*   **Integer Bounds**: `Int` decision bounds must ground to finite integers before backend compilation. Bounds may include static params, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Decision-dependent bounds are rejected before backend compilation.
+*   **Piecewise Contexts**: Unsupported piecewise contexts are rejected with `QSOL3101`, including `maximize abs(...)`, `minimize min(...)`, `maximize max(...)`, `abs(...) >= C`, and forms without finite auxiliary bounds.
 
 > For a complete list of unsupported patterns and workarounds, see [Backend V1 Limits](BACKEND_V1_LIMITS.md).

@@ -18,6 +18,16 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `relation_graph_independent_set.qsol.toml`
 - `relation_set_packing.qsol`
 - `relation_set_packing.qsol.toml`
+- `derived_max_clique.qsol`
+- `derived_max_clique.qsol.toml`
+- `job_sequencing_max.qsol`
+- `job_sequencing_max.qsol.toml`
+- `all_different_slots.qsol`
+- `all_different_slots.qsol.toml`
+- `graph_helpers.qsol`
+- `graph_helpers.qsol.toml`
+- `route_demo.qsol`
+- `route_demo.qsol.toml`
 
 ## Run
 
@@ -99,6 +109,51 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol solve \
+  examples/tutorials/derived_max_clique.qsol \
+  --config examples/tutorials/derived_max_clique.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/derived_max_clique \
+  --runtime-option sampler=exact
+```
+
+```bash
+uv run qsol solve \
+  examples/tutorials/job_sequencing_max.qsol \
+  --config examples/tutorials/job_sequencing_max.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/job_sequencing_max \
+  --runtime-option sampler=exact
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/all_different_slots.qsol \
+  --config examples/tutorials/all_different_slots.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/all_different_slots \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/graph_helpers.qsol \
+  --config examples/tutorials/graph_helpers.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/graph_helpers \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/route_demo.qsol \
+  --config examples/tutorials/route_demo.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/route_demo \
+  --format qubo
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -132,6 +187,31 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Sets`
   - `scenarios.baseline.sets.Items`
   - `scenarios.baseline.relations.Contains`
+- `derived_max_clique.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+  - `NonEdge` is derived with `pairs(...)` and is not supplied in TOML.
+- `job_sequencing.qsol.toml`
+  - `scenarios.baseline.sets.Jobs`
+  - `scenarios.baseline.params.Length`
+  - `scenarios.baseline.relations.Precedence`
+  - `Start` and `Makespan` use static aggregate `Int` bounds from `sum(Length[j] for j in Jobs)`.
+- `job_sequencing_max.qsol.toml`
+  - `scenarios.baseline.sets.Jobs`
+  - `scenarios.baseline.params.Length`
+  - `scenarios.baseline.relations.Precedence`
+  - `minimize max(Finish[j] for j in Jobs)` generates a bounded piecewise auxiliary.
+- `all_different_slots.qsol.toml`
+  - `scenarios.baseline.sets.Items`
+  - `all_different(Slot[i] for i in Items)` lowers to pairwise disequality constraints.
+- `graph_helpers.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+  - `adjacent(Edge, u, v)` lowers to static relation membership checks.
+- `route_demo.qsol.toml`
+  - `scenarios.baseline.sets.Positions`
+  - `scenarios.baseline.sets.Cities`
+  - `Route(Positions, Cities)` wraps a `BijectiveMapping`.
 
 ## Related
 

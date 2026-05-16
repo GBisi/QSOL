@@ -13,13 +13,15 @@ The pipeline consists of the following stages:
 4.  **Name Resolution**: Links identifiers to their definitions and builds a symbol table.
 5.  **Type Checking**: Verifies type safety of expressions and constraints.
 6.  **Validation**: Checks for semantic errors (e.g., unused variables, invalid constructs).
-7.  **Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
+7.  **Global Helper Lowering**: Rewrites compiler-owned helpers such as `all_different`, `adjacent`, and `nonedge` into ordinary QSOL expressions.
+8.  **Desugaring and Piecewise Lowering**: Normalizes guards/aggregates and lowers supported compiler-owned piecewise builtins (`abs`, aggregate `min`/`max`) into generated scalar `Int` decisions plus explicit constraints.
+9.  **Kernel Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
 
 ### Middle / Grounding
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
 1.  **Loading**: Reads data from the TOML file.
 2.  **Binding**: Maps data values to model `set` and `param` declarations.
-3.  **Grounding**: Evaluates derived `Range` sets, materializes scalar/indexed params, resolves bounded scalar decision domains, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
+3.  **Grounding**: Evaluates derived `Range` sets and derived static relations, materializes scalar/indexed params, resolves bounded scalar decision domains including scenario-time static aggregate bounds, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
 
 ### Backend / Targeting
 1.  **Target Selection**: Identifies the target runtime and backend (e.g., `local-dimod` + `dimod-cqm-v1`).
@@ -56,4 +58,20 @@ A symbolic representation where sets, relations, and parameters are still abstra
 A concrete representation where all sets are finite collections of values, static relations are finite tuples, and all expressions are fully expanded. This is the input to the backend plugins.
 
 Derived sets are recorded with their source (`Range`) and are not loaded from scenario data. Range members are native integers in GIR so range binders can participate in numeric expressions.
-Static relation declarations are loaded from scenario `relations` data during grounding. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.
+Base relation declarations are loaded from scenario `relations` data during grounding. Derived relation declarations are then evaluated in dependency order from static sets, params, base relations, and earlier derived relations. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.
+
+Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
+
+Supported piecewise numeric forms are lowered before KIR:
+
+- `minimize abs(e)` becomes a generated aux decision with two hard constraints.
+- `must abs(e) <= C` becomes two ordinary comparisons.
+- `minimize max(term for ...)` and `maximize min(term for ...)` become one generated aux decision plus a generated `forall` constraint over the aggregate binders.
+
+The generated aux decisions are ordinary scalar `Int` finds in KIR/GIR, so
+model-size estimates and backend artifacts account for them.
+
+Global helper lowering happens before KIR. `all_different(term for x in S)`
+becomes pairwise disequality constraints over the finite domain. `adjacent` and
+`nonedge` over binary relations become explicit relation membership formulas, so
+the backend sees only grounded static relation calls and ordinary boolean logic.

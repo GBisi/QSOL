@@ -339,6 +339,34 @@ problem P {
     assert isinstance(arg.comp, ast.NumComprehension)
 
 
+def test_snapshot_piecewise_builtin_calls_parse() -> None:
+    """Compiler-owned piecewise builtins must parse as ordinary numeric calls."""
+    text = """
+problem P {
+  set Machines;
+  find Balance : Int[-10 .. 10];
+  find Load[Machines] : Int[0 .. 10];
+  must abs(Balance) <= 3;
+  minimize max(Load[m] for m in Machines);
+}
+"""
+    program = parse_to_ast(text, filename="snap_piecewise.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    constraint = problem.stmts[3]
+    assert isinstance(constraint, ast.Constraint)
+    assert isinstance(constraint.expr, ast.Compare)
+    assert isinstance(constraint.expr.left, ast.FuncCall)
+    assert constraint.expr.left.name == "abs"
+
+    objective = problem.stmts[4]
+    assert isinstance(objective, ast.Objective)
+    assert isinstance(objective.expr, ast.FuncCall)
+    assert objective.expr.name == "max"
+    assert isinstance(objective.expr.args[0], ast.NumAggregate)
+    assert objective.expr.args[0].from_comp_arg is True
+
+
 # ---------------------------------------------------------------------------
 # Parse errors that must remain errors
 # ---------------------------------------------------------------------------

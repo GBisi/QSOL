@@ -108,6 +108,8 @@ Usage notes:
 ```qsol
 relation Edge(u: Nodes, v: Nodes);
 relation Contains(set: Sets, element: Items);
+relation NonEdge(u: Nodes, v: Nodes) =
+  pairs(u in Nodes, v in Nodes where u != v and not Edge(u, v));
 ```
 
 Relations are finite, static data. Fields must reference declared sets. Use
@@ -137,6 +139,20 @@ Edge = [
 ```
 
 Compact tuple arrays are also accepted: `Edge = [["a", "b"], ["b", "c"]]`.
+Scenario data supplies only base relations. Derived relations are evaluated at
+grounding time and must not appear under `scenarios.<name>.relations`.
+
+Derived relation constructors:
+
+```qsol
+pairs(u in Nodes, v in Nodes)
+pairs(u in Nodes, v in Nodes where u != v)
+filter((u, v) in Edge where Edge(v, u))
+```
+
+Derived `where` conditions must be scenario-time static. They may use binders,
+params, relation membership calls, arithmetic, and comparisons, but not `find`
+decisions or unknown view methods such as `Pick.has(u)`.
 Record binders (`for e in Edge`, `e.u`) are not supported yet.
 
 ### 3.4 Finds
@@ -148,6 +164,8 @@ find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
 find Load[Workers] : Int[0 .. size(Tasks)];
+find Flow[Arc] : Int[0 .. size(Arc)];
+find TotalLength : Int[0 .. sum(Length[j] for j in Jobs)];
 ```
 
 `find` supports primitive unknowns (`Subset`, `Mapping`) and user-defined unknowns.
@@ -157,10 +175,35 @@ Scalar decisions are also valid:
 - `Bool` creates a binary scalar decision usable in boolean expressions.
 - `Int[lo .. hi]` creates a native bounded integer CQM variable usable in numeric expressions.
 - Indexed scalar decisions use bracket access, for example `Load[w]`.
+- Relation-indexed scalar decisions create one decision per relation tuple and use one bracket argument per relation field, for example `Flow[u, v]` inside `for (u, v) in Arc`.
 
-`Int` bounds must be scenario-time integer constants: integer literals, numeric scalar
-params, `size(Set)`, and arithmetic over those forms. Unknown-dependent bounds are
-rejected.
+`Int` bounds must be scenario-time integer constants. They may use literals,
+numeric params, indexed params over static binders, `size(Set)`,
+`size(Relation)`, static `sum`/`count`, static `if` expressions, relation
+membership over static values, and arithmetic over those forms.
+Decision-dependent bounds such as `sum(if Pick.has(j) then Weight[j] else 0 for j in Jobs)` are rejected.
+
+### 3.5 Graph and Global Helpers
+
+Compiler-owned helpers are rewritten before type checking:
+
+```qsol
+must all_different(Slot[i] for i in Items);
+```
+
+`all_different` currently supports one finite set binder and lowers to pairwise
+disequality constraints. For graph relations, import the graph module:
+
+```qsol
+use stdlib.graph;
+
+relation Edge(u: V, v: V);
+
+minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+```
+
+`adjacent(Edge, u, v)` lowers to `Edge(u, v) or Edge(v, u)`.
+`nonedge(Edge, u, v)` lowers to `not Edge(u, v) and not Edge(v, u)`.
 
 ## 4. Constraints and Objectives
 
@@ -226,7 +269,23 @@ x * y
 x / y
 if cond then num_a else num_b
 size(V)
+abs(expr)
+max(load[m] for m in Machines)
+min(score[a] for a in Agents)
 ```
+
+Piecewise builtins are compiler-owned numeric forms. The supported backend-safe
+contexts are:
+
+```qsol
+minimize abs(balance)
+must abs(balance) <= Limit
+minimize max(load[m] for m in Machines)
+maximize min(score[a] for a in Agents)
+```
+
+The first pass rejects unsupported contexts such as `maximize abs(...)`,
+`minimize min(...)`, `maximize max(...)`, and `abs(...) >= C`.
 
 ### 5.3 Calls and member access
 

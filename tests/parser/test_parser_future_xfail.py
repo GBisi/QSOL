@@ -195,3 +195,48 @@ problem P {
     assert isinstance(binder, ast.TupleCompBinder)
     assert binder.vars == ("u", "v")
     assert binder.domain_relation == "Edge"
+
+
+# ---------------------------------------------------------------------------
+# Derived relations (Milestone 3)
+# ---------------------------------------------------------------------------
+
+
+def test_derived_pairs_relation_parses() -> None:
+    """relation Pair(u: V, v: V) = pairs(u in V, v in V where u != v); parses."""
+    text = """
+problem P {
+  set V;
+  relation Pair(u: V, v: V) = pairs(u in V, v in V where u != v);
+}
+"""
+    program = parse_to_ast(text, filename="derived_pairs.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    relation = problem.stmts[1]
+    assert isinstance(relation, ast.RelationDecl)
+    assert relation.expr is not None
+    assert isinstance(relation.expr, ast.PairsRelationExpr)
+    assert [(b.var, b.domain_set) for b in relation.expr.binders] == [("u", "V"), ("v", "V")]
+    assert relation.expr.where is not None
+
+
+def test_derived_filter_relation_parses() -> None:
+    """relation Reciprocal(u: V, v: V) = filter((u, v) in Edge where Edge(v, u)); parses."""
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  relation Reciprocal(u: V, v: V) = filter((u, v) in Edge where Edge(v, u));
+}
+"""
+    program = parse_to_ast(text, filename="derived_filter.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    relation = problem.stmts[2]
+    assert isinstance(relation, ast.RelationDecl)
+    assert relation.expr is not None
+    assert isinstance(relation.expr, ast.FilterRelationExpr)
+    assert relation.expr.binder.vars == ("u", "v")
+    assert relation.expr.binder.domain_relation == "Edge"
+    assert relation.expr.where is not None

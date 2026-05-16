@@ -1,0 +1,8 @@
+problem AllDifferentSlots {
+  set Items;
+
+  find Slot[Items] : Int[0 .. size(Items) - 1];
+
+  must all_different(Slot[i] for i in Items);
+  minimize sum(Slot[i] for i in Items);
+}

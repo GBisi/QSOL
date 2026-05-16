@@ -12,13 +12,14 @@ Pipeline from source to runtime result:
 4. Resolve symbols (`qsol.sema.resolver`)
 5. Typecheck (`qsol.sema.typecheck`)
 6. Validate structural rules (`qsol.sema.validate`)
-7. Desugar syntax sugar (`qsol.lower.desugar`)
-8. Lower to symbolic kernel IR (`qsol.lower.lower`)
-9. Ground IR from scenario-materialized instance payload (`qsol.backend.instance`, `qsol.config`)
-10. Resolve runtime/backend selection (`qsol.targeting.resolution`)
-11. Check pair support and capability requirements (`qsol.targeting.compatibility`)
-12. Compile/export with selected backend plugin (`qsol.targeting.plugins`, backend export)
-13. Run with selected runtime plugin (`qsol.targeting.plugins`)
+7. Lower compiler-owned global/graph helpers (`qsol.lower.globals`)
+8. Desugar syntax sugar (`qsol.lower.desugar`)
+9. Lower to symbolic kernel IR (`qsol.lower.lower`)
+10. Ground IR from scenario-materialized instance payload (`qsol.backend.instance`, `qsol.config`)
+11. Resolve runtime/backend selection (`qsol.targeting.resolution`)
+12. Check pair support and capability requirements (`qsol.targeting.compatibility`)
+13. Compile/export with selected backend plugin (`qsol.targeting.plugins`, backend export)
+14. Run with selected runtime plugin (`qsol.targeting.plugins`)
 
 ## 2. Directory Map
 
@@ -26,11 +27,11 @@ Pipeline from source to runtime result:
 - `src/qsol/compiler/`: frontend + targeting pipeline orchestration
 - `src/qsol/targeting/`: plugin interfaces, registry, selection, compatibility
 - `src/qsol/parse/`: grammar, parser, AST, AST builder, module loader
-- `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, static validation
-- `src/qsol/lower/`: desugaring + kernel IR lowering
-- `src/qsol/backend/`: instance grounding + dimod codegen/export primitives
+- `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, groundability checks, static validation
+- `src/qsol/lower/`: global/helper lowering, desugaring, piecewise lowering, and kernel IR lowering
+- `src/qsol/backend/`: instance grounding, static bound evaluation, dimod codegen/export primitives
 - `src/qsol/config/`: config TOML parsing, scenario selection, and instance materialization
-- `src/qsol/stdlib/`: packaged unknown modules (`stdlib.*`)
+- `src/qsol/stdlib/`: packaged unknown modules and source-level helper modules (`stdlib.*`)
 - `src/qsol/diag/`: diagnostics, spans, reporter
 - `src/qsol/util/`: utility helpers
 - `tests/`: parser, sema, lowering, backend, targeting, CLI tests

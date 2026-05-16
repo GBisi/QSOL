@@ -31,6 +31,12 @@ class TypeCheckResult:
     diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
+@dataclass(frozen=True, slots=True)
+class GroundabilityResult:
+    valid: bool
+    dependency: str | None = None
+
+
 class TypeChecker:
     def check(self, program: ast.Program, symbols: SymbolTable) -> TypeCheckResult:
         diagnostics: list[Diagnostic] = []
@@ -52,11 +58,23 @@ class TypeChecker:
                     elif isinstance(stmt, ast.FindDecl):
                         if isinstance(stmt.decision_type, ast.IntDecisionType):
                             self._scenario_const_int_type(
-                                stmt.decision_type.lo, scope, {}, diagnostics, typed.types
+                                stmt.decision_type.lo,
+                                scope,
+                                {},
+                                diagnostics,
+                                typed.types,
+                                bound_role="lower",
                             )
                             self._scenario_const_int_type(
-                                stmt.decision_type.hi, scope, {}, diagnostics, typed.types
+                                stmt.decision_type.hi,
+                                scope,
+                                {},
+                                diagnostics,
+                                typed.types,
+                                bound_role="upper",
                             )
+                    elif isinstance(stmt, ast.RelationDecl) and stmt.expr is not None:
+                        self._check_relation_expr(stmt, scope, diagnostics, typed.types)
                     elif isinstance(stmt, ast.Constraint):
                         expr_ty = self._expr_type(stmt.expr, scope, {}, diagnostics, typed.types)
                         if not isinstance(expr_ty, type(BOOL)):
@@ -94,6 +112,7 @@ class TypeChecker:
                                 diagnostics.append(
                                     self._type_err(stmt.default.span, "param default type mismatch")
                                 )
+                self._check_relation_dependency_cycles(item, diagnostics)
 
         return TypeCheckResult(typed_program=typed, diagnostics=diagnostics)
 
@@ -188,7 +207,9 @@ class TypeChecker:
                         )
             out = BOOL
         elif isinstance(expr, ast.FuncCall):
-            if expr.name == "size":
+            if expr.name in {"abs", "min", "max"} and expr.call_style == "paren":
+                out = self._piecewise_builtin_type(expr, scope, binders, diagnostics, tmap)
+            elif expr.name == "size":
                 out = self._size_call_type(expr, scope, binders, diagnostics, tmap)
             elif expr.call_style == "bracket":
                 symbol = scope.lookup(expr.name)
@@ -425,6 +446,95 @@ class TypeChecker:
         tmap[id(expr)] = self._repr_type(out)
         return out
 
+    def _piecewise_builtin_type(
+        self,
+        expr: ast.FuncCall,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        if expr.name == "abs":
+            if len(expr.args) != 1:
+                for arg in expr.args:
+                    self._expr_type(arg, scope, binders, diagnostics, tmap)
+                diagnostics.append(self._type_err(expr.span, "abs() expects exactly one argument"))
+                return UNKNOWN
+            arg_ty = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+            if not is_numeric(arg_ty):
+                diagnostics.append(
+                    self._type_err(expr.args[0].span, "abs() argument must be numeric")
+                )
+                return UNKNOWN
+            return arg_ty
+
+        if len(expr.args) == 1:
+            arg = expr.args[0]
+            if isinstance(arg, ast.NumAggregate):
+                inner = dict(binders)
+                if isinstance(arg.comp, ast.NumComprehension):
+                    self._extend_comp_binders(
+                        scope, inner, arg.comp.binders, arg.comp.span, diagnostics
+                    )
+                    term_ty = self._expr_type(arg.comp.term, scope, inner, diagnostics, tmap)
+                    if not is_numeric(term_ty):
+                        diagnostics.append(
+                            self._type_err(
+                                arg.comp.term.span,
+                                f"{expr.name}() aggregate term must be numeric",
+                            )
+                        )
+                        return UNKNOWN
+                    if arg.comp.where is not None:
+                        where_ty = self._expr_type(arg.comp.where, scope, inner, diagnostics, tmap)
+                        if not isinstance(where_ty, type(BOOL)):
+                            diagnostics.append(
+                                self._type_err(arg.comp.where.span, "where clause must be Bool")
+                            )
+                    if arg.comp.else_term is not None:
+                        else_ty = self._expr_type(
+                            arg.comp.else_term, scope, inner, diagnostics, tmap
+                        )
+                        if not is_numeric(else_ty):
+                            diagnostics.append(
+                                self._type_err(arg.comp.else_term.span, "else term must be numeric")
+                            )
+                    return term_ty
+                diagnostics.append(
+                    self._type_err(arg.span, f"{expr.name}() aggregate expects numeric terms")
+                )
+                return UNKNOWN
+
+            arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"{expr.name}() expects two numeric arguments or one numeric comprehension",
+                )
+            )
+            return arg_ty if is_numeric(arg_ty) else UNKNOWN
+
+        if len(expr.args) != 2:
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"{expr.name}() expects two numeric arguments or one numeric comprehension",
+                )
+            )
+            return UNKNOWN
+
+        left = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+        right = self._expr_type(expr.args[1], scope, binders, diagnostics, tmap)
+        promoted = promote_numeric(left, right)
+        if promoted is None:
+            diagnostics.append(
+                self._type_err(expr.span, f"{expr.name}() arguments must be numeric")
+            )
+            return UNKNOWN
+        return promoted
+
     def _method_type(
         self,
         expr: ast.MethodCall,
@@ -546,11 +656,11 @@ class TypeChecker:
             return UNKNOWN
 
         symbol = scope.lookup(arg.name)
-        if symbol is None or symbol.kind != SymbolKind.SET:
+        if symbol is None or symbol.kind not in {SymbolKind.SET, SymbolKind.RELATION}:
             diagnostics.append(
                 self._type_err(
                     arg.span,
-                    f"size() expects a declared set identifier, got `{arg.name}`",
+                    f"size() expects a declared set or relation identifier, got `{arg.name}`",
                 )
             )
             return UNKNOWN
@@ -644,6 +754,217 @@ class TypeChecker:
                 diagnostics,
             )
 
+    def _check_relation_expr(
+        self,
+        stmt: ast.RelationDecl,
+        scope: Scope,
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> None:
+        if stmt.expr is None:
+            return
+
+        binders: dict[str, Type] = {}
+        if isinstance(stmt.expr, ast.PairsRelationExpr):
+            self._extend_comp_binders(
+                scope, binders, stmt.expr.binders, stmt.expr.span, diagnostics
+            )
+            self._check_relation_output_fields(stmt, binders, diagnostics)
+            if stmt.expr.where is not None:
+                where_ty = self._expr_type(stmt.expr.where, scope, binders, diagnostics, tmap)
+                if not isinstance(where_ty, type(BOOL)):
+                    diagnostics.append(
+                        self._type_err(
+                            stmt.expr.where.span, "derived relation where clause must be Bool"
+                        )
+                    )
+                if not self._is_static_relation_expr(stmt.expr.where, scope, binders):
+                    diagnostics.append(self._derived_static_error(stmt.expr.where.span))
+            return
+
+        if isinstance(stmt.expr, ast.FilterRelationExpr):
+            self._extend_tuple_binder(scope, binders, stmt.expr.binder, stmt.expr.span, diagnostics)
+            self._check_relation_output_fields(stmt, binders, diagnostics)
+            if stmt.expr.where is not None:
+                where_ty = self._expr_type(stmt.expr.where, scope, binders, diagnostics, tmap)
+                if not isinstance(where_ty, type(BOOL)):
+                    diagnostics.append(
+                        self._type_err(
+                            stmt.expr.where.span, "derived relation where clause must be Bool"
+                        )
+                    )
+                if not self._is_static_relation_expr(stmt.expr.where, scope, binders):
+                    diagnostics.append(self._derived_static_error(stmt.expr.where.span))
+
+    def _check_relation_output_fields(
+        self,
+        stmt: ast.RelationDecl,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        for relation_field in stmt.fields:
+            bound_ty = binders.get(relation_field.name)
+            if bound_ty is None:
+                diagnostics.append(
+                    self._type_err(
+                        relation_field.span,
+                        f"derived relation field `{relation_field.name}` must be bound by the relation expression",
+                    )
+                )
+                continue
+            if not isinstance(bound_ty, ElemOfType) or bound_ty.set_name != relation_field.set_name:
+                diagnostics.append(
+                    self._type_err(
+                        relation_field.span,
+                        f"derived relation field `{relation_field.name}` must be an element of `{relation_field.set_name}`",
+                    )
+                )
+
+    def _derived_static_error(self, span: Span) -> Diagnostic:
+        return self._type_err(
+            span,
+            "derived relation condition must be scenario-time static",
+        )
+
+    def _is_static_relation_expr(
+        self,
+        expr: ast.Expr,
+        scope: Scope,
+        binders: dict[str, Type],
+    ) -> bool:
+        if isinstance(expr, (ast.BoolLit, ast.NumLit, ast.StringLit, ast.Literal)):
+            return True
+        if isinstance(expr, ast.NameRef):
+            if expr.name in binders:
+                return True
+            symbol = scope.lookup(expr.name)
+            return (
+                symbol is not None
+                and symbol.kind == SymbolKind.PARAM
+                and isinstance(symbol.type, ParamType)
+                and not symbol.type.indices
+            )
+        if isinstance(expr, ast.Not):
+            return self._is_static_relation_expr(expr.expr, scope, binders)
+        if isinstance(expr, (ast.And, ast.Or, ast.Implies)):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, ast.Compare):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, (ast.Add, ast.Sub, ast.Mul, ast.Div)):
+            return self._is_static_relation_expr(
+                expr.left, scope, binders
+            ) and self._is_static_relation_expr(expr.right, scope, binders)
+        if isinstance(expr, ast.Neg):
+            return self._is_static_relation_expr(expr.expr, scope, binders)
+        if isinstance(expr, ast.IfThenElse):
+            return (
+                self._is_static_relation_expr(expr.cond, scope, binders)
+                and self._is_static_relation_expr(expr.then_expr, scope, binders)
+                and self._is_static_relation_expr(expr.else_expr, scope, binders)
+            )
+        if isinstance(expr, ast.BoolIfThenElse):
+            return (
+                self._is_static_relation_expr(expr.cond, scope, binders)
+                and self._is_static_relation_expr(expr.then_expr, scope, binders)
+                and self._is_static_relation_expr(expr.else_expr, scope, binders)
+            )
+        if isinstance(expr, ast.FuncCall):
+            symbol = scope.lookup(expr.name)
+            if expr.name == "size":
+                return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+            if expr.call_style == "bracket":
+                if symbol is None or symbol.kind != SymbolKind.PARAM:
+                    return False
+                return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+            if symbol is None or symbol.kind not in {SymbolKind.PARAM, SymbolKind.RELATION}:
+                return False
+            if symbol.kind == SymbolKind.PARAM and isinstance(symbol.type, ParamType):
+                if not symbol.type.indices:
+                    return not expr.args
+                return False
+            return all(self._is_static_relation_expr(arg, scope, binders) for arg in expr.args)
+        return False
+
+    def _check_relation_dependency_cycles(
+        self,
+        problem: ast.ProblemDef,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        derived = {
+            stmt.name: stmt
+            for stmt in problem.stmts
+            if isinstance(stmt, ast.RelationDecl) and stmt.expr is not None
+        }
+        if not derived:
+            return
+        graph = {
+            name: {dep for dep in self._relation_expr_deps(stmt.expr) if dep in derived}
+            for name, stmt in derived.items()
+            if stmt.expr is not None
+        }
+        visited: set[str] = set()
+        active: list[str] = []
+
+        def visit(name: str) -> None:
+            if name in active:
+                cycle = active[active.index(name) :] + [name]
+                diagnostics.append(
+                    self._type_err(
+                        derived[name].span,
+                        f"derived relation dependency cycle: {' -> '.join(cycle)}",
+                    )
+                )
+                return
+            if name in visited:
+                return
+            active.append(name)
+            for dep in sorted(graph.get(name, ())):
+                visit(dep)
+            active.pop()
+            visited.add(name)
+
+        for name in sorted(graph):
+            visit(name)
+
+    def _relation_expr_deps(self, expr: ast.RelationExpr) -> set[str]:
+        deps: set[str] = set()
+        if isinstance(expr, ast.PairsRelationExpr):
+            for binder in expr.binders:
+                if isinstance(binder, ast.TupleCompBinder):
+                    deps.add(binder.domain_relation)
+            if expr.where is not None:
+                self._collect_relation_call_deps(expr.where, deps)
+        elif isinstance(expr, ast.FilterRelationExpr):
+            deps.add(expr.binder.domain_relation)
+            if expr.where is not None:
+                self._collect_relation_call_deps(expr.where, deps)
+        return deps
+
+    def _collect_relation_call_deps(self, expr: ast.Expr, deps: set[str]) -> None:
+        if isinstance(expr, ast.FuncCall):
+            deps.add(expr.name)
+            for arg in expr.args:
+                self._collect_relation_call_deps(arg, deps)
+        elif isinstance(expr, ast.MethodCall):
+            self._collect_relation_call_deps(expr.target, deps)
+            for arg in expr.args:
+                self._collect_relation_call_deps(arg, deps)
+        elif isinstance(expr, (ast.Not, ast.Neg)):
+            self._collect_relation_call_deps(expr.expr, deps)
+        elif isinstance(
+            expr, (ast.And, ast.Or, ast.Implies, ast.Compare, ast.Add, ast.Sub, ast.Mul, ast.Div)
+        ):
+            self._collect_relation_call_deps(expr.left, deps)
+            self._collect_relation_call_deps(expr.right, deps)
+        elif isinstance(expr, (ast.IfThenElse, ast.BoolIfThenElse)):
+            self._collect_relation_call_deps(expr.cond, deps)
+            self._collect_relation_call_deps(expr.then_expr, deps)
+            self._collect_relation_call_deps(expr.else_expr, deps)
+
     def _unknown_domain_diagnostic(
         self,
         scope: Scope,
@@ -702,22 +1023,218 @@ class TypeChecker:
         binders: dict[str, Type],
         diagnostics: list[Diagnostic],
         tmap: dict[int, str],
+        *,
+        bound_role: str | None = None,
     ) -> Type:
         ty = self._expr_type(expr, scope, binders, diagnostics, tmap)
         if not is_numeric(ty):
             diagnostics.append(
                 self._type_err(expr.span, "integer bounds must be scenario-time numeric constants")
             )
-        if not self._is_scenario_const_expr(expr, scope):
+        if bound_role is None:
+            if not self._is_legacy_scenario_const_expr(expr, scope):
+                diagnostics.append(
+                    self._groundability_err(
+                        expr.span,
+                        "integer bounds may use literals, scalar params, size(Set), and arithmetic only",
+                        None,
+                    )
+                )
+            return ty
+        result = self._groundability(expr, scope, binders)
+        if not result.valid:
             diagnostics.append(
-                self._type_err(
+                self._groundability_err(
                     expr.span,
-                    "integer bounds may use literals, scalar params, size(Set), and arithmetic only",
+                    f"Int {bound_role} bound is not scenario-time constant",
+                    result.dependency,
                 )
             )
         return ty
 
-    def _is_scenario_const_expr(self, expr: ast.Expr, scope: Scope) -> bool:
+    def _groundability(
+        self, expr: ast.Expr, scope: Scope, binders: dict[str, Type]
+    ) -> GroundabilityResult:
+        if isinstance(expr, (ast.BoolLit, ast.NumLit, ast.StringLit, ast.Literal)):
+            return GroundabilityResult(True)
+        if isinstance(expr, ast.NameRef):
+            if expr.name in binders:
+                return GroundabilityResult(True)
+            symbol = scope.lookup(expr.name)
+            if symbol is None:
+                return GroundabilityResult(False, f"unknown identifier `{expr.name}`")
+            if symbol.kind == SymbolKind.FIND:
+                return GroundabilityResult(False, f"decision `{expr.name}`")
+            return GroundabilityResult(
+                symbol.kind == SymbolKind.PARAM
+                and isinstance(symbol.type, ParamType)
+                and not symbol.type.indices,
+                f"non-static identifier `{expr.name}`",
+            )
+        if isinstance(expr, (ast.Not, ast.Neg)):
+            return self._groundability(expr.expr, scope, binders)
+        if isinstance(
+            expr, (ast.And, ast.Or, ast.Implies, ast.Compare, ast.Add, ast.Sub, ast.Mul, ast.Div)
+        ):
+            return self._merge_groundability(
+                self._groundability(expr.left, scope, binders),
+                self._groundability(expr.right, scope, binders),
+            )
+        if isinstance(expr, ast.IfThenElse):
+            return self._merge_groundability(
+                self._groundability(expr.cond, scope, binders),
+                self._groundability(expr.then_expr, scope, binders),
+                self._groundability(expr.else_expr, scope, binders),
+            )
+        if isinstance(expr, ast.BoolIfThenElse):
+            return self._merge_groundability(
+                self._groundability(expr.cond, scope, binders),
+                self._groundability(expr.then_expr, scope, binders),
+                self._groundability(expr.else_expr, scope, binders),
+            )
+        if isinstance(expr, ast.FuncCall):
+            if expr.name == "size":
+                if len(expr.args) != 1 or not isinstance(expr.args[0], ast.NameRef):
+                    return GroundabilityResult(False, "invalid size() argument")
+                symbol = scope.lookup(expr.args[0].name)
+                return GroundabilityResult(
+                    symbol is not None and symbol.kind in {SymbolKind.SET, SymbolKind.RELATION},
+                    f"non-static size() argument `{expr.args[0].name}`",
+                )
+            symbol = scope.lookup(expr.name)
+            if symbol is None:
+                return GroundabilityResult(False, f"unknown call `{expr.name}`")
+            if symbol.kind == SymbolKind.FIND:
+                return GroundabilityResult(False, f"decision `{expr.name}`")
+            if symbol.kind == SymbolKind.PARAM:
+                return self._merge_groundability(
+                    *(self._groundability(arg, scope, binders) for arg in expr.args)
+                )
+            if symbol.kind == SymbolKind.RELATION:
+                return self._merge_groundability(
+                    *(self._groundability(arg, scope, binders) for arg in expr.args)
+                )
+            return GroundabilityResult(False, f"non-static call `{expr.name}`")
+        if isinstance(expr, ast.MethodCall):
+            target = (
+                expr.target.name
+                if isinstance(expr.target, ast.NameRef)
+                else type(expr.target).__name__
+            )
+            return GroundabilityResult(False, f"{target}.{expr.name}")
+        if isinstance(expr, ast.Quantifier):
+            inner = dict(binders)
+            if self._lookup_set(scope, expr.domain_set) is None:
+                return GroundabilityResult(False, f"unknown set `{expr.domain_set}`")
+            inner[expr.var] = self._binder_type(scope, expr.domain_set)
+            return self._groundability(expr.expr, scope, inner)
+        if isinstance(expr, ast.TupleQuantifier):
+            return self._tuple_binder_groundability(
+                expr.vars, expr.domain_relation, expr.expr, expr.span, scope, binders
+            )
+        if isinstance(expr, ast.BoolAggregate):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.comp.binders)
+            return self._merge_groundability(
+                binder_result,
+                self._groundability(expr.comp.term, scope, inner),
+                self._groundability(expr.comp.where, scope, inner)
+                if expr.comp.where is not None
+                else GroundabilityResult(True),
+                self._groundability(expr.comp.else_term, scope, inner)
+                if expr.comp.else_term is not None
+                else GroundabilityResult(True),
+            )
+        if isinstance(expr, ast.BoolComprehension):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.binders)
+            return self._merge_groundability(
+                binder_result,
+                self._groundability(expr.term, scope, inner),
+                self._groundability(expr.where, scope, inner)
+                if expr.where is not None
+                else GroundabilityResult(True),
+            )
+        if isinstance(expr, ast.NumAggregate):
+            inner = dict(binders)
+            binder_result = self._binders_groundability(scope, inner, expr.comp.binders)
+            checks = [binder_result]
+            if isinstance(expr.comp, ast.NumComprehension):
+                checks.append(self._groundability(expr.comp.term, scope, inner))
+                if expr.comp.where is not None:
+                    checks.append(self._groundability(expr.comp.where, scope, inner))
+                if expr.comp.else_term is not None:
+                    checks.append(self._groundability(expr.comp.else_term, scope, inner))
+            else:
+                if expr.comp.where is not None:
+                    checks.append(self._groundability(expr.comp.where, scope, inner))
+            return self._merge_groundability(*checks)
+        return GroundabilityResult(False, f"unsupported expression `{type(expr).__name__}`")
+
+    def _binders_groundability(
+        self,
+        scope: Scope,
+        binders: dict[str, Type],
+        comp_binders: tuple[ast.CompBinder | ast.TupleCompBinder, ...],
+    ) -> GroundabilityResult:
+        for binder in comp_binders:
+            if isinstance(binder, ast.TupleCompBinder):
+                symbol = scope.lookup(binder.domain_relation)
+                if (
+                    symbol is None
+                    or symbol.kind != SymbolKind.RELATION
+                    or not isinstance(symbol.type, RelationType)
+                ):
+                    return GroundabilityResult(
+                        False, f"unknown relation `{binder.domain_relation}`"
+                    )
+                if len(binder.vars) != len(symbol.type.fields):
+                    return GroundabilityResult(False, f"relation `{binder.domain_relation}` arity")
+                for name, relation_field in zip(binder.vars, symbol.type.fields, strict=True):
+                    binders[name] = ElemOfType(
+                        relation_field.set_type.name,
+                        numeric_kind=relation_field.set_type.numeric_kind,
+                    )
+                continue
+            if self._lookup_set(scope, binder.domain_set) is None:
+                return GroundabilityResult(False, f"unknown set `{binder.domain_set}`")
+            binders[binder.var] = self._binder_type(scope, binder.domain_set)
+        return GroundabilityResult(True)
+
+    def _tuple_binder_groundability(
+        self,
+        vars: tuple[str, ...],
+        domain_relation: str,
+        expr: ast.Expr,
+        span: Span,
+        scope: Scope,
+        binders: dict[str, Type],
+    ) -> GroundabilityResult:
+        inner = dict(binders)
+        binder = ast.TupleCompBinder(span=span, vars=vars, domain_relation=domain_relation)
+        binder_result = self._binders_groundability(scope, inner, (binder,))
+        return self._merge_groundability(binder_result, self._groundability(expr, scope, inner))
+
+    def _merge_groundability(self, *results: GroundabilityResult) -> GroundabilityResult:
+        for result in results:
+            if not result.valid:
+                return result
+        return GroundabilityResult(True)
+
+    def _groundability_err(self, span: Span, message: str, dependency: str | None) -> Diagnostic:
+        notes = [f"The expression depends on {dependency}."] if dependency is not None else []
+        return Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2101",
+            message=message,
+            span=span,
+            notes=notes,
+            help=[
+                "Only input params, size(...), static relations, and aggregates over static domains are allowed in decision bounds."
+            ],
+        )
+
+    def _is_legacy_scenario_const_expr(self, expr: ast.Expr, scope: Scope) -> bool:
         if isinstance(expr, ast.NumLit):
             return True
         if isinstance(expr, ast.NameRef):
@@ -734,11 +1251,11 @@ class TypeChecker:
             symbol = scope.lookup(arg.name) if isinstance(arg, ast.NameRef) else None
             return symbol is not None and symbol.kind == SymbolKind.SET
         if isinstance(expr, (ast.Add, ast.Sub, ast.Mul, ast.Div)):
-            return self._is_scenario_const_expr(expr.left, scope) and self._is_scenario_const_expr(
-                expr.right, scope
-            )
+            return self._is_legacy_scenario_const_expr(
+                expr.left, scope
+            ) and self._is_legacy_scenario_const_expr(expr.right, scope)
         if isinstance(expr, ast.Neg):
-            return self._is_scenario_const_expr(expr.expr, scope)
+            return self._is_legacy_scenario_const_expr(expr.expr, scope)
         return False
 
     def _literal_type(self, lit: ast.Literal) -> Type:

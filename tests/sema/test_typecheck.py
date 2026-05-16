@@ -104,7 +104,7 @@ problem P {
 """
     unit = compile_source(text, options=CompileOptions(filename="size_unknown.qsol"))
     assert any(
-        d.code == "QSOL2101" and "size() expects a declared set identifier" in d.message
+        d.code == "QSOL2101" and "size() expects a declared set or relation identifier" in d.message
         for d in unit.diagnostics
     )
 
@@ -119,7 +119,7 @@ problem P {
 """
     unit = compile_source(text, options=CompileOptions(filename="size_param.qsol"))
     assert any(
-        d.code == "QSOL2101" and "size() expects a declared set identifier" in d.message
+        d.code == "QSOL2101" and "size() expects a declared set or relation identifier" in d.message
         for d in unit.diagnostics
     )
 
@@ -137,6 +137,40 @@ problem P {
         d.code == "QSOL2101" and "size() expects exactly one argument" in d.message
         for d in unit.diagnostics
     )
+
+
+def test_piecewise_builtins_accept_numeric_arguments() -> None:
+    text = """
+problem P {
+  set Machines;
+  find Balance : Int[-10 .. 10];
+  find Load[Machines] : Int[0 .. 10];
+  must abs(Balance) <= 5;
+  minimize max(Load[m] for m in Machines) + min(Balance, 3);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="piecewise_ok.qsol"))
+    assert not any(
+        d.code == "QSOL2101"
+        and ("abs()" in d.message or "min()" in d.message or "max()" in d.message)
+        for d in unit.diagnostics
+    )
+
+
+def test_piecewise_builtins_reject_bool_arguments() -> None:
+    text = """
+problem P {
+  set Machines;
+  find Enabled : Bool;
+  find Load[Machines] : Int[0 .. 10];
+  must abs(Enabled) <= 1;
+  minimize max(Enabled for m in Machines);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="piecewise_bad.qsol"))
+    messages = [d.message for d in unit.diagnostics if d.code == "QSOL2101"]
+    assert any("abs() argument must be numeric" in message for message in messages)
+    assert any("max() aggregate term must be numeric" in message for message in messages)
 
 
 def test_scalar_numeric_param_bare_name_is_numeric() -> None:
@@ -302,6 +336,40 @@ problem P {
     )
 
 
+def test_derived_relation_rejects_decision_dependent_filter() -> None:
+    text = """
+problem BadDerived {
+  set V;
+  relation Edge(u: V, v: V);
+  find Pick : Subset(V);
+  relation PickedEdge(u: V, v: V) = filter((u, v) in Edge where Pick.has(u));
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="derived_decision.qsol"))
+
+    assert any(
+        d.code == "QSOL2101"
+        and "derived relation condition must be scenario-time static" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_derived_relation_rejects_dependency_cycle() -> None:
+    text = """
+problem Cycle {
+  set V;
+  relation A(u: V, v: V) = filter((u, v) in B where true);
+  relation B(u: V, v: V) = filter((u, v) in A where true);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="derived_cycle.qsol"))
+
+    assert any(
+        d.code == "QSOL2101" and "derived relation dependency cycle" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_unknown_function_or_predicate_call_is_rejected_after_macro_pass() -> None:
     text = """
 problem P {
@@ -382,6 +450,68 @@ problem P {
     assert not any(d.is_error for d in unit.diagnostics)
 
 
+def test_static_aggregate_int_bounds_typecheck() -> None:
+    text = """
+problem P {
+  set Jobs;
+  relation Arc(u: Jobs, v: Jobs);
+  param Length[Jobs] : Int[0 .. 100];
+  param Cost[Jobs, Jobs] : Int[0 .. 100] = 1;
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+  find Flow[Arc] : Int[0 .. size(Arc)];
+  find SelectedCount : Int[0 .. count((u, v) in Arc where Cost[u, v] > 0)];
+  minimize Makespan + SelectedCount + sum(Flow[u, v] for (u, v) in Arc);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="static_aggregate_bounds.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_static_if_and_boolean_aggregate_int_bounds_typecheck() -> None:
+    text = """
+problem P {
+  set Jobs;
+  relation Arc(u: Jobs, v: Jobs);
+  param Length[Jobs] : Int[0 .. 100];
+  param Active[Jobs] : Bool = true;
+  param Cost[Jobs, Jobs] : Int[0 .. 100] = 1;
+  find ConditionalTotal : Int[
+    0 ..
+    if any(Active[j] = Active[j] for j in Jobs)
+    then sum(Length[j] for j in Jobs)
+    else 0
+  ];
+  find RelationChecked : Int[
+    0 ..
+    if forall (u, v) in Arc: Cost[u, v] >= 0
+    then size(Arc)
+    else 0
+  ];
+  minimize ConditionalTotal + RelationChecked;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="static_if_bounds.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_range_bounds_do_not_accept_aggregate_expressions() -> None:
+    text = """
+problem P {
+  set Jobs;
+  param Length[Jobs] : Int[0 .. 100];
+  set Positions = Range(1, sum(Length[j] for j in Jobs));
+  minimize 0;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="range_aggregate_bad.qsol"))
+    assert any(
+        d.code == "QSOL2101"
+        and "integer bounds may use literals, scalar params, size(Set), and arithmetic only"
+        in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_unknown_dependent_int_bounds_are_rejected() -> None:
     text = """
 problem P {
@@ -393,6 +523,69 @@ problem P {
 """
     unit = compile_source(text, options=CompileOptions(filename="unknown_bound_bad.qsol"))
     assert any(
-        d.code == "QSOL2101" and "size() expects a declared set identifier" in d.message
+        d.code == "QSOL2101" and "size() expects a declared set or relation identifier" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_decision_dependent_aggregate_int_bounds_are_rejected() -> None:
+    text = """
+problem P {
+  set Jobs;
+  param Weight[Jobs] : Int[0 .. 100];
+  find Pick : Subset(Jobs);
+  find T : Int[0 .. sum(if Pick.has(j) then Weight[j] else 0 for j in Jobs)];
+  minimize T;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="decision_bound_bad.qsol"))
+    assert any(
+        d.code == "QSOL2101"
+        and "Int upper bound is not scenario-time constant" in d.message
+        and "Pick.has" in " ".join(d.notes + d.help)
+        for d in unit.diagnostics
+    )
+
+
+def test_decision_name_and_indexed_decision_int_bounds_are_rejected() -> None:
+    text = """
+problem P {
+  set Jobs;
+  find Other : Int[0 .. 1];
+  find Load[Jobs] : Int[0 .. 1];
+  find T : Int[0 .. Other + sum(Load[j] for j in Jobs)];
+  find U : Int[0 .. sum(Load[j] for j in Jobs)];
+  minimize T + U;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="decision_name_bound_bad.qsol"))
+    messages = [*unit.diagnostics]
+    assert any(
+        d.code == "QSOL2101"
+        and "Int upper bound is not scenario-time constant" in d.message
+        and "decision `Other`" in " ".join(d.notes)
+        for d in messages
+    )
+    assert any(
+        d.code == "QSOL2101"
+        and "Int upper bound is not scenario-time constant" in d.message
+        and "decision `Load`" in " ".join(d.notes)
+        for d in messages
+    )
+
+
+def test_unknown_relation_aggregate_int_bound_is_rejected() -> None:
+    text = """
+problem P {
+  set Jobs;
+  find T : Int[0 .. count((u, v) in Missing)];
+  minimize T;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="missing_relation_bound_bad.qsol"))
+    assert any(
+        d.code == "QSOL2101"
+        and "Int upper bound is not scenario-time constant" in d.message
+        and "unknown relation `Missing`" in " ".join(d.notes)
         for d in unit.diagnostics
     )

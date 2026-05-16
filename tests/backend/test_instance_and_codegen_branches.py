@@ -9,6 +9,9 @@ from qsol.backend.dimod_codegen import DimodCodegen
 from qsol.backend.instance import (
     _eval_int_expr,
     _eval_num_expr,
+    _eval_static_bool,
+    _eval_static_value,
+    _iter_static_binder_envs,
     instantiate_ir,
     load_instance,
     read_execution_config,
@@ -189,6 +192,46 @@ def test_relation_instance_shape_diagnostics() -> None:
     )
     assert any("outside its declared set" in d.message for d in bad_elem.diagnostics)
 
+    derived_kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="V"),),
+                relations=(
+                    ir.KRelationDecl(
+                        span=span,
+                        name="Pair",
+                        fields=(
+                            ir.KRelationField(span=span, name="u", set_name="V"),
+                            ir.KRelationField(span=span, name="v", set_name="V"),
+                        ),
+                        expr=ir.KPairsRelationExpr(
+                            span=span,
+                            binders=(
+                                ir.KCompBinder(span=span, var="u", domain_set="V"),
+                                ir.KCompBinder(span=span, var="v", domain_set="V"),
+                            ),
+                            where=None,
+                        ),
+                    ),
+                ),
+                params=(),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+    supplied_derived = instantiate_ir(
+        derived_kernel,
+        {"problem": "P", "sets": {"V": ["a", "b"]}, "relations": {"Pair": [["a", "b"]]}},
+    )
+    assert any(
+        "relation `Pair` is derived in source" in d.message for d in supplied_derived.diagnostics
+    )
+
     kernel = ir.KernelIR(
         span=span,
         problems=(
@@ -228,6 +271,270 @@ def test_relation_instance_shape_diagnostics() -> None:
     )
 
 
+def test_derived_relation_static_eval_branches() -> None:
+    span = _span()
+    diagnostics: list = []
+    p_sets = {"V": ["a", "b"], "N": [1, 2]}
+    p_relations = {"Edge": (("a", "b"),), "Loop": (("a", "a"),)}
+    p_params = {
+        "Flag": True,
+        "Weight": {"a": 2, "b": 5},
+        "Allowed": {"a": {"a": False, "b": True}, "b": {"a": False, "b": False}},
+    }
+    env = {"u": "a", "v": "b"}
+
+    assert _iter_static_binder_envs(
+        (
+            ir.KCompBinder(span=span, var="n", domain_set="N"),
+            ir.KTupleCompBinder(span=span, vars=("x", "y"), domain_relation="Edge"),
+        ),
+        p_sets=p_sets,
+        p_relations=p_relations,
+        span=span,
+        diagnostics=diagnostics,
+    ) == [{"n": 1, "x": "a", "y": "b"}, {"n": 2, "x": "a", "y": "b"}]
+
+    relation_call = ir.KFuncCall(
+        span=span,
+        name="Edge",
+        args=(ir.KName(span=span, name="u"), ir.KName(span=span, name="v")),
+    )
+    allowed_call = ir.KFuncCall(
+        span=span,
+        name="Allowed",
+        args=(ir.KName(span=span, name="u"), ir.KName(span=span, name="v")),
+    )
+    bool_expr = ir.KBoolIfThenElse(
+        span=span,
+        cond=ir.KOr(
+            span=span,
+            left=ir.KName(span=span, name="Flag"),
+            right=ir.KBoolLit(span=span, value=False),
+        ),
+        then_expr=ir.KAnd(
+            span=span,
+            left=ir.KNot(span=span, expr=ir.KBoolLit(span=span, value=False)),
+            right=ir.KImplies(span=span, left=allowed_call, right=relation_call),
+        ),
+        else_expr=ir.KBoolLit(span=span, value=False),
+    )
+    assert (
+        _eval_static_bool(
+            bool_expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        is True
+    )
+
+    numeric_expr = ir.KIfThenElse(
+        span=span,
+        cond=ir.KCompare(
+            span=span,
+            op="<=",
+            left=ir.KFuncCall(
+                span=span,
+                name="Weight",
+                args=(ir.KName(span=span, name="u"),),
+            ),
+            right=ir.KFuncCall(
+                span=span,
+                name="Weight",
+                args=(ir.KName(span=span, name="v"),),
+            ),
+        ),
+        then_expr=ir.KAdd(
+            span=span,
+            left=ir.KFuncCall(span=span, name="size", args=(ir.KName(span=span, name="V"),)),
+            right=ir.KMul(
+                span=span,
+                left=ir.KNumLit(span=span, value=3),
+                right=ir.KDiv(
+                    span=span,
+                    left=ir.KNumLit(span=span, value=8),
+                    right=ir.KNumLit(span=span, value=4),
+                ),
+            ),
+        ),
+        else_expr=ir.KNeg(span=span, expr=ir.KNumLit(span=span, value=1)),
+    )
+    assert (
+        _eval_static_value(
+            numeric_expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        == 8.0
+    )
+
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op="!=",
+                left=ir.KName(span=span, name="u"),
+                right=ir.KName(span=span, name="v"),
+            ),
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        is True
+    )
+    assert diagnostics == []
+
+
+def test_derived_relation_static_eval_diagnostic_branches() -> None:
+    span = _span()
+    diagnostics: list = []
+
+    assert (
+        _iter_static_binder_envs(
+            (ir.KTupleCompBinder(span=span, vars=("u", "v"), domain_relation="Missing"),),
+            p_sets={"V": ["a"]},
+            p_relations={},
+            span=span,
+            diagnostics=diagnostics,
+        )
+        == []
+    )
+    assert (
+        _iter_static_binder_envs(
+            (ir.KTupleCompBinder(span=span, vars=("u", "v"), domain_relation="Unary"),),
+            p_sets={"V": ["a"]},
+            p_relations={"Unary": (("a",),)},
+            span=span,
+            diagnostics=diagnostics,
+        )
+        == []
+    )
+    assert (
+        _iter_static_binder_envs(
+            (ir.KCompBinder(span=span, var="u", domain_set="Missing"),),
+            p_sets={},
+            p_relations={},
+            span=span,
+            diagnostics=diagnostics,
+        )
+        == []
+    )
+
+    empty_env: dict[str, object] = {}
+    common = {
+        "p_sets": {"V": ["a"]},
+        "p_params": {},
+        "p_relations": {"Edge": (("a", "a"),)},
+        "env": empty_env,
+        "diagnostics": diagnostics,
+    }
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op="=",
+                left=ir.KNumLit(span=span, value=1),
+                right=ir.KNumLit(span=span, value=1),
+            ),
+            **common,
+        )
+        is True
+    )
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op=">",
+                left=ir.KNumLit(span=span, value=2),
+                right=ir.KNumLit(span=span, value=1),
+            ),
+            **common,
+        )
+        is True
+    )
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op="<",
+                left=ir.KNumLit(span=span, value=1),
+                right=ir.KNumLit(span=span, value=2),
+            ),
+            **common,
+        )
+        is True
+    )
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op=">=",
+                left=ir.KNumLit(span=span, value=2),
+                right=ir.KNumLit(span=span, value=2),
+            ),
+            **common,
+        )
+        is True
+    )
+    assert (
+        _eval_static_bool(
+            ir.KCompare(
+                span=span,
+                op="<",
+                left=ir.KName(span=span, name="missing"),
+                right=ir.KNumLit(span=span, value=2),
+            ),
+            **common,
+        )
+        is None
+    )
+    assert (
+        _eval_static_bool(
+            ir.KMethodCall(
+                span=span,
+                target=ir.KName(span=span, name="Pick"),
+                name="has",
+                args=(),
+            ),
+            **common,
+        )
+        is None
+    )
+    assert (
+        _eval_static_value(
+            ir.KSub(
+                span=span,
+                left=ir.KNumLit(span=span, value=5),
+                right=ir.KNumLit(span=span, value=3),
+            ),
+            **common,
+        )
+        == 2.0
+    )
+    assert (
+        _eval_static_value(
+            ir.KFuncCall(span=span, name="size", args=(ir.KName(span=span, name="Edge"),)),
+            **common,
+        )
+        == 1.0
+    )
+    assert (
+        _eval_static_value(
+            ir.KFuncCall(span=span, name="MissingCall", args=()),
+            **common,
+        )
+        is None
+    )
+    assert diagnostics
+
+
 def test_instance_bound_expression_error_branches() -> None:
     span = _span()
     diagnostics: list = []
@@ -256,6 +563,48 @@ def test_instance_bound_expression_error_branches() -> None:
             set_sizes={},
             params={},
             diagnostics=diagnostics,
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="size", args=(ir.KName(span=span, name="Edge"),)),
+            set_sizes={},
+            relation_values={"Edge": (("a", "b"), ("b", "c"))},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 2.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KName(span=span, name="item"),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+            env={"item": "a"},
+        )
+        is None
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="Weight", args=(ir.KName(span=span, name="item"),)),
+            set_sizes={},
+            set_values={"Items": ["a"]},
+            params={"Weight": {"a": 7}},
+            diagnostics=diagnostics,
+            env={"item": "a"},
+        )
+        == 7.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KFuncCall(span=span, name="Flag", args=(ir.KName(span=span, name="item"),)),
+            set_sizes={},
+            set_values={"Items": ["a"]},
+            params={"Flag": {"a": True}},
+            diagnostics=diagnostics,
+            env={"item": "a"},
         )
         is None
     )
@@ -319,6 +668,57 @@ def test_instance_bound_expression_error_branches() -> None:
             diagnostics=diagnostics,
         )
         == -4.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KIfThenElse(
+                span=span,
+                cond=ir.KBoolLit(span=span, value=True),
+                then_expr=ir.KNumLit(span=span, value=9.0),
+                else_expr=ir.KNumLit(span=span, value=0.0),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        == 9.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KSum(
+                span=span,
+                comp=ir.KNumComprehension(
+                    span=span,
+                    term=ir.KFuncCall(
+                        span=span,
+                        name="Weight",
+                        args=(ir.KName(span=span, name="item"),),
+                    ),
+                    binders=(ir.KCompBinder(span=span, var="item", domain_set="Items"),),
+                ),
+            ),
+            set_sizes={"Items": 2},
+            set_values={"Items": ["a", "b"]},
+            params={"Weight": {"a": 2, "b": 5}},
+            diagnostics=diagnostics,
+        )
+        == 7.0
+    )
+    assert (
+        _eval_num_expr(
+            ir.KSum(
+                span=span,
+                comp=ir.KNumComprehension(
+                    span=span,
+                    term=ir.KNumLit(span=span, value=1.0),
+                    binders=(ir.KCompBinder(span=span, var="item", domain_set="Items"),),
+                ),
+            ),
+            set_sizes={},
+            params={},
+            diagnostics=diagnostics,
+        )
+        is None
     )
     assert (
         _eval_num_expr(

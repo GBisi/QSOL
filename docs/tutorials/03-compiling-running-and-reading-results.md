@@ -75,6 +75,23 @@ Edge = [
 The compact tuple form is accepted when values are ordered like the relation
 declaration fields: `Edge = [["a", "b"], ["b", "c"]]`.
 
+Bounded `Int` decisions can use static scenario data in their bounds. For
+example, `Int[0 .. sum(Length[j] for j in Jobs)]` is grounded after `Jobs` and
+`Length` are loaded, while a bound that references a decision such as
+`Pick.has(j)` is rejected during frontend checks.
+
+When a model uses supported piecewise builtins such as
+`minimize max(Load[m] for m in Machines)` or `minimize abs(balance)`, inspect
+and estimate outputs include generated scalar decisions named like
+`__qsol_piecewise_max_0`. These auxiliaries are part of the compiled model and
+are counted in CQM integer-variable totals.
+
+Graph/global helpers are visible through their lowered effects. `all_different`
+adds pairwise hard constraints, while `adjacent` and `nonedge` are rewritten to
+relation membership formulas before target support checks. `inspect estimate
+--json` reports relation arity/size, decision summaries, expression summary
+placeholders, backend CQM counts, and backend warnings.
+
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.
 - If one file exists, use it.

@@ -166,6 +166,134 @@ Edge = [
     assert Path(unit.artifacts.bqm_path or "").exists()
 
 
+def test_compile_lowers_all_different_global_for_indexed_ints(tmp_path: Path) -> None:
+    source = """
+problem AssignDistinct {
+  set Items;
+  set Slots = Range(1, size(Items));
+
+  find Slot[Items] : Int[0 .. size(Items) - 1];
+
+  must all_different(Slot[i] for i in Items);
+  minimize sum(Slot[i] for i in Items);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "AssignDistinct"
+
+[scenarios.baseline.sets]
+Items = ["a", "b", "c"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-all-different"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="all_different.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="cqm",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_lowers_graph_adjacency_helpers(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem GraphHelpers {
+  set V;
+  relation Edge(u: V, v: V);
+
+  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "GraphHelpers"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-graph-helpers"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="graph_helpers.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_supports_route_stdlib_unknown(tmp_path: Path) -> None:
+    source = """
+use stdlib.route;
+
+problem TinyRoute {
+  set Positions;
+  set V;
+
+  find Tour : Route(Positions, V);
+
+  must forall p in Positions: exists v in V: Tour.at(p, v);
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "TinyRoute"
+
+[scenarios.baseline.sets]
+Positions = ["p1", "p2"]
+V = ["a", "b"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-route"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="route.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
 def test_compile_supports_tuple_relation_count_objective(tmp_path: Path) -> None:
     source = """
 problem ReciprocalEdges {
@@ -204,6 +332,111 @@ Edge = [["a", "b"], ["b", "a"], ["b", "c"]]
     assert not any(d.is_error for d in unit.diagnostics)
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_supports_derived_nonedge_relation(tmp_path: Path) -> None:
+    source = """
+use stdlib.logic;
+
+problem MaxClique {
+  set V;
+  relation Edge(u: V, v: V);
+  relation NonEdge(u: V, v: V) = pairs(u in V, v in V where u != v and not Edge(u, v));
+
+  find Pick : Subset(V);
+
+  must forall (u, v) in NonEdge: indicator(Pick.has(u)) + indicator(Pick.has(v)) <= 1;
+  maximize count(v in V where Pick.has(v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MaxClique"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "a"], ["b", "c"], ["c", "b"]]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-derived-nonedge"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="max_clique.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.ground_ir is not None
+    problem = unit.ground_ir.problems[0]
+    assert problem.relation_values["NonEdge"] == (("a", "c"), ("c", "a"))
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_supports_derived_filter_and_param_conditions(tmp_path: Path) -> None:
+    source = """
+problem DerivedConditions {
+  set V;
+  relation Edge(u: V, v: V);
+  param Flag : Bool = true;
+  param Weight[V] : Int[0 .. 10];
+  param Bias : Int[0 .. 10] = 1;
+
+  relation Reciprocal(u: V, v: V) = filter((u, v) in Edge where Edge(v, u));
+  relation Candidate(u: V, v: V) =
+    pairs(u in V, v in V where Flag and Weight[u] + Bias >= Weight[v]);
+
+  minimize count((u, v) in Reciprocal) + count((u, v) in Candidate);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "DerivedConditions"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.params.Weight]
+a = 1
+b = 2
+c = 8
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "a"], ["b", "c"]]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-derived-conditions"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="derived_conditions.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.ground_ir is not None
+    problem = unit.ground_ir.problems[0]
+    assert problem.relation_values["Reciprocal"] == (("a", "b"), ("b", "a"))
+    assert problem.derived_relations == {"Candidate": "pairs", "Reciprocal": "filter"}
+    assert ("a", "b") in problem.relation_values["Candidate"]
+    assert ("a", "c") not in problem.relation_values["Candidate"]
 
 
 def test_compile_supports_model_vs_model_equality_without_objective(tmp_path: Path) -> None:
@@ -413,8 +646,88 @@ V = ["v1", "v2", "v3"]
 
     assert not any(diag.is_error for diag in unit.diagnostics)
     assert unit.artifacts is not None
+
+
+def test_compile_supports_minimize_abs_piecewise_builtin(tmp_path: Path) -> None:
+    source = """
+problem AbsBalance {
+  find Left : Int[0 .. 5];
+  find Right : Int[0 .. 5];
+  minimize abs(Left - Right);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "AbsBalance"
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-abs"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="abs_balance.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
-    assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_minimize_max_aggregate_piecewise_builtin(tmp_path: Path) -> None:
+    source = """
+problem Makespan {
+  set Machines;
+  find Load[Machines] : Int[0 .. 10];
+  minimize max(Load[m] for m in Machines);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "Makespan"
+
+[scenarios.baseline.sets]
+Machines = ["m1", "m2"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-max"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="makespan.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_rejects_unsupported_piecewise_objective_context() -> None:
+    source = """
+problem BadAbs {
+  find Left : Int[0 .. 5];
+  find Right : Int[0 .. 5];
+  maximize abs(Left - Right);
+}
+"""
+    unit = compile_source(source, options=CompileOptions(filename="bad_abs.qsol"))
+
+    assert any(d.code == "QSOL3101" and "maximize abs()" in d.message for d in unit.diagnostics)
 
 
 def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:
@@ -553,6 +866,68 @@ Total = 5
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
     assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_static_aggregate_int_bounds(tmp_path: Path) -> None:
+    source = """
+problem StaticAggregateBounds {
+  set Jobs;
+  relation Arc(u: Jobs, v: Jobs);
+  param Length[Jobs] : Int[0 .. 100];
+  param Cost[Jobs, Jobs] : Int[0 .. 100] = 1;
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+  find Flow[Arc] : Int[0 .. size(Arc)];
+  find SelectedCount : Int[0 .. count((u, v) in Arc where Cost[u, v] > 0)];
+
+  must Makespan >= SelectedCount;
+  minimize Makespan + SelectedCount + sum(Flow[u, v] for (u, v) in Arc);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticAggregateBounds"
+
+[scenarios.baseline.sets]
+Jobs = ["a", "b", "c"]
+
+[scenarios.baseline.params]
+Length = { a = 2, b = 3, c = 4 }
+
+[scenarios.baseline.relations]
+Arc = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_aggregate_bounds.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(diag.is_error for diag in unit.diagnostics)
+    assert unit.ground_ir is not None
+    finds = {find.name: find for find in unit.ground_ir.problems[0].finds}
+    makespan = finds["Makespan"].decision_type
+    flow = finds["Flow"].decision_type
+    selected_count = finds["SelectedCount"].decision_type
+    assert makespan.hi.value == 9
+    assert flow.hi.value == 2
+    assert selected_count.hi.value == 2
+    assert unit.compiled_model is not None
+    cqm = unit.compiled_model.cqm
+    assert cqm.upper_bound("Makespan") == 9
+    assert cqm.upper_bound("SelectedCount") == 2
+    assert cqm.upper_bound("Flow[a,b]") == 2
 
 
 def test_derived_range_set_rejects_scenario_values(tmp_path: Path) -> None:

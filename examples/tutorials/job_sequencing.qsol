@@ -1,0 +1,15 @@
+problem JobSequencing {
+  set Jobs;
+  relation Precedence(before: Jobs, after: Jobs);
+
+  param Length[Jobs] : Int[1 .. 100];
+
+  find Start[Jobs] : Int[0 .. sum(Length[j] for j in Jobs)];
+  find Makespan : Int[0 .. sum(Length[j] for j in Jobs)];
+
+  must forall j in Jobs: Start[j] + Length[j] <= Makespan;
+  must forall (before, after) in Precedence:
+    Start[before] + Length[before] <= Start[after];
+
+  minimize Makespan;
+}

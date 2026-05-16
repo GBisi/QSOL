@@ -40,7 +40,26 @@ use stdlib.logic;
 *   **`indicator(b: Bool): Real`**
     *   Returns `1` if `b` is true, `0` otherwise.
 
-## 2. Mappings & Permutations
+## 2. Compiler Builtins
+
+These names are handled by the compiler rather than loaded from `stdlib`:
+
+*   **`abs(expr)`**
+    *   Supported in `minimize abs(expr)` and `must abs(expr) <= C`.
+*   **`max(term for ...)`**
+    *   Supported in `minimize max(term for ...)`.
+*   **`min(term for ...)`**
+    *   Supported in `maximize min(term for ...)`.
+*   **`all_different(term for x in S)`**
+    *   Rewritten to pairwise disequality constraints over the comprehension domain.
+    *   The first pass supports one finite set binder, for example `all_different(Slot[i] for i in Items)`.
+
+They lower to generated scalar `Int` auxiliaries and hard constraints when finite
+bounds are available. `all_different` lowers to ordinary quantified constraints.
+These are not user-defined macros and do not require a
+`use stdlib...` import.
+
+## 3. Mappings & Permutations
 
 These modules provide specialized unknown types for mapping problems.
 
@@ -83,3 +102,34 @@ find P : Permutation(Items);
 
 *   **`Permutation(A)`**: A bijection from set `A` to itself. Useful for ordering or reordering problems.
 *   **View**: `is(from: Elem(A), to: Elem(A))`
+
+### `stdlib.route`
+
+```qsol
+use stdlib.route;
+find Tour : Route(Positions, Cities);
+```
+
+*   **`Route(Positions, V)`**: A route/order helper backed by `BijectiveMapping(Positions, V)`.
+*   **Views**:
+    *   `at(p: Elem(Positions), v: Elem(V))`
+    *   `transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V))`
+
+`transition(...)` is the conjunction of two route-position decisions. It is
+quadratic when used directly; keep numeric expressions backend-safe.
+
+## 4. Graph Helpers (`stdlib.graph`)
+
+```qsol
+use stdlib.graph;
+relation Edge(u: V, v: V);
+```
+
+The graph module exposes compiler-owned relation helpers:
+
+*   **`adjacent(Edge, u, v)`** lowers to `Edge(u, v) or Edge(v, u)`.
+*   **`nonedge(Edge, u, v)`** lowers to `not Edge(u, v) and not Edge(v, u)`.
+
+These helpers expect a binary static relation as their first argument. They are
+source-level conveniences; relation values are still grounded before backend
+compilation.

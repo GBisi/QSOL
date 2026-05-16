@@ -81,6 +81,51 @@ relation Edge(u: Items, v: Items);
 Edge = [{ u = "apple", v = "banana" }]
 ```
 
+Relations can also be derived from static data. For example, a complement edge
+relation can be generated during grounding:
+
+```qsol
+relation NonEdge(u: Items, v: Items) =
+  pairs(u in Items, v in Items where u != v and not Edge(u, v));
+```
+
+Derived relations are not supplied in TOML. Their filters may use static params
+and relation membership calls, but not decisions such as `Picked.has(item)`.
+
+Bounded integer decisions can use scenario-time static aggregate bounds:
+
+```qsol
+param Length[Items] : Int[1 .. 100];
+find Makespan : Int[0 .. sum(Length[item] for item in Items)];
+```
+
+The compiler evaluates that bound during grounding. Decision-dependent bounds
+are rejected so backend integer domains remain explicit and reproducible.
+
+For balance and makespan objectives, QSOL also provides compiler-owned
+piecewise builtins in supported contexts:
+
+```qsol
+minimize abs(balance);
+minimize max(load[item] for item in Items);
+```
+
+These lower to generated bounded auxiliaries and hard constraints before backend
+compilation.
+
+For compact graph/order models, compiler-owned helpers can expand common
+patterns:
+
+```qsol
+use stdlib.graph;
+
+must all_different(Slot[item] for item in Items);
+minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in Items for v in Items);
+```
+
+`all_different` becomes pairwise disequality constraints. `adjacent` and
+`nonedge` over a binary relation become ordinary relation membership formulas.
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import cast
 
 from qsol.diag.diagnostic import Diagnostic, Severity
+from qsol.diag.source import Span
 from qsol.lower import ir
 from qsol.lower.ir import GroundIR, GroundProblem, KernelIR, KProblem
 
@@ -89,6 +90,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
         p_relations: dict[str, tuple[tuple[object, ...], ...]] = {}
         p_params: dict[str, object] = {}
         p_derived_sets: dict[str, str] = {}
+        p_derived_relations: dict[str, str] = {}
 
         for decl in problem.sets:
             if decl.expr is not None:
@@ -175,8 +177,22 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
 
         declared_relation_names = {decl.name for decl in problem.relations}
+        derived_relation_names = {decl.name for decl in problem.relations if decl.expr is not None}
         for supplied_name in relation_values:
-            if supplied_name not in declared_relation_names:
+            if supplied_name in derived_relation_names:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL4201",
+                        message=(
+                            f"relation `{supplied_name}` is derived in source and must not be "
+                            "supplied by scenario data"
+                        ),
+                        span=problem.span,
+                        help=["Remove this relation from the scenario `relations` table."],
+                    )
+                )
+            elif supplied_name not in declared_relation_names:
                 diagnostics.append(
                     Diagnostic(
                         severity=Severity.ERROR,
@@ -188,12 +204,18 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 )
 
         for rdecl in problem.relations:
-            _materialize_relation(rdecl, relation_values, p_sets, p_relations, diagnostics)
+            if rdecl.expr is None:
+                _materialize_relation(rdecl, relation_values, p_sets, p_relations, diagnostics)
+
+        p_derived_relations.update(
+            _materialize_derived_relations(problem, p_sets, p_params, p_relations, diagnostics)
+        )
 
         grounded_finds = tuple(
             _ground_find(
                 find,
-                set_sizes={name: len(values) for name, values in p_sets.items()},
+                set_values=p_sets,
+                relation_values=p_relations,
                 params=p_params,
                 diagnostics=diagnostics,
             )
@@ -211,16 +233,21 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 constraints=_fold_size_in_constraints(
                     problem.constraints,
                     set_sizes={name: len(values) for name, values in p_sets.items()},
+                    relation_sizes={name: len(values) for name, values in p_relations.items()},
                     declared_sets=frozenset(s.name for s in problem.sets),
+                    declared_relations=frozenset(r.name for r in problem.relations),
                     diagnostics=diagnostics,
                 ),
                 objectives=_fold_size_in_objectives(
                     problem.objectives,
                     set_sizes={name: len(values) for name, values in p_sets.items()},
+                    relation_sizes={name: len(values) for name, values in p_relations.items()},
                     declared_sets=frozenset(s.name for s in problem.sets),
+                    declared_relations=frozenset(r.name for r in problem.relations),
                     diagnostics=diagnostics,
                 ),
                 derived_sets=p_derived_sets,
+                derived_relations=p_derived_relations,
             )
         )
 
@@ -464,6 +491,584 @@ def _materialize_relation(
     p_relations[rdecl.name] = tuple(tuples)
 
 
+def _materialize_derived_relations(
+    problem: KProblem,
+    p_sets: dict[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> dict[str, str]:
+    derived = {decl.name: decl for decl in problem.relations if decl.expr is not None}
+    relation_decl_names = {decl.name for decl in problem.relations}
+    sources: dict[str, str] = {}
+    remaining = set(derived)
+
+    while remaining:
+        progressed = False
+        for name in sorted(remaining):
+            rdecl = derived[name]
+            assert rdecl.expr is not None
+            deps = {dep for dep in _derived_relation_deps(rdecl.expr) if dep in relation_decl_names}
+            if not all(dep in p_relations for dep in deps):
+                continue
+            _materialize_derived_relation(rdecl, p_sets, p_params, p_relations, diagnostics)
+            sources[name] = _derived_relation_source(rdecl.expr)
+            remaining.remove(name)
+            progressed = True
+            break
+        if not progressed:
+            blocked = ", ".join(sorted(remaining))
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"derived relation dependency cycle or unresolved dependency: {blocked}",
+                    span=problem.span,
+                    help=[
+                        "Derived relations must depend only on base or acyclic derived relations."
+                    ],
+                )
+            )
+            break
+
+    return sources
+
+
+def _materialize_derived_relation(
+    rdecl: ir.KRelationDecl,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> None:
+    if rdecl.expr is None:
+        return
+
+    binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...]
+    where: ir.KBoolExpr | None
+    if isinstance(rdecl.expr, ir.KPairsRelationExpr):
+        binders = rdecl.expr.binders
+        where = rdecl.expr.where
+    elif isinstance(rdecl.expr, ir.KFilterRelationExpr):
+        binders = (rdecl.expr.binder,)
+        where = rdecl.expr.where
+    else:
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unsupported derived relation expression for `{rdecl.name}`",
+                span=rdecl.span,
+            )
+        )
+        return
+
+    envs = _iter_static_binder_envs(
+        binders, p_sets=p_sets, p_relations=p_relations, span=rdecl.span, diagnostics=diagnostics
+    )
+    field_names = [field.name for field in rdecl.fields]
+    tuples: list[tuple[object, ...]] = []
+    seen: set[tuple[object, ...]] = set()
+
+    for env in envs:
+        if where is not None:
+            include = _eval_static_bool(
+                where,
+                p_sets=p_sets,
+                p_params=p_params,
+                p_relations=p_relations,
+                env=env,
+                diagnostics=diagnostics,
+            )
+            if include is None or not include:
+                continue
+
+        values: list[object] = []
+        missing: list[str] = []
+        for field_name in field_names:
+            if field_name not in env:
+                missing.append(field_name)
+            else:
+                values.append(str(env[field_name]))
+        if missing:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"derived relation `{rdecl.name}` has unbound output field(s)",
+                    span=rdecl.span,
+                    help=[f"Bind: {', '.join(missing)}"],
+                )
+            )
+            return
+
+        normalized = tuple(values)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        tuples.append(normalized)
+
+    p_relations[rdecl.name] = tuple(tuples)
+
+
+def _iter_static_binder_envs(
+    binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...],
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> list[dict[str, object]]:
+    envs: list[dict[str, object]] = [{}]
+    for binder in binders:
+        if isinstance(binder, ir.KTupleCompBinder):
+            tuples = p_relations.get(binder.domain_relation)
+            if tuples is None:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"unknown relation `{binder.domain_relation}` in derived relation",
+                        span=span,
+                    )
+                )
+                return []
+            next_envs: list[dict[str, object]] = []
+            for base_env in envs:
+                for values in sorted(tuples, key=lambda item: tuple(str(value) for value in item)):
+                    if len(values) != len(binder.vars):
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2201",
+                                message=f"relation `{binder.domain_relation}` arity mismatch",
+                                span=span,
+                            )
+                        )
+                        return []
+                    bound = dict(base_env)
+                    for var, value in zip(binder.vars, values, strict=True):
+                        bound[var] = value
+                    next_envs.append(bound)
+            envs = next_envs
+            continue
+
+        set_values = p_sets.get(binder.domain_set)
+        if set_values is None:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"unknown set `{binder.domain_set}` in derived relation",
+                    span=span,
+                )
+            )
+            return []
+        next_envs = []
+        for base_env in envs:
+            for value in sorted(set_values, key=str):
+                bound = dict(base_env)
+                bound[binder.var] = value
+                next_envs.append(bound)
+        envs = next_envs
+    return envs
+
+
+def _derived_relation_deps(expr: ir.KRelationExpr) -> set[str]:
+    deps: set[str] = set()
+    if isinstance(expr, ir.KPairsRelationExpr):
+        for binder in expr.binders:
+            if isinstance(binder, ir.KTupleCompBinder):
+                deps.add(binder.domain_relation)
+        if expr.where is not None:
+            _collect_relation_deps(expr.where, deps)
+    elif isinstance(expr, ir.KFilterRelationExpr):
+        deps.add(expr.binder.domain_relation)
+        if expr.where is not None:
+            _collect_relation_deps(expr.where, deps)
+    return deps
+
+
+def _collect_relation_deps(expr: ir.KExpr, deps: set[str]) -> None:
+    if isinstance(expr, ir.KFuncCall):
+        deps.add(expr.name)
+        for arg in expr.args:
+            _collect_relation_deps(arg, deps)
+    elif isinstance(expr, ir.KMethodCall):
+        _collect_relation_deps(expr.target, deps)
+        for arg in expr.args:
+            _collect_relation_deps(arg, deps)
+    elif isinstance(expr, (ir.KNot, ir.KNeg)):
+        _collect_relation_deps(expr.expr, deps)
+    elif isinstance(
+        expr, (ir.KAnd, ir.KOr, ir.KImplies, ir.KCompare, ir.KAdd, ir.KSub, ir.KMul, ir.KDiv)
+    ):
+        _collect_relation_deps(expr.left, deps)
+        _collect_relation_deps(expr.right, deps)
+    elif isinstance(expr, (ir.KIfThenElse, ir.KBoolIfThenElse)):
+        _collect_relation_deps(expr.cond, deps)
+        _collect_relation_deps(expr.then_expr, deps)
+        _collect_relation_deps(expr.else_expr, deps)
+
+
+def _derived_relation_source(expr: ir.KRelationExpr) -> str:
+    if isinstance(expr, ir.KPairsRelationExpr):
+        return "pairs"
+    if isinstance(expr, ir.KFilterRelationExpr):
+        return "filter"
+    return type(expr).__name__
+
+
+def _eval_static_bool(
+    expr: ir.KBoolExpr,
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> bool | None:
+    if isinstance(expr, ir.KBoolLit):
+        return expr.value
+    if isinstance(expr, ir.KName):
+        value = _eval_static_value(
+            expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return value if isinstance(value, bool) else None
+    if isinstance(expr, ir.KNot):
+        value = _eval_static_bool(
+            expr.expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if value is None else not value
+    if isinstance(expr, ir.KAnd):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else left and right
+    if isinstance(expr, ir.KOr):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else left or right
+    if isinstance(expr, ir.KImplies):
+        left = _eval_static_bool(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        right = _eval_static_bool(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return None if left is None or right is None else (not left) or right
+    if isinstance(expr, ir.KCompare):
+        compare_left = _eval_static_value(
+            expr.left,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        compare_right = _eval_static_value(
+            expr.right,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if compare_left is None or compare_right is None:
+            return None
+        if expr.op in {"=", "=="}:
+            return compare_left == compare_right
+        if expr.op == "!=":
+            return compare_left != compare_right
+        if isinstance(compare_left, (int, float)) and isinstance(compare_right, (int, float)):
+            if expr.op == "<":
+                return float(compare_left) < float(compare_right)
+            if expr.op == "<=":
+                return float(compare_left) <= float(compare_right)
+            if expr.op == ">":
+                return float(compare_left) > float(compare_right)
+            if expr.op == ">=":
+                return float(compare_left) >= float(compare_right)
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message="derived relation comparison requires numeric operands",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KFuncCall):
+        if expr.name in p_relations:
+            args: list[str] = []
+            for arg in expr.args:
+                value = _eval_static_value(
+                    arg,
+                    p_sets=p_sets,
+                    p_params=p_params,
+                    p_relations=p_relations,
+                    env=env,
+                    diagnostics=diagnostics,
+                )
+                if value is None:
+                    return None
+                args.append(str(value))
+            return tuple(args) in p_relations[expr.name]
+        value = _eval_static_value(
+            expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return value if isinstance(value, bool) else None
+    if isinstance(expr, ir.KBoolIfThenElse):
+        cond = _eval_static_bool(
+            expr.cond,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if cond is None:
+            return None
+        branch = expr.then_expr if cond else expr.else_expr
+        return _eval_static_bool(
+            branch,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+    diagnostics.append(
+        Diagnostic(
+            severity=Severity.ERROR,
+            code="QSOL2201",
+            message=f"unsupported derived relation predicate `{type(expr).__name__}`",
+            span=expr.span,
+        )
+    )
+    return None
+
+
+def _eval_static_value(
+    expr: ir.KExpr,
+    *,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> object | None:
+    if isinstance(expr, ir.KNumLit):
+        return float(expr.value)
+    if isinstance(expr, ir.KBoolLit):
+        return expr.value
+    if isinstance(expr, ir.KName):
+        if expr.name in env:
+            return env[expr.name]
+        if expr.name in p_params:
+            return p_params[expr.name]
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unknown static value `{expr.name}` in derived relation",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KFuncCall):
+        if expr.name == "size" and len(expr.args) == 1 and isinstance(expr.args[0], ir.KName):
+            name = expr.args[0].name
+            if name in p_sets:
+                return float(len(p_sets[name]))
+            if name in p_relations:
+                return float(len(p_relations[name]))
+        if expr.name in p_params:
+            return _static_param_call_value(expr, p_params, p_sets, p_relations, env, diagnostics)
+        if expr.name in p_relations:
+            return _eval_static_bool(
+                expr,
+                p_sets=p_sets,
+                p_params=p_params,
+                p_relations=p_relations,
+                env=env,
+                diagnostics=diagnostics,
+            )
+        diagnostics.append(
+            Diagnostic(
+                severity=Severity.ERROR,
+                code="QSOL2201",
+                message=f"unknown static call `{expr.name}` in derived relation",
+                span=expr.span,
+            )
+        )
+        return None
+    if isinstance(expr, ir.KAdd):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "+", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KSub):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "-", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KMul):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "*", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KDiv):
+        return _eval_static_numeric_binary(
+            expr.left, expr.right, "/", p_sets, p_params, p_relations, env, diagnostics
+        )
+    if isinstance(expr, ir.KNeg):
+        value = _eval_static_value(
+            expr.expr,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        return -float(value) if isinstance(value, (int, float)) else None
+    if isinstance(expr, ir.KIfThenElse):
+        cond = _eval_static_bool(
+            expr.cond,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if cond is None:
+            return None
+        branch = expr.then_expr if cond else expr.else_expr
+        return _eval_static_value(
+            branch,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+    return None
+
+
+def _static_param_call_value(
+    expr: ir.KFuncCall,
+    p_params: Mapping[str, object],
+    p_sets: Mapping[str, list[object]],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> object | None:
+    value = p_params.get(expr.name)
+    if value is None:
+        return None
+    for arg in expr.args:
+        key = _eval_static_value(
+            arg,
+            p_sets=p_sets,
+            p_params=p_params,
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if key is None or not isinstance(value, Mapping):
+            return None
+        value = value.get(str(key))
+    return value
+
+
+def _eval_static_numeric_binary(
+    left_expr: ir.KExpr,
+    right_expr: ir.KExpr,
+    op: str,
+    p_sets: Mapping[str, list[object]],
+    p_params: Mapping[str, object],
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> float | None:
+    left = _eval_static_value(
+        left_expr,
+        p_sets=p_sets,
+        p_params=p_params,
+        p_relations=p_relations,
+        env=env,
+        diagnostics=diagnostics,
+    )
+    right = _eval_static_value(
+        right_expr,
+        p_sets=p_sets,
+        p_params=p_params,
+        p_relations=p_relations,
+        env=env,
+        diagnostics=diagnostics,
+    )
+    if not isinstance(left, (int, float)) or not isinstance(right, (int, float)):
+        return None
+    if op == "+":
+        return float(left) + float(right)
+    if op == "-":
+        return float(left) - float(right)
+    if op == "*":
+        return float(left) * float(right)
+    if op == "/":
+        return float(left) / float(right)
+    return None
+
+
 def _check_shape(value: object, dims: list[str], sets: dict[str, list[object]]) -> bool:
     if not dims:
         return not isinstance(value, dict)
@@ -492,17 +1097,28 @@ def _expand_indexed_default(
 def _ground_find(
     find: ir.KFindDecl,
     *,
-    set_sizes: Mapping[str, int],
+    set_values: Mapping[str, list[object]],
+    relation_values: Mapping[str, tuple[tuple[object, ...], ...]],
     params: Mapping[str, object],
     diagnostics: list[Diagnostic],
 ) -> ir.KFindDecl:
     if not isinstance(find.decision_type, ir.KIntDecisionType):
         return find
     lo = _eval_int_expr(
-        find.decision_type.lo, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        find.decision_type.lo,
+        set_sizes={name: len(values) for name, values in set_values.items()},
+        set_values=set_values,
+        relation_values=relation_values,
+        params=params,
+        diagnostics=diagnostics,
     )
     hi = _eval_int_expr(
-        find.decision_type.hi, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+        find.decision_type.hi,
+        set_sizes={name: len(values) for name, values in set_values.items()},
+        set_values=set_values,
+        relation_values=relation_values,
+        params=params,
+        diagnostics=diagnostics,
     )
     if lo is None or hi is None:
         return find
@@ -531,10 +1147,19 @@ def _eval_int_expr(
     expr: ir.KNumExpr,
     *,
     set_sizes: Mapping[str, int],
+    set_values: Mapping[str, list[object]] | None = None,
+    relation_values: Mapping[str, tuple[tuple[object, ...], ...]] | None = None,
     params: Mapping[str, object],
     diagnostics: list[Diagnostic],
 ) -> int | None:
-    value = _eval_num_expr(expr, set_sizes=set_sizes, params=params, diagnostics=diagnostics)
+    value = _eval_num_expr(
+        expr,
+        set_sizes=set_sizes,
+        set_values=set_values,
+        relation_values=relation_values,
+        params=params,
+        diagnostics=diagnostics,
+    )
     if value is None:
         return None
     if abs(value - round(value)) > 1e-9:
@@ -555,12 +1180,32 @@ def _eval_num_expr(
     expr: ir.KNumExpr,
     *,
     set_sizes: Mapping[str, int],
+    set_values: Mapping[str, list[object]] | None = None,
+    relation_values: Mapping[str, tuple[tuple[object, ...], ...]] | None = None,
     params: Mapping[str, object],
     diagnostics: list[Diagnostic],
+    env: Mapping[str, object] | None = None,
 ) -> float | None:
+    set_values = set_values or {}
+    relation_values = relation_values or {}
+    env = env or {}
     if isinstance(expr, ir.KNumLit):
         return float(expr.value)
     if isinstance(expr, ir.KName):
+        if expr.name in env:
+            value = env[expr.name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"bound expression references non-numeric binder `{expr.name}`",
+                        span=expr.span,
+                        help=["Use numeric Range binders or numeric params in arithmetic bounds."],
+                    )
+                )
+                return None
+            return float(value)
         value = params.get(expr.name)
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             diagnostics.append(
@@ -578,46 +1223,112 @@ def _eval_num_expr(
         arg = expr.args[0]
         if isinstance(arg, ir.KName) and arg.name in set_sizes:
             return float(set_sizes[arg.name])
+        if isinstance(arg, ir.KName) and arg.name in relation_values:
+            return float(len(relation_values[arg.name]))
         diagnostics.append(
             Diagnostic(
                 severity=Severity.ERROR,
                 code="QSOL2201",
-                message="size() in a bound references an unknown set",
+                message="size() in a bound references an unknown set or relation",
                 span=expr.span,
-                help=["Use `size(SetName)` with a grounded set."],
+                help=["Use `size(Name)` with a grounded set or static relation."],
             )
         )
         return None
+    if isinstance(expr, ir.KFuncCall) and expr.name in params:
+        value = _static_param_call_value(
+            expr, params, set_values, relation_values, env, diagnostics
+        )
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"bound expression references non-numeric param `{expr.name}`",
+                    span=expr.span,
+                    help=["Use only numeric params in bounds."],
+                )
+            )
+            return None
+        return float(value)
     if isinstance(expr, ir.KAdd):
         left = _eval_num_expr(
-            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.left,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         right = _eval_num_expr(
-            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.right,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         return None if left is None or right is None else left + right
     if isinstance(expr, ir.KSub):
         left = _eval_num_expr(
-            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.left,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         right = _eval_num_expr(
-            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.right,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         return None if left is None or right is None else left - right
     if isinstance(expr, ir.KMul):
         left = _eval_num_expr(
-            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.left,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         right = _eval_num_expr(
-            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.right,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         return None if left is None or right is None else left * right
     if isinstance(expr, ir.KDiv):
         left = _eval_num_expr(
-            expr.left, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.left,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         right = _eval_num_expr(
-            expr.right, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.right,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         if left is None or right is None:
             return None
@@ -635,9 +1346,69 @@ def _eval_num_expr(
         return left / right
     if isinstance(expr, ir.KNeg):
         inner = _eval_num_expr(
-            expr.expr, set_sizes=set_sizes, params=params, diagnostics=diagnostics
+            expr.expr,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
         )
         return None if inner is None else -inner
+    if isinstance(expr, ir.KIfThenElse):
+        cond = _eval_static_bool(
+            expr.cond,
+            p_sets=set_values,
+            p_params=params,
+            p_relations=relation_values,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if cond is None:
+            return None
+        branch = expr.then_expr if cond else expr.else_expr
+        return _eval_num_expr(
+            branch,
+            set_sizes=set_sizes,
+            set_values=set_values,
+            relation_values=relation_values,
+            params=params,
+            diagnostics=diagnostics,
+            env=env,
+        )
+    if isinstance(expr, ir.KSum):
+        if not set_values and not relation_values:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message="aggregate integer bound requires grounded static domains",
+                    span=expr.span,
+                    help=["Use aggregates over grounded sets or static relations."],
+                )
+            )
+            return None
+        total = 0.0
+        for next_env in _iter_static_binder_envs(
+            expr.comp.binders,
+            p_sets=set_values,
+            p_relations=relation_values,
+            span=expr.span,
+            diagnostics=diagnostics,
+        ):
+            value = _eval_num_expr(
+                expr.comp.term,
+                set_sizes=set_sizes,
+                set_values=set_values,
+                relation_values=relation_values,
+                params=params,
+                diagnostics=diagnostics,
+                env=next_env,
+            )
+            if value is None:
+                return None
+            total += value
+        return total
 
     diagnostics.append(
         Diagnostic(
@@ -645,7 +1416,7 @@ def _eval_num_expr(
             code="QSOL2201",
             message="unsupported integer bound expression",
             span=expr.span,
-            help=["Use literals, scalar params, size(Set), and arithmetic in bounds."],
+            help=["Use literals, params, size(...), static aggregates, and arithmetic in bounds."],
         )
     )
     return None
@@ -685,7 +1456,9 @@ def _fold_size_in_constraints(
     constraints: tuple[ir.KConstraint, ...],
     *,
     set_sizes: Mapping[str, int],
+    relation_sizes: Mapping[str, int],
     declared_sets: frozenset[str],
+    declared_relations: frozenset[str],
     diagnostics: list[Diagnostic],
 ) -> tuple[ir.KConstraint, ...]:
     return tuple(
@@ -695,7 +1468,9 @@ def _fold_size_in_constraints(
                 _fold_size_in_expr(
                     constraint.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -708,7 +1483,9 @@ def _fold_size_in_objectives(
     objectives: tuple[ir.KObjective, ...],
     *,
     set_sizes: Mapping[str, int],
+    relation_sizes: Mapping[str, int],
     declared_sets: frozenset[str],
+    declared_relations: frozenset[str],
     diagnostics: list[Diagnostic],
 ) -> tuple[ir.KObjective, ...]:
     return tuple(
@@ -718,7 +1495,9 @@ def _fold_size_in_objectives(
                 _fold_size_in_expr(
                     objective.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -739,7 +1518,9 @@ def _fold_size_in_expr(
     expr: ir.KExpr,
     *,
     set_sizes: Mapping[str, int],
+    relation_sizes: Mapping[str, int],
     declared_sets: frozenset[str],
+    declared_relations: frozenset[str],
     diagnostics: list[Diagnostic],
 ) -> ir.KExpr:
     if isinstance(expr, ir.KFuncCall):
@@ -747,7 +1528,9 @@ def _fold_size_in_expr(
             _fold_size_in_expr(
                 arg,
                 set_sizes=set_sizes,
+                relation_sizes=relation_sizes,
                 declared_sets=declared_sets,
+                declared_relations=declared_relations,
                 diagnostics=diagnostics,
             )
             for arg in expr.args
@@ -758,7 +1541,9 @@ def _fold_size_in_expr(
         return _fold_size_call(
             call,
             set_sizes=set_sizes,
+            relation_sizes=relation_sizes,
             declared_sets=declared_sets,
+            declared_relations=declared_relations,
             diagnostics=diagnostics,
         )
 
@@ -768,14 +1553,18 @@ def _fold_size_in_expr(
             target=_fold_size_in_expr(
                 expr.target,
                 set_sizes=set_sizes,
+                relation_sizes=relation_sizes,
                 declared_sets=declared_sets,
+                declared_relations=declared_relations,
                 diagnostics=diagnostics,
             ),
             args=tuple(
                 _fold_size_in_expr(
                     arg,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
                 for arg in expr.args
@@ -789,7 +1578,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -801,7 +1592,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -809,7 +1602,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -821,7 +1616,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -829,7 +1626,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -841,7 +1640,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -849,7 +1650,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -860,13 +1663,17 @@ def _fold_size_in_expr(
             left=_fold_size_in_expr(
                 expr.left,
                 set_sizes=set_sizes,
+                relation_sizes=relation_sizes,
                 declared_sets=declared_sets,
+                declared_relations=declared_relations,
                 diagnostics=diagnostics,
             ),
             right=_fold_size_in_expr(
                 expr.right,
                 set_sizes=set_sizes,
+                relation_sizes=relation_sizes,
                 declared_sets=declared_sets,
+                declared_relations=declared_relations,
                 diagnostics=diagnostics,
             ),
         )
@@ -877,7 +1684,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -885,7 +1694,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -897,7 +1708,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -905,7 +1718,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -917,7 +1732,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -925,7 +1742,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -937,7 +1756,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.left,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -945,7 +1766,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.right,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -957,7 +1780,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -969,7 +1794,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.cond,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -977,7 +1804,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.then_expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -985,7 +1814,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.else_expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -997,7 +1828,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.cond,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -1005,7 +1838,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.then_expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -1013,7 +1848,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.else_expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -1025,7 +1862,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -1037,7 +1876,9 @@ def _fold_size_in_expr(
                 _fold_size_in_expr(
                     expr.expr,
                     set_sizes=set_sizes,
+                    relation_sizes=relation_sizes,
                     declared_sets=declared_sets,
+                    declared_relations=declared_relations,
                     diagnostics=diagnostics,
                 )
             ),
@@ -1051,7 +1892,9 @@ def _fold_size_in_expr(
                     _fold_size_in_expr(
                         expr.comp.term,
                         set_sizes=set_sizes,
+                        relation_sizes=relation_sizes,
                         declared_sets=declared_sets,
+                        declared_relations=declared_relations,
                         diagnostics=diagnostics,
                     )
                 ),
@@ -1065,7 +1908,9 @@ def _fold_size_call(
     call: ir.KFuncCall,
     *,
     set_sizes: Mapping[str, int],
+    relation_sizes: Mapping[str, int],
     declared_sets: frozenset[str],
+    declared_relations: frozenset[str],
     diagnostics: list[Diagnostic],
 ) -> ir.KNumLit | ir.KFuncCall:
     fallback = ir.KNumLit(span=call.span, value=0.0)
@@ -1097,18 +1942,22 @@ def _fold_size_call(
 
     if arg.name in set_sizes:
         return ir.KNumLit(span=call.span, value=float(set_sizes[arg.name]))
+    if arg.name in relation_sizes:
+        return ir.KNumLit(span=call.span, value=float(relation_sizes[arg.name]))
 
     if arg.name in declared_sets:
         # Keep existing missing-set QSOL2201 behavior from instance validation.
+        return call
+    if arg.name in declared_relations:
         return call
 
     diagnostics.append(
         Diagnostic(
             severity=Severity.ERROR,
             code="QSOL2101",
-            message=f"size() expects a declared set identifier, got `{arg.name}`",
+            message=f"size() expects a declared set or relation identifier, got `{arg.name}`",
             span=arg.span,
-            help=["Use a set declared in the active problem scope."],
+            help=["Use a set or relation declared in the active problem scope."],
         )
     )
     return fallback

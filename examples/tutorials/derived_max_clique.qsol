@@ -1,0 +1,13 @@
+use stdlib.logic;
+
+problem DerivedMaxClique {
+  set V;
+  relation Edge(u: V, v: V);
+  relation NonEdge(u: V, v: V) =
+    pairs(u in V, v in V where u != v and not Edge(u, v));
+
+  find Pick : Subset(V);
+
+  must forall (u, v) in NonEdge: indicator(Pick.has(u)) + indicator(Pick.has(v)) <= 1;
+  maximize count(v in V where Pick.has(v));
+}

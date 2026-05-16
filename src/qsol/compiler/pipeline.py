@@ -13,8 +13,10 @@ from qsol.diag.cli_diagnostics import instance_load_error
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.source import Span
 from qsol.lower.desugar import desugar_program
+from qsol.lower.globals import lower_global_helpers_program
 from qsol.lower.ir import BackendArtifacts, GroundIR, KernelIR
 from qsol.lower.lower import lower_symbolic as lower_symbolic_pass
+from qsol.lower.piecewise import lower_piecewise_program
 from qsol.parse.ast import Program, TypedProgram
 from qsol.parse.module_loader import resolve_use_modules
 from qsol.parse.parser import ParseFailure, parse_to_ast
@@ -101,7 +103,7 @@ def _apply_frontend_stages(text: str, *, options: CompileOptions, unit: Compilat
     if any(diag.is_error for diag in unit.diagnostics):
         return
 
-    program = elaboration.program
+    program = lower_global_helpers_program(elaboration.program)
 
     resolver = Resolver()
     res = resolver.resolve(program)
@@ -116,7 +118,11 @@ def _apply_frontend_stages(text: str, *, options: CompileOptions, unit: Compilat
     unit.diagnostics.extend(validate_program(program))
 
     desugared = desugar_program(program)
-    unit.lowered_ir_symbolic = lower_symbolic_pass(desugared)
+    piecewise = lower_piecewise_program(desugared)
+    unit.diagnostics.extend(piecewise.diagnostics)
+    if any(diag.is_error for diag in piecewise.diagnostics):
+        return
+    unit.lowered_ir_symbolic = lower_symbolic_pass(piecewise.program)
 
     if unit.lowered_ir_symbolic is None:
         return

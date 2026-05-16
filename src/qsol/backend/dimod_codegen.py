@@ -316,6 +316,21 @@ class DimodCodegen:
                     diagnostics=diagnostics,
                 )
                 return
+            lhs_indicator = self._bool_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
+            rhs_indicator = self._bool_expr(
+                problem, expr.right, binaries, diagnostics, env, cqm=cqm
+            )
+            if lhs_indicator is not None and rhs_indicator is not None:
+                self._add_numeric_constraint(
+                    cqm,
+                    lhs=lhs_indicator,
+                    rhs=rhs_indicator,
+                    op="<=",
+                    label=self._constraint_label(expr.span),
+                    span=expr.span,
+                    diagnostics=diagnostics,
+                )
+                return
 
         if isinstance(expr, ir.KCompare):
             lhs = self._num_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
@@ -568,6 +583,13 @@ class DimodCodegen:
                 return None
             return self._bool_or(cqm, 1 - left, right, span=expr.span, diagnostics=diagnostics)
         if isinstance(expr, ir.KCompare):
+            static_lhs = self._static_value(expr.left, env)
+            static_rhs = self._static_value(expr.right, env)
+            if static_lhs is not None and static_rhs is not None:
+                result = self._static_compare(expr.op, static_lhs, static_rhs)
+                if result is not None:
+                    return result
+
             lhs = self._num_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
             rhs = self._num_expr(problem, expr.right, binaries, diagnostics, env, cqm=cqm)
             if lhs is None or rhs is None:
@@ -596,6 +618,32 @@ class DimodCodegen:
                 return None
 
         return self._bool_atom(problem, expr, binaries, diagnostics, env)
+
+    def _static_value(self, expr: ir.KExpr, env: Mapping[str, object]) -> object | None:
+        if isinstance(expr, ir.KName) and expr.name in env:
+            return env[expr.name]
+        if isinstance(expr, ir.KNumLit):
+            return expr.value
+        if isinstance(expr, ir.KBoolLit):
+            return expr.value
+        return None
+
+    def _static_compare(self, op: str, lhs: object, rhs: object) -> float | None:
+        if op == "=":
+            return 1.0 if lhs == rhs else 0.0
+        if op == "!=":
+            return 1.0 if lhs != rhs else 0.0
+        if not isinstance(lhs, (int, float)) or not isinstance(rhs, (int, float)):
+            return None
+        if op == "<":
+            return 1.0 if lhs < rhs else 0.0
+        if op == "<=":
+            return 1.0 if lhs <= rhs else 0.0
+        if op == ">":
+            return 1.0 if lhs > rhs else 0.0
+        if op == ">=":
+            return 1.0 if lhs >= rhs else 0.0
+        return None
 
     def _bool_constant(self, value: Any) -> float | None:
         if isinstance(value, bool):
@@ -1289,15 +1337,19 @@ class DimodCodegen:
         if not find.indices:
             return [(find.name, find.name)]
 
-        domains: list[list[object]] = []
+        domains: list[list[tuple[object, ...]]] = []
         for index_name in find.indices:
+            if index_name in problem.relation_values:
+                domains.append(list(problem.relation_values[index_name]))
+                continue
             values = problem.set_values.get(index_name)
             if values is None:
                 return []
-            domains.append(list(values))
+            domains.append([(value,) for value in values])
 
         labels: list[tuple[str, str]] = []
-        for tuple_values in product(*domains):
+        for domain_values in product(*domains):
+            tuple_values = tuple(value for group in domain_values for value in group)
             key = ",".join(str(value) for value in tuple_values)
             label = f"{find.name}[{key}]"
             meaning = f"{find.name}[{key}]"
@@ -1314,11 +1366,12 @@ class DimodCodegen:
         find = next((candidate for candidate in problem.finds if candidate.name == expr.name), None)
         if find is None or isinstance(find.decision_type, ir.KUnknownDecisionType):
             return None
-        if len(expr.args) != len(find.indices):
+        expected_arity = self._scalar_index_arity(problem, find)
+        if len(expr.args) != expected_arity:
             diagnostics.append(
                 self._unsupported(
                     expr.span,
-                    f"scalar decision `{expr.name}` expects {len(find.indices)} index argument(s)",
+                    f"scalar decision `{expr.name}` expects {expected_arity} index argument(s)",
                 )
             )
             return None
@@ -1329,6 +1382,16 @@ class DimodCodegen:
                 return None
             keys.append(key)
         return f"{expr.name}[{','.join(keys)}]"
+
+    def _scalar_index_arity(self, problem: ir.GroundProblem, find: ir.KFindDecl) -> int:
+        arity = 0
+        for index_name in find.indices:
+            relation_values = problem.relation_values.get(index_name)
+            if relation_values is not None:
+                arity += len(relation_values[0]) if relation_values else 0
+            else:
+                arity += 1
+        return arity
 
     def _resolve_name_arg(
         self,
