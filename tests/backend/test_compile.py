@@ -251,6 +251,142 @@ Edge = [
     assert Path(unit.artifacts.cqm_path or "").exists()
 
 
+def test_compile_materializes_graph_structure_domains_and_predicates() -> None:
+    source = """
+use stdlib.graph;
+
+problem GraphStructure {
+  set V;
+  relation Edge(u: V, v: V);
+  relation Arc(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  structure D = DirectedGraph(V, Arc);
+
+  find Selected[G.edges] : Bool;
+  must forall (u, v) in G.non_edges: G.nonedge(u, v);
+  must forall (u, v) in D.non_arcs: D.nonedge(u, v);
+  maximize count((u, v) in G.edges where G.adjacent(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "GraphStructure"
+
+[scenarios.baseline.sets]
+V = ["A", "B", "C"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "A", v = "B" },
+  { u = "B", v = "A" },
+]
+Arc = [
+  { u = "A", v = "B" },
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="graph_structure.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.ground_ir is not None
+    problem = unit.ground_ir.problems[0]
+    assert problem.relation_values["G.edges"] == (("A", "B"),)
+    assert problem.relation_values["G.non_edges"] == (("A", "C"), ("B", "C"))
+    assert problem.relation_values["D.arcs"] == (("A", "B"),)
+    assert problem.relation_values["D.non_arcs"] == (
+        ("A", "C"),
+        ("B", "A"),
+        ("B", "C"),
+        ("C", "A"),
+        ("C", "B"),
+    )
+
+
+def test_graph_structure_rejects_loops() -> None:
+    source = """
+problem Loopy {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "Loopy"
+
+[scenarios.baseline.sets]
+V = ["A"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "A", v = "A" },
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="loopy.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert any(d.code == "QSOL2201" and "rejects self-loop" in d.message for d in unit.diagnostics)
+
+
+def test_directed_graph_structure_rejects_loops() -> None:
+    source = """
+problem LoopyDirected {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "LoopyDirected"
+
+[scenarios.baseline.sets]
+V = ["A"]
+
+[scenarios.baseline.relations]
+Arc = [
+  { u = "A", v = "A" },
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="loopy_directed.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL2201" and "DirectedGraph `D` rejects self-loop" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_compile_supports_route_stdlib_unknown(tmp_path: Path) -> None:
     source = """
 use stdlib.route;

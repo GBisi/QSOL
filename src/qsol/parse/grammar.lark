@@ -38,6 +38,7 @@ problem_stmt_list: problem_stmt (sep+ problem_stmt)* sep*
 
 problem_stmt: set_decl
             | relation_decl
+            | structure_decl
             | param_decl
             | find_decl
             | constraint_stmt
@@ -102,11 +103,13 @@ relation_initializer: "=" relation_expr
 relation_expr: pairs_relation_expr
              | filter_relation_expr
 pairs_relation_expr: "pairs" "(" relation_binder_list relation_where? ")"
-filter_relation_expr: "filter" "(" tuple_binder "in" NAME relation_where? ")"
+filter_relation_expr: "filter" "(" tuple_binder "in" domain_ref relation_where? ")"
 relation_binder_list: relation_binder ("," relation_binder)*
-relation_binder: NAME "in" NAME             -> relation_set_binder
-               | tuple_binder "in" NAME     -> relation_tuple_binder
+relation_binder: NAME "in" domain_ref             -> relation_set_binder
+               | tuple_binder "in" domain_ref     -> relation_tuple_binder
 relation_where: "where" bool_expr
+
+structure_decl: "structure" NAME "=" NAME "(" domain_ref_list? ")"
 
 param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
 param_indexing: "[" name_list "]"
@@ -115,7 +118,7 @@ name_list: NAME ("," NAME)*
 param_default: "=" literal
 
 find_decl: "find" NAME find_indexing? ":" decision_type
-find_indexing: "[" name_list "]"
+find_indexing: "[" domain_ref_list "]"
 
 decision_type: unknown_type
              | bool_decision_type
@@ -159,10 +162,10 @@ objective_stmt: ("minimize" | "maximize") num_expr
 // Quantifiers
 // -----------------------
 
-quantifier: "forall" NAME "in" NAME ":" bool_expr
-          | "exists" NAME "in" NAME ":" bool_expr
-          | "forall" tuple_binder "in" NAME ":" bool_expr
-          | "exists" tuple_binder "in" NAME ":" bool_expr
+quantifier: "forall" NAME "in" domain_ref ":" bool_expr
+          | "exists" NAME "in" domain_ref ":" bool_expr
+          | "forall" tuple_binder "in" domain_ref ":" bool_expr
+          | "exists" tuple_binder "in" domain_ref ":" bool_expr
 
 // -----------------------
 // Aggregates + comprehensions (STRICT BY TYPE)
@@ -179,15 +182,15 @@ all_agg: "all" "(" comp_bool ")"
 // Comprehensions: term for x in X [for y in Y ...] [where pred] [else alt]
 // comp_binders is one-or-more binders; single binder is the backward-compatible case.
 comp_binders: comp_binder+
-comp_binder: "for" NAME "in" NAME              -> set_comp_binder
-           | "for" tuple_binder "in" NAME      -> tuple_comp_binder
+comp_binder: "for" NAME "in" domain_ref              -> set_comp_binder
+           | "for" tuple_binder "in" domain_ref      -> tuple_comp_binder
 tuple_binder: "(" NAME "," NAME ("," NAME)* ")"
 
 comp_num: num_expr comp_binders comp_tail_num?
 comp_bool: bool_expr comp_binders comp_tail_bool?
 comp_count: NAME comp_binders comp_tail_bool?   // count(x for x in X [for y in Y] where ...)
-          | NAME "in" NAME comp_tail_bool?       // count(x in X where ...) shorthand
-          | tuple_binder "in" NAME comp_tail_bool?
+          | NAME "in" domain_ref comp_tail_bool?       // count(x in X where ...) shorthand
+          | tuple_binder "in" domain_ref comp_tail_bool?
 
 comp_tail_num: where_clause else_clause_num?
              | else_clause_num
@@ -218,9 +221,10 @@ else_clause_bool: "else" bool_expr
 ?bool_not: "not" bool_not          -> not_op
          | bool_atom
 
-?bool_atom: "(" bool_expr ")"
+?bool_atom.1: "(" bool_expr ")"
           | quantifier
           | comparison
+          | indexed_ref
           | bool_call
           | bool_aggregate          // STRICT: only any/all here
           | bool_if_expr
@@ -248,7 +252,10 @@ paren_call: NAME "(" [arg_list] ")"                -> paren_call
 bool_call.2: call_expr
 
 indexed_ref: NAME "[" [arg_list] "]"               -> indexed_call
-size_call: "size" "(" [arg_list] ")"
+size_call: "size" "(" [size_arg_list] ")"
+size_arg_list: size_arg ("," size_arg)*
+size_arg: domain_ref                               -> domain_ref_expr
+        | expr
 
 dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
 
@@ -266,7 +273,7 @@ dotted_call: atom "." NAME "(" [arg_list] ")"      -> method_call
 ?num_unary: "-" num_unary       -> neg
           | num_atom
 
-?num_atom: "(" num_expr ")"
+?num_atom.2: "(" num_expr ")"
          | if_expr
          | num_aggregate          // STRICT: only sum/count here
          | size_call
@@ -296,6 +303,9 @@ call_arg: comp_arg_num
 comp_arg_num: num_expr comp_binders comp_tail_num?
 comp_arg_bool: bool_expr comp_binders comp_tail_bool?
 ?expr: bool_expr | num_expr
+
+domain_ref: NAME ("." NAME)?
+domain_ref_list: domain_ref ("," domain_ref)*
 
 literal: BOOL
        | NUMBER

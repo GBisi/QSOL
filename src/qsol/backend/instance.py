@@ -91,6 +91,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
         p_params: dict[str, object] = {}
         p_derived_sets: dict[str, str] = {}
         p_derived_relations: dict[str, str] = {}
+        p_structures: dict[str, dict[str, object]] = {}
 
         for decl in problem.sets:
             if decl.expr is not None:
@@ -210,6 +211,7 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
         p_derived_relations.update(
             _materialize_derived_relations(problem, p_sets, p_params, p_relations, diagnostics)
         )
+        p_structures.update(_materialize_structures(problem, p_sets, p_relations, diagnostics))
 
         grounded_finds = tuple(
             _ground_find(
@@ -222,6 +224,13 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
             for find in problem.finds
         )
 
+        structure_lowered_constraints = _lower_structure_methods_in_constraints(
+            problem.constraints, problem.structures
+        )
+        structure_lowered_objectives = _lower_structure_methods_in_objectives(
+            problem.objectives, problem.structures
+        )
+
         out.append(
             GroundProblem(
                 span=problem.span,
@@ -231,23 +240,28 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
                 params=p_params,
                 finds=grounded_finds,
                 constraints=_fold_size_in_constraints(
-                    problem.constraints,
+                    structure_lowered_constraints,
                     set_sizes={name: len(values) for name, values in p_sets.items()},
                     relation_sizes={name: len(values) for name, values in p_relations.items()},
                     declared_sets=frozenset(s.name for s in problem.sets),
-                    declared_relations=frozenset(r.name for r in problem.relations),
+                    declared_relations=frozenset(
+                        [r.name for r in problem.relations] + list(p_relations)
+                    ),
                     diagnostics=diagnostics,
                 ),
                 objectives=_fold_size_in_objectives(
-                    problem.objectives,
+                    structure_lowered_objectives,
                     set_sizes={name: len(values) for name, values in p_sets.items()},
                     relation_sizes={name: len(values) for name, values in p_relations.items()},
                     declared_sets=frozenset(s.name for s in problem.sets),
-                    declared_relations=frozenset(r.name for r in problem.relations),
+                    declared_relations=frozenset(
+                        [r.name for r in problem.relations] + list(p_relations)
+                    ),
                     diagnostics=diagnostics,
                 ),
                 derived_sets=p_derived_sets,
                 derived_relations=p_derived_relations,
+                structures=p_structures,
             )
         )
 
@@ -609,6 +623,156 @@ def _materialize_derived_relation(
         tuples.append(normalized)
 
     p_relations[rdecl.name] = tuple(tuples)
+
+
+def _materialize_structures(
+    problem: KProblem,
+    p_sets: dict[str, list[object]],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> dict[str, dict[str, object]]:
+    summaries: dict[str, dict[str, object]] = {}
+    for structure in problem.structures:
+        if (
+            structure.constructor not in {"UndirectedGraph", "DirectedGraph"}
+            or len(structure.args) != 2
+        ):
+            continue
+        vertex_name, relation_name = structure.args
+        vertices = p_sets.get(vertex_name)
+        raw_relation = p_relations.get(relation_name)
+        if vertices is None or raw_relation is None:
+            continue
+        p_sets[f"{structure.name}.vertices"] = list(vertices)
+        if structure.constructor == "UndirectedGraph":
+            summaries[structure.name] = _materialize_undirected_graph(
+                structure, vertices, raw_relation, p_relations, diagnostics
+            )
+        else:
+            summaries[structure.name] = _materialize_directed_graph(
+                structure, vertices, raw_relation, p_relations, diagnostics
+            )
+    return summaries
+
+
+def _materialize_undirected_graph(
+    structure: ir.KStructureDecl,
+    vertices: list[object],
+    raw_relation: tuple[tuple[object, ...], ...],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> dict[str, object]:
+    order = {str(value): idx for idx, value in enumerate(vertices)}
+    unordered_edges: set[tuple[str, str]] = set()
+    oriented_seen: set[tuple[str, str]] = set()
+    symmetric_duplicates = 0
+    loops = 0
+    for row in raw_relation:
+        if len(row) != 2:
+            continue
+        u, v = str(row[0]), str(row[1])
+        if u == v:
+            loops += 1
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"UndirectedGraph `{structure.name}` rejects self-loop ({u}, {v})",
+                    span=structure.span,
+                    help=["Remove loop tuples before constructing an undirected graph."],
+                )
+            )
+            continue
+        canonical = (u, v) if order[u] < order[v] else (v, u)
+        if (v, u) in oriented_seen:
+            symmetric_duplicates += 1
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.WARNING,
+                    code="QSOL2202",
+                    message=(
+                        f"UndirectedGraph `{structure.name}` canonicalizes symmetric "
+                        f"edge orientations ({u}, {v}) and ({v}, {u})"
+                    ),
+                    span=structure.span,
+                    help=["Use `G.edges` to avoid double-counting undirected edges."],
+                )
+            )
+        oriented_seen.add((u, v))
+        unordered_edges.add(canonical)
+
+    canonical_edges = tuple(
+        sorted(unordered_edges, key=lambda pair: (order[pair[0]], order[pair[1]]))
+    )
+    non_edges = tuple(
+        (str(left), str(right))
+        for i, left in enumerate(vertices)
+        for right in vertices[i + 1 :]
+        if (str(left), str(right)) not in unordered_edges
+    )
+    p_relations[f"{structure.name}.edges"] = canonical_edges
+    p_relations[f"{structure.name}.non_edges"] = non_edges
+    return {
+        "constructor": structure.constructor,
+        "vertices": len(vertices),
+        "raw_relation": structure.args[1],
+        "raw_tuples": len(raw_relation),
+        "domains": {
+            "vertices": len(vertices),
+            "edges": len(canonical_edges),
+            "non_edges": len(non_edges),
+        },
+        "symmetric_duplicate_pairs": symmetric_duplicates,
+        "loops": loops,
+    }
+
+
+def _materialize_directed_graph(
+    structure: ir.KStructureDecl,
+    vertices: list[object],
+    raw_relation: tuple[tuple[object, ...], ...],
+    p_relations: dict[str, tuple[tuple[object, ...], ...]],
+    diagnostics: list[Diagnostic],
+) -> dict[str, object]:
+    arcs: list[tuple[str, str]] = []
+    arc_set: set[tuple[str, str]] = set()
+    loops = 0
+    for row in raw_relation:
+        if len(row) != 2:
+            continue
+        u, v = str(row[0]), str(row[1])
+        if u == v:
+            loops += 1
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"DirectedGraph `{structure.name}` rejects self-loop ({u}, {v})",
+                    span=structure.span,
+                    help=["Remove loop tuples before constructing a directed graph."],
+                )
+            )
+            continue
+        arc = (u, v)
+        if arc not in arc_set:
+            arc_set.add(arc)
+            arcs.append(arc)
+    non_arcs = tuple(
+        (str(u), str(v))
+        for u in vertices
+        for v in vertices
+        if str(u) != str(v) and (str(u), str(v)) not in arc_set
+    )
+    p_relations[f"{structure.name}.arcs"] = tuple(arcs)
+    p_relations[f"{structure.name}.non_arcs"] = non_arcs
+    return {
+        "constructor": structure.constructor,
+        "vertices": len(vertices),
+        "raw_relation": structure.args[1],
+        "raw_tuples": len(raw_relation),
+        "domains": {"vertices": len(vertices), "arcs": len(arcs), "non_arcs": len(non_arcs)},
+        "loops": loops,
+    }
 
 
 def _iter_static_binder_envs(
@@ -1450,6 +1614,138 @@ def _normalize_elem_value(
     if member not in allowed_members:
         return value, member
     return member, None
+
+
+def _lower_structure_methods_in_constraints(
+    constraints: tuple[ir.KConstraint, ...],
+    structures: tuple[ir.KStructureDecl, ...],
+) -> tuple[ir.KConstraint, ...]:
+    return tuple(
+        replace(
+            constraint,
+            expr=_as_kbool(_lower_structure_methods_in_expr(constraint.expr, structures)),
+        )
+        for constraint in constraints
+    )
+
+
+def _lower_structure_methods_in_objectives(
+    objectives: tuple[ir.KObjective, ...],
+    structures: tuple[ir.KStructureDecl, ...],
+) -> tuple[ir.KObjective, ...]:
+    return tuple(
+        replace(
+            objective,
+            expr=_as_knum(_lower_structure_methods_in_expr(objective.expr, structures)),
+        )
+        for objective in objectives
+    )
+
+
+def _lower_structure_methods_in_expr(
+    expr: ir.KExpr,
+    structures: tuple[ir.KStructureDecl, ...],
+) -> ir.KExpr:
+    structure_map = {structure.name: structure for structure in structures}
+    if isinstance(expr, ir.KMethodCall):
+        target = _lower_structure_methods_in_expr(expr.target, structures)
+        args = tuple(_lower_structure_methods_in_expr(arg, structures) for arg in expr.args)
+        if isinstance(target, ir.KName) and target.name in structure_map and len(args) == 2:
+            return _structure_method_replacement(expr, structure_map[target.name], args)
+        return replace(expr, target=target, args=args)
+    if isinstance(expr, ir.KFuncCall):
+        return replace(
+            expr,
+            args=tuple(_lower_structure_methods_in_expr(arg, structures) for arg in expr.args),
+        )
+    if isinstance(expr, ir.KNot):
+        return replace(
+            expr, expr=_as_kbool(_lower_structure_methods_in_expr(expr.expr, structures))
+        )
+    if isinstance(expr, ir.KAnd):
+        return replace(
+            expr,
+            left=_as_kbool(_lower_structure_methods_in_expr(expr.left, structures)),
+            right=_as_kbool(_lower_structure_methods_in_expr(expr.right, structures)),
+        )
+    if isinstance(expr, ir.KOr):
+        return replace(
+            expr,
+            left=_as_kbool(_lower_structure_methods_in_expr(expr.left, structures)),
+            right=_as_kbool(_lower_structure_methods_in_expr(expr.right, structures)),
+        )
+    if isinstance(expr, ir.KImplies):
+        return replace(
+            expr,
+            left=_as_kbool(_lower_structure_methods_in_expr(expr.left, structures)),
+            right=_as_kbool(_lower_structure_methods_in_expr(expr.right, structures)),
+        )
+    if isinstance(expr, ir.KCompare):
+        return replace(
+            expr,
+            left=_lower_structure_methods_in_expr(expr.left, structures),
+            right=_lower_structure_methods_in_expr(expr.right, structures),
+        )
+    if isinstance(expr, (ir.KAdd, ir.KSub, ir.KMul, ir.KDiv)):
+        return replace(
+            expr,
+            left=_as_knum(_lower_structure_methods_in_expr(expr.left, structures)),
+            right=_as_knum(_lower_structure_methods_in_expr(expr.right, structures)),
+        )
+    if isinstance(expr, ir.KNeg):
+        return replace(expr, expr=_as_knum(_lower_structure_methods_in_expr(expr.expr, structures)))
+    if isinstance(expr, ir.KIfThenElse):
+        return replace(
+            expr,
+            cond=_as_kbool(_lower_structure_methods_in_expr(expr.cond, structures)),
+            then_expr=_as_knum(_lower_structure_methods_in_expr(expr.then_expr, structures)),
+            else_expr=_as_knum(_lower_structure_methods_in_expr(expr.else_expr, structures)),
+        )
+    if isinstance(expr, ir.KBoolIfThenElse):
+        return replace(
+            expr,
+            cond=_as_kbool(_lower_structure_methods_in_expr(expr.cond, structures)),
+            then_expr=_as_kbool(_lower_structure_methods_in_expr(expr.then_expr, structures)),
+            else_expr=_as_kbool(_lower_structure_methods_in_expr(expr.else_expr, structures)),
+        )
+    if isinstance(expr, ir.KQuantifier):
+        return replace(
+            expr, expr=_as_kbool(_lower_structure_methods_in_expr(expr.expr, structures))
+        )
+    if isinstance(expr, ir.KTupleQuantifier):
+        return replace(
+            expr, expr=_as_kbool(_lower_structure_methods_in_expr(expr.expr, structures))
+        )
+    if isinstance(expr, ir.KSum):
+        return replace(
+            expr,
+            comp=replace(
+                expr.comp,
+                term=_as_knum(_lower_structure_methods_in_expr(expr.comp.term, structures)),
+            ),
+        )
+    return expr
+
+
+def _structure_method_replacement(
+    call: ir.KMethodCall,
+    structure: ir.KStructureDecl,
+    args: tuple[ir.KExpr, ...],
+) -> ir.KExpr:
+    left, right = args
+    if structure.constructor == "UndirectedGraph":
+        relation = (
+            f"{structure.name}.edges" if call.name == "adjacent" else f"{structure.name}.non_edges"
+        )
+        forward = ir.KFuncCall(span=call.span, name=relation, args=(left, right))
+        reverse = ir.KFuncCall(span=call.span, name=relation, args=(right, left))
+        return ir.KOr(span=call.span, left=forward, right=reverse)
+    if structure.constructor == "DirectedGraph":
+        relation = (
+            f"{structure.name}.arcs" if call.name == "adjacent" else f"{structure.name}.non_arcs"
+        )
+        return ir.KFuncCall(span=call.span, name=relation, args=(left, right))
+    return call
 
 
 def _fold_size_in_constraints(

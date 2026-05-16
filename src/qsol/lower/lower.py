@@ -16,6 +16,7 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
         finds: list[ir.KFindDecl] = []
         constraints: list[ir.KConstraint] = []
         objectives: list[ir.KObjective] = []
+        structures: list[ir.KStructureDecl] = []
 
         for stmt in item.stmts:
             if isinstance(stmt, ast.SetDecl):
@@ -41,6 +42,15 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                             for field in stmt.fields
                         ),
                         expr=_lower_relation_expr(stmt.expr) if stmt.expr is not None else None,
+                    )
+                )
+            elif isinstance(stmt, ast.StructureDecl):
+                structures.append(
+                    ir.KStructureDecl(
+                        span=stmt.span,
+                        name=stmt.name,
+                        constructor=stmt.constructor,
+                        args=stmt.args,
                     )
                 )
             elif isinstance(stmt, ast.ParamDecl):
@@ -92,6 +102,7 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                 finds=tuple(finds),
                 constraints=tuple(constraints),
                 objectives=tuple(objectives),
+                structures=tuple(structures),
             )
         )
 
@@ -132,6 +143,8 @@ def _lower_expr(expr: ast.Expr) -> ir.KExpr:
             span=expr.span, name=expr.name, args=tuple(_lower_expr(a) for a in expr.args)
         )
     if isinstance(expr, ast.NameRef):
+        return ir.KName(span=expr.span, name=expr.name)
+    if isinstance(expr, ast.DomainRef):
         return ir.KName(span=expr.span, name=expr.name)
     raise TypeError(f"Unsupported AST expression in lowering: {type(expr)}")
 

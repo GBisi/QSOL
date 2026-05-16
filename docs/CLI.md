@@ -474,12 +474,14 @@ qsol inspect estimate [OPTIONS] FILE
 | `--scenario` | —     | string | config entrypoint scenario    | Scenario name to estimate.                       |
 | `--json`     | `-j`  | flag   | off                           | Print the stable JSON estimate payload.          |
 
-The report includes set and relation sizes, whether each set/relation is derived,
-decision-variable counts for `Subset`, `Mapping`, scalar `Bool`, and
-scalar/indexed `Int`, generated mapping exactly-one constraints, and estimated
-native CQM binary/integer variable counts. In JSON output, derived relations are
-reported under `relations` with `arity`, `size`, and a `source` such as `pairs`
-or `filter`.
+The report includes set, relation, and static structure-domain sizes, whether
+each set/relation is derived, decision-variable counts for `Subset`, `Mapping`,
+scalar `Bool`, and scalar/indexed `Int`, generated mapping exactly-one
+constraints, and estimated native CQM binary/integer variable counts. In JSON
+output, derived relations are reported under `relations` with `arity`, `size`,
+and a `source` such as `pairs` or `filter`. Graph structures are reported under
+`structures` with their constructor, source tuple count, diagnostics counters,
+and domain sizes such as `edges`, `non_edges`, `arcs`, and `non_arcs`.
 Compiler-generated piecewise auxiliaries are reported under
 `decision_variables` with names such as `__qsol_piecewise_max_0`, and their
 generated hard constraints are included in the explicit constraint count.

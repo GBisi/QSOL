@@ -119,12 +119,17 @@ patterns:
 ```qsol
 use stdlib.graph;
 
+structure G = UndirectedGraph(Items, Edge);
+
 must all_different(Slot[item] for item in Items);
-minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in Items for v in Items);
+minimize count((u, v) in G.edges where G.adjacent(u, v));
 ```
 
-`all_different` becomes pairwise disequality constraints. `adjacent` and
-`nonedge` over a binary relation become ordinary relation membership formulas.
+`all_different` becomes pairwise disequality constraints. Graph structures
+create no solver variables by themselves; they expose static domains such as
+`G.edges` and `G.non_edges`, plus predicates such as `G.adjacent(u, v)`.
+The older `adjacent(Edge, u, v)` and `nonedge(Edge, u, v)` helpers remain
+available for direct binary-relation use.
 
 ## 5. Compiling and Running
 

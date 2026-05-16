@@ -60,6 +60,13 @@ A concrete representation where all sets are finite collections of values, stati
 Derived sets are recorded with their source (`Range`) and are not loaded from scenario data. Range members are native integers in GIR so range binders can participate in numeric expressions.
 Base relation declarations are loaded from scenario `relations` data during grounding. Derived relation declarations are then evaluated in dependency order from static sets, params, base relations, and earlier derived relations. Relation tuple binders and membership calls are resolved against those grounded relation values before backend code generation.
 
+Static structure declarations are also grounded before backend code generation.
+`UndirectedGraph(V, Edge)` and `DirectedGraph(V, Arc)` validate their source
+relation and materialize compiler-owned static domains such as `G.edges`,
+`G.non_edges`, `D.arcs`, and `D.non_arcs`. Structure declarations do not create
+decision variables or backend constraints; their methods lower to static
+relation membership formulas.
+
 Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
 
 Supported piecewise numeric forms are lowered before KIR:
@@ -75,3 +82,5 @@ Global helper lowering happens before KIR. `all_different(term for x in S)`
 becomes pairwise disequality constraints over the finite domain. `adjacent` and
 `nonedge` over binary relations become explicit relation membership formulas, so
 the backend sees only grounded static relation calls and ordinary boolean logic.
+Graph structure methods such as `G.adjacent(u, v)` are lowered after structure
+domain materialization so the backend also sees ordinary static relation calls.

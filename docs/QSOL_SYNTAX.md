@@ -155,7 +155,39 @@ params, relation membership calls, arithmetic, and comparisons, but not `find`
 decisions or unknown view methods such as `Pick.has(u)`.
 Record binders (`for e in Edge`, `e.u`) are not supported yet.
 
-### 3.4 Finds
+### 3.4 Static Structures
+
+```qsol
+use stdlib.graph;
+
+set V;
+relation Edge(u: V, v: V);
+structure G = UndirectedGraph(V, Edge);
+structure D = DirectedGraph(V, Arc);
+```
+
+`structure Name = Constructor(args);` creates a static compiler-owned wrapper.
+The first builtins are graph structures:
+
+- `UndirectedGraph(V, Edge)` requires a binary relation over `V x V`, rejects
+  loops, and exposes `G.vertices`, `G.edges`, `G.non_edges`,
+  `G.adjacent(u, v)`, and `G.nonedge(u, v)`.
+- `DirectedGraph(V, Arc)` requires a binary relation over `V x V`, rejects
+  loops, and exposes `D.vertices`, `D.arcs`, `D.non_arcs`,
+  `D.adjacent(u, v)`, and `D.nonedge(u, v)`.
+
+Dotted static domains can be used where static domains are accepted:
+
+```qsol
+find Selected[G.edges] : Bool;
+forall (u, v) in G.non_edges: G.nonedge(u, v)
+count((u, v) in G.edges where G.adjacent(u, v))
+size(G.edges)
+```
+
+Structures create no solver variables or backend constraints by themselves.
+
+### 3.5 Finds
 
 ```qsol
 find Pick : Subset(Workers);
@@ -176,6 +208,8 @@ Scalar decisions are also valid:
 - `Int[lo .. hi]` creates a native bounded integer CQM variable usable in numeric expressions.
 - Indexed scalar decisions use bracket access, for example `Load[w]`.
 - Relation-indexed scalar decisions create one decision per relation tuple and use one bracket argument per relation field, for example `Flow[u, v]` inside `for (u, v) in Arc`.
+- Structure-domain-indexed scalar decisions work the same way, for example
+  `Selected[u, v]` inside `for (u, v) in G.edges`.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,
@@ -183,7 +217,7 @@ numeric params, indexed params over static binders, `size(Set)`,
 membership over static values, and arithmetic over those forms.
 Decision-dependent bounds such as `sum(if Pick.has(j) then Weight[j] else 0 for j in Jobs)` are rejected.
 
-### 3.5 Graph and Global Helpers
+### 3.6 Graph and Global Helpers
 
 Compiler-owned helpers are rewritten before type checking:
 

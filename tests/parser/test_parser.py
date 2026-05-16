@@ -135,6 +135,28 @@ problem P {
     assert isinstance(program.items[0], ast.ProblemDef)
 
 
+def test_parse_structure_decl_and_dotted_graph_domains() -> None:
+    text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find Selected[G.edges] : Bool;
+  must forall (u, v) in G.non_edges: not (Selected[u, v] and G.adjacent(u, v));
+  minimize size(G.edges) + count((u, v) in G.non_edges where G.nonedge(u, v));
+}
+"""
+    program = parse_to_ast(text, filename="graph_structure.qsol")
+    problem = program.items[1]
+    assert isinstance(problem, ast.ProblemDef)
+    assert isinstance(problem.stmts[2], ast.StructureDecl)
+    assert problem.stmts[2].name == "G"
+    assert problem.stmts[2].constructor == "UndirectedGraph"
+    assert problem.stmts[3].indices == ["G.edges"]
+
+
 def test_parse_bare_scalar_bool_param_in_constraint() -> None:
     text = """
 problem P {

@@ -12,6 +12,7 @@ class SymbolKind(str, Enum):
     PROBLEM = "problem"
     SET = "set"
     RELATION = "relation"
+    STRUCTURE = "structure"
     PARAM = "param"
     FIND = "find"
     BINDER = "binder"

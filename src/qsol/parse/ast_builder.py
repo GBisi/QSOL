@@ -290,7 +290,7 @@ class ASTBuilder:
             binder = ast.TupleCompBinder(
                 span=self._span(cast(Tree[object], c[0])),
                 vars=cast(tuple[str, ...], self._from_tree(c[0])),
-                domain_relation=self._name(c[1]),
+                domain_relation=cast(str, self._from_tree(c[1])),
             )
             where = cast(ast.BoolExpr, self._from_tree(c[2])) if len(c) == 3 else None
             return ast.FilterRelationExpr(span=self._span(node), binder=binder, where=where)
@@ -300,16 +300,27 @@ class ASTBuilder:
             return ast.CompBinder(
                 span=self._span(node),
                 var=self._name(c[0]),
-                domain_set=self._name(c[1]),
+                domain_set=cast(str, self._from_tree(c[1])),
             )
         if data == "relation_tuple_binder":
             return ast.TupleCompBinder(
                 span=self._span(node),
                 vars=cast(tuple[str, ...], self._from_tree(c[0])),
-                domain_relation=self._name(c[1]),
+                domain_relation=cast(str, self._from_tree(c[1])),
             )
         if data == "relation_where":
             return cast(ast.BoolExpr, self._from_tree(c[0]))
+
+        if data == "structure_decl":
+            args: list[str] = []
+            if len(c) == 3:
+                args = cast(list[str], self._from_tree(c[2]))
+            return ast.StructureDecl(
+                span=self._span(node),
+                name=self._name(c[0]),
+                constructor=self._name(c[1]),
+                args=tuple(args),
+            )
 
         if data == "param_decl":
             name = self._name(c[0])
@@ -364,6 +375,10 @@ class ASTBuilder:
             )
         if data == "find_indexing":
             return cast(list[str], self._from_tree(c[0]))
+        if data == "domain_ref_list":
+            return [cast(str, self._from_tree(ch)) for ch in c]
+        if data == "domain_ref":
+            return ".".join(self._name(ch) for ch in c)
         if data == "decision_type":
             value = self._from_tree(c[0])
             if isinstance(value, ast.UnknownTypeRef):
@@ -450,14 +465,14 @@ class ASTBuilder:
                     span=self._span(node),
                     kind=kind,
                     vars=cast(tuple[str, ...], self._from_tree(c[0])),
-                    domain_relation=self._name(c[1]),
+                    domain_relation=cast(str, self._from_tree(c[1])),
                     expr=cast(ast.BoolExpr, self._from_tree(c[2])),
                 )
             return ast.Quantifier(
                 span=self._span(node),
                 kind=kind,
                 var=self._name(c[0]),
-                domain_set=self._name(c[1]),
+                domain_set=cast(str, self._from_tree(c[1])),
                 expr=cast(ast.BoolExpr, self._from_tree(c[2])),
             )
 
@@ -498,13 +513,13 @@ class ASTBuilder:
             return ast.CompBinder(
                 span=self._span(node),
                 var=self._name(c[0]),
-                domain_set=self._name(c[1]),
+                domain_set=cast(str, self._from_tree(c[1])),
             )
         if data == "tuple_comp_binder":
             return ast.TupleCompBinder(
                 span=self._span(node),
                 vars=cast(tuple[str, ...], self._from_tree(c[0])),
-                domain_relation=self._name(c[1]),
+                domain_relation=cast(str, self._from_tree(c[1])),
             )
 
         if data == "comp_num":
@@ -602,7 +617,7 @@ class ASTBuilder:
                     ast.TupleCompBinder(
                         span=self._span(tuple_tree),
                         vars=tuple_vars,
-                        domain_relation=self._name(c[1]),
+                        domain_relation=cast(str, self._from_tree(c[1])),
                     )
                 ]
                 var_ref = tuple_vars[0]
@@ -616,7 +631,7 @@ class ASTBuilder:
                     ast.CompBinder(
                         span=self._span(node),
                         var=var_ref,
-                        domain_set=self._name(c[1]),
+                        domain_set=cast(str, self._from_tree(c[1])),
                     )
                 ]
                 if len(c) == 3:
@@ -720,6 +735,10 @@ class ASTBuilder:
             return ast.FuncCall(
                 span=self._span(node), name="size", args=size_args, call_style="paren"
             )
+        if data == "size_arg_list":
+            return [cast(ast.Expr, self._from_tree(ch)) for ch in c]
+        if data == "domain_ref_expr":
+            return ast.DomainRef(span=self._span(node), name=cast(str, self._from_tree(c[0])))
 
         if data == "method_call":
             method_args: list[ast.Expr] = []

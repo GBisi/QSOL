@@ -329,6 +329,46 @@ derived relations.
 Record binders and field access such as `for e in Edge` / `e.u` are not part of
 this version.
 
+### 5.6. Static Structures
+
+Structures are compiler-owned static semantic wrappers around sets and
+relations. A structure declaration creates no solver variables and emits no
+backend constraints by itself:
+
+```qsol
+use stdlib.graph;
+
+set V;
+relation Edge(u: V, v: V);
+structure G = UndirectedGraph(V, Edge);
+```
+
+Graph structures expose dotted static domains and predicates:
+
+```qsol
+G.vertices
+G.edges
+G.non_edges
+G.adjacent(u, v)
+G.nonedge(u, v)
+```
+
+`UndirectedGraph(V, Edge)` requires `Edge` to be a binary relation over
+`V x V`, rejects self-loops, and canonicalizes `G.edges` and `G.non_edges` to
+one tuple per unordered pair using the scenario order of `V`. Symmetric
+orientations in the raw relation produce a warning because iterating over
+`Edge` can double-count while iterating over `G.edges` does not.
+
+`DirectedGraph(V, Arc)` exposes `D.vertices`, `D.arcs`, and `D.non_arcs`.
+It also rejects loops in this version. Dotted static domains can be used in
+tuple binders, indexed scalar finds, and `size(...)`:
+
+```qsol
+find Selected[G.edges] : Bool;
+forall (u, v) in G.non_edges: G.nonedge(u, v)
+size(G.edges)
+```
+
 > [!IMPORTANT]
 > **Quantifiers (`forall`, `exists`) do NOT support `where` or `else`.**
 > They take a plain body expression: `forall x in S: body`.
@@ -481,7 +521,17 @@ Advanced mapping types built on `Mapping`.
     *   `at(p: Elem(Positions), v: Elem(V))`
     *   `transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V))`
 
-### 8.5. Graph Helpers (`stdlib.graph`)
+### 8.5. Graph Structures And Helpers (`stdlib.graph`)
+
+```qsol
+structure G = UndirectedGraph(V, Edge);
+structure D = DirectedGraph(V, Arc);
+```
+
+`G.edges` and `G.non_edges` are canonical unordered static domains.
+`D.arcs` and `D.non_arcs` are directed static domains. Structure predicates
+such as `G.adjacent(u, v)` and `D.nonedge(u, v)` lower to static relation
+membership checks.
 
 `adjacent(Edge, u, v)` lowers to `Edge(u, v) or Edge(v, u)`.
 `nonedge(Edge, u, v)` lowers to `not Edge(u, v) and not Edge(v, u)`.

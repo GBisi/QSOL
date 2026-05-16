@@ -42,6 +42,15 @@ class RelationType(Type):
 
 
 @dataclass(frozen=True, slots=True)
+class StructureInstanceType(Type):
+    name: str
+    constructor: str
+    args: tuple[str, ...]
+    vertex_set: str | None = None
+    relation_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ElemOfType(Type):
     set_name: str
     numeric_kind: str | None = None

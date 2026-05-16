@@ -10,6 +10,7 @@ This backend supports:
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
 *   **Objectives**: Linear and Quadratic objectives.
 *   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
+*   **Static graph structures**: `UndirectedGraph` and `DirectedGraph` are resolved before backend compilation. Their derived domains are ordinary grounded static relations from the backend's perspective.
 
 ## 2. Variable Mapping
 
@@ -46,6 +47,7 @@ The backend keeps CQM as the canonical model:
 * `Int[lo .. hi]` scalar decisions become native `dimod.Integer` variables with the grounded bounds.
 * Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
 * Relation-indexed scalar decisions create one native CQM variable per grounded relation tuple, for example `Flow[a,b]`.
+* Structure-domain-indexed scalar decisions create one native CQM variable per grounded structure-domain tuple, for example `Selected[a,b]` for `find Selected[G.edges] : Bool`.
 * Compiler-lowered piecewise builtins create generated scalar `Int` auxiliaries named like `__qsol_piecewise_abs_0` or `__qsol_piecewise_max_0`.
 * Compiler-owned global helpers are expanded before backend compilation. For example, `all_different(Slot[i] for i in Items)` becomes pairwise disequality constraints.
 

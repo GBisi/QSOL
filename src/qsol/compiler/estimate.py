@@ -11,6 +11,7 @@ class EstimateReport:
     problem: str
     sets: dict[str, dict[str, object]]
     relations: dict[str, dict[str, object]]
+    structures: dict[str, dict[str, object]]
     decision_variables: dict[str, dict[str, object]]
     decisions: dict[str, int]
     constraints: dict[str, int]
@@ -22,6 +23,7 @@ class EstimateReport:
             "problem": self.problem,
             "sets": self.sets,
             "relations": self.relations,
+            "structures": self.structures,
             "decision_variables": self.decision_variables,
             "decisions": self.decisions,
             "constraints": self.constraints,
@@ -120,6 +122,7 @@ def estimate_ground_ir(
                 problem=str(problem.name),
                 sets=set_report,
                 relations=relation_report,
+                structures=problem.structures,
                 decision_variables=decision_report,
                 decisions={
                     "binary": cqm_binary,

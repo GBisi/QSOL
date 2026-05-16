@@ -30,6 +30,13 @@ class KRelationDecl(KNode):
     expr: KRelationExpr | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class KStructureDecl(KNode):
+    name: str
+    constructor: str
+    args: tuple[str, ...]
+
+
 class KSetExpr(KNode):
     pass
 
@@ -359,6 +366,7 @@ class KProblem(KNode):
     constraints: tuple[KConstraint, ...]
     objectives: tuple[KObjective, ...]
     relations: tuple[KRelationDecl, ...] = ()
+    structures: tuple[KStructureDecl, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,6 +385,7 @@ class GroundProblem(KNode):
     relation_values: dict[str, tuple[tuple[object, ...], ...]] = field(default_factory=dict)
     derived_sets: dict[str, str] = field(default_factory=dict)
     derived_relations: dict[str, str] = field(default_factory=dict)
+    structures: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

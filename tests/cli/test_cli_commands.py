@@ -240,6 +240,54 @@ Total = 5
     assert "CQM Integer Variables" in check_result.stdout
 
 
+def test_inspect_estimate_json_reports_graph_structures(tmp_path: Path) -> None:
+    model = tmp_path / "graph.qsol"
+    model.write_text(
+        """
+use stdlib.graph;
+
+problem Graph {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find Selected[G.edges] : Bool;
+  maximize count((u, v) in G.edges where G.adjacent(u, v));
+}
+""".lstrip(),
+        encoding="utf-8",
+    )
+    config = tmp_path / "graph.qsol.toml"
+    config.write_text(
+        """
+schema_version = "1"
+
+[scenarios.base]
+problem = "Graph"
+
+[scenarios.base.sets]
+V = ["A", "B", "C"]
+
+[scenarios.base.relations]
+Edge = [["A", "B"]]
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["inspect", "estimate", str(model), "-c", str(config), "--json", "-n"],
+    )
+
+    assert result.exit_code == 0
+    estimate_payload = json.loads(result.stdout)
+    graph = estimate_payload[0]["structures"]["G"]
+    assert graph["constructor"] == "UndirectedGraph"
+    assert graph["raw_tuples"] == 1
+    assert graph["domains"] == {"vertices": 3, "edges": 1, "non_edges": 2}
+    assert estimate_payload[0]["decision_variables"]["Selected"]["instances"] == 1
+
+
 def test_targets_check_uses_config_execution_defaults(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)

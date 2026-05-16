@@ -74,6 +74,13 @@ class RelationDecl(ProblemStmt):
     expr: RelationExpr | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class StructureDecl(ProblemStmt):
+    name: str
+    constructor: str
+    args: tuple[str, ...]
+
+
 class SetExpr(Node):
     pass
 
@@ -223,6 +230,11 @@ class NumExpr(Expr):
 
 @dataclass(frozen=True, slots=True)
 class NameRef(Expr):
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class DomainRef(Expr):
     name: str
 
 

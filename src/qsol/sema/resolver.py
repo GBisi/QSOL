@@ -16,6 +16,7 @@ from qsol.sema.types import (
     RelationFieldType,
     RelationType,
     SetType,
+    StructureInstanceType,
     Type,
     UnknownInstanceType,
     UnknownTypeRef,
@@ -131,6 +132,34 @@ class Resolver:
                             stmt.span,
                         )
                     )
+
+        for stmt in problem.stmts:
+            if isinstance(stmt, ast.StructureDecl):
+                existing = scope.symbols.get(stmt.name)
+                if existing is not None:
+                    diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
+                    continue
+
+                vertex_set: str | None = None
+                relation_name: str | None = None
+                if stmt.constructor in {"UndirectedGraph", "DirectedGraph"} and len(stmt.args) == 2:
+                    vertex_set, relation_name = stmt.args
+
+                scope.define(
+                    Symbol(
+                        stmt.name,
+                        SymbolKind.STRUCTURE,
+                        StructureInstanceType(
+                            name=stmt.name,
+                            constructor=stmt.constructor,
+                            args=stmt.args,
+                            vertex_set=vertex_set,
+                            relation_name=relation_name,
+                        ),
+                        stmt.span,
+                    )
+                )
+                self._define_structure_domains(scope, stmt, diagnostics)
 
         for stmt in problem.stmts:
             if isinstance(stmt, ast.ParamDecl):
@@ -308,6 +337,66 @@ class Resolver:
             diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
         else:
             scope.define(Symbol(stmt.name, SymbolKind.FIND, find_type, stmt.span))
+
+    def _define_structure_domains(
+        self,
+        scope: Scope,
+        stmt: ast.StructureDecl,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if stmt.constructor not in {"UndirectedGraph", "DirectedGraph"} or len(stmt.args) != 2:
+            return
+        vertex_name, relation_name = stmt.args
+        vertex_symbol = scope.lookup(vertex_name)
+        relation_symbol = scope.lookup(relation_name)
+        if (
+            vertex_symbol is None
+            or vertex_symbol.kind != SymbolKind.SET
+            or not isinstance(vertex_symbol.type, SetType)
+            or relation_symbol is None
+            or relation_symbol.kind != SymbolKind.RELATION
+            or not isinstance(relation_symbol.type, RelationType)
+        ):
+            return
+        fields = (
+            RelationFieldType("u", vertex_symbol.type),
+            RelationFieldType("v", vertex_symbol.type),
+        )
+        exposed: list[tuple[str, SymbolKind, Type]]
+        if stmt.constructor == "UndirectedGraph":
+            exposed = [
+                (f"{stmt.name}.vertices", SymbolKind.SET, vertex_symbol.type),
+                (
+                    f"{stmt.name}.edges",
+                    SymbolKind.RELATION,
+                    RelationType(f"{stmt.name}.edges", fields),
+                ),
+                (
+                    f"{stmt.name}.non_edges",
+                    SymbolKind.RELATION,
+                    RelationType(f"{stmt.name}.non_edges", fields),
+                ),
+            ]
+        else:
+            exposed = [
+                (f"{stmt.name}.vertices", SymbolKind.SET, vertex_symbol.type),
+                (
+                    f"{stmt.name}.arcs",
+                    SymbolKind.RELATION,
+                    RelationType(f"{stmt.name}.arcs", fields),
+                ),
+                (
+                    f"{stmt.name}.non_arcs",
+                    SymbolKind.RELATION,
+                    RelationType(f"{stmt.name}.non_arcs", fields),
+                ),
+            ]
+        for name, kind, typ in exposed:
+            existing = scope.symbols.get(name)
+            if existing is not None:
+                diagnostics.append(self._dup(stmt.span, name, previous=existing.span))
+                continue
+            scope.define(Symbol(name, kind, typ, stmt.span))
 
     def _param_value_to_type(
         self,

@@ -307,6 +307,87 @@ problem P {
     assert not any(d.is_error for d in unit.diagnostics)
 
 
+def test_undirected_graph_structure_types_domains_and_methods() -> None:
+    text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find Selected[G.edges] : Bool;
+  must forall (u, v) in G.non_edges: not Selected[u, v];
+  must forall u in G.vertices: forall v in G.vertices: G.adjacent(u, v) or G.nonedge(u, v);
+  minimize size(G.edges) + size(G.non_edges);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="graph_structure_sema.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_graph_structure_rejects_wrong_relation_shape() -> None:
+    ternary_text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V, w: V);
+  structure G = UndirectedGraph(V, Edge);
+}
+"""
+    wrong_set_text = """
+problem P {
+  set V;
+  set W;
+  relation Edge(u: V, w: W);
+  structure G = UndirectedGraph(V, Edge);
+}
+"""
+    ternary_unit = compile_source(
+        ternary_text, options=CompileOptions(filename="graph_ternary_bad.qsol")
+    )
+    wrong_set_unit = compile_source(
+        wrong_set_text, options=CompileOptions(filename="graph_field_set_bad.qsol")
+    )
+
+    assert any(
+        d.code == "QSOL2101" and "expects a binary relation over `V x V`" in d.message
+        for d in ternary_unit.diagnostics
+    )
+    assert any(
+        d.code == "QSOL2101" and "expects a binary relation over `V x V`" in d.message
+        for d in wrong_set_unit.diagnostics
+    )
+
+
+def test_graph_structure_rejects_unknown_constructor_and_wrong_arity() -> None:
+    unknown_text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = HyperGraph(V, Edge);
+}
+"""
+    arity_text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V);
+}
+"""
+    unknown_unit = compile_source(
+        unknown_text, options=CompileOptions(filename="graph_unknown_ctor.qsol")
+    )
+    arity_unit = compile_source(arity_text, options=CompileOptions(filename="graph_arity.qsol"))
+
+    assert any(
+        d.code == "QSOL2101" and "unknown structure constructor `HyperGraph`" in d.message
+        for d in unknown_unit.diagnostics
+    )
+    assert any(
+        d.code == "QSOL2101" and "UndirectedGraph expects 2 argument(s)" in d.message
+        for d in arity_unit.diagnostics
+    )
+
+
 def test_relation_declaration_rejects_unknown_set_and_duplicate_fields() -> None:
     text = """
 problem P {

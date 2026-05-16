@@ -53,13 +53,19 @@ variables.
 Static relations let graph and incidence data stay tuple-shaped:
 
 ```qsol
+use stdlib.graph;
+
 relation Edge(u: Nodes, v: Nodes);
-minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in Nodes for v in Nodes);
+structure G = UndirectedGraph(Nodes, Edge);
+minimize size(G.edges);
 ```
 
 Compiler-owned helpers such as `all_different(...)`, `adjacent(...)`, and
 `nonedge(...)` expand to ordinary constraints and relation membership formulas
-before backend compilation.
+before backend compilation. Graph structures such as `UndirectedGraph` and
+`DirectedGraph` expose static domains like `G.edges`, `G.non_edges`, `D.arcs`,
+and `D.non_arcs` for canonical graph iteration without creating solver
+variables.
     *   `should` / `nice`: Soft preferences — penalized if violated, but not infeasible.
 5.  **Objectives** 🏆: The quantitative goal (e.g., `minimize` cost, `maximize` efficiency).
 
@@ -189,9 +195,9 @@ uv sync --extra dev
 uv run qsol solve examples/tutorials/graph_coloring.qsol
 ```
 
-Use `inspect estimate` before a build when you want grounded set/relation sizes,
-decision summaries, CQM variable counts, and backend warnings without writing
-artifacts:
+Use `inspect estimate` before a build when you want grounded set/relation and
+structure-domain sizes, decision summaries, CQM variable counts, and backend
+warnings without writing artifacts:
 
 ```bash
 uv run qsol inspect estimate examples/tutorials/graph_helpers.qsol \

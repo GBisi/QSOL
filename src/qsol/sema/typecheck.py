@@ -17,6 +17,7 @@ from qsol.sema.types import (
     ParamType,
     RelationType,
     SetType,
+    StructureInstanceType,
     Type,
     UnknownInstanceType,
     UnknownType,
@@ -75,6 +76,8 @@ class TypeChecker:
                             )
                     elif isinstance(stmt, ast.RelationDecl) and stmt.expr is not None:
                         self._check_relation_expr(stmt, scope, diagnostics, typed.types)
+                    elif isinstance(stmt, ast.StructureDecl):
+                        self._check_structure_decl(stmt, scope, diagnostics)
                     elif isinstance(stmt, ast.Constraint):
                         expr_ty = self._expr_type(stmt.expr, scope, {}, diagnostics, typed.types)
                         if not isinstance(expr_ty, type(BOOL)):
@@ -167,6 +170,18 @@ class TypeChecker:
                         out = symbol.type.elem
                     else:
                         out = symbol.type
+        elif isinstance(expr, ast.DomainRef):
+            symbol = scope.lookup(expr.name)
+            if symbol is None or symbol.kind not in {SymbolKind.SET, SymbolKind.RELATION}:
+                diagnostics.append(
+                    self._type_err(
+                        expr.span,
+                        f"unknown static domain `{expr.name}`",
+                    )
+                )
+                out = UNKNOWN
+            else:
+                out = symbol.type
         elif isinstance(expr, ast.Not):
             sub = self._expr_type(expr.expr, scope, binders, diagnostics, tmap)
             if not isinstance(sub, type(BOOL)):
@@ -544,6 +559,9 @@ class TypeChecker:
         diagnostics: list[Diagnostic],
         tmap: dict[int, str],
     ) -> Type:
+        if isinstance(target_ty, StructureInstanceType):
+            return self._structure_method_type(expr, target_ty, scope, binders, diagnostics, tmap)
+
         if not isinstance(target_ty, UnknownInstanceType):
             diagnostics.append(
                 self._type_err(expr.span, "method call target is not an unknown instance")
@@ -588,6 +606,106 @@ class TypeChecker:
         for arg in expr.args:
             self._expr_type(arg, scope, binders, diagnostics, tmap)
         return BOOL
+
+    def _structure_method_type(
+        self,
+        expr: ast.MethodCall,
+        target_ty: StructureInstanceType,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        allowed = (
+            {"adjacent", "nonedge"}
+            if target_ty.constructor
+            in {
+                "UndirectedGraph",
+                "DirectedGraph",
+            }
+            else set()
+        )
+        if expr.name not in allowed:
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"unknown method `{expr.name}` for structure `{target_ty.name}`",
+                )
+            )
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            return UNKNOWN
+        if len(expr.args) != 2:
+            diagnostics.append(self._type_err(expr.span, f"{expr.name} expects two arguments"))
+            for arg in expr.args:
+                self._expr_type(arg, scope, binders, diagnostics, tmap)
+            return BOOL
+        expected_set = target_ty.vertex_set or ""
+        for arg in expr.args:
+            arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+            if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                diagnostics.append(
+                    self._type_err(arg.span, f"expected element of `{expected_set}`")
+                )
+        return BOOL
+
+    def _check_structure_decl(
+        self,
+        stmt: ast.StructureDecl,
+        scope: Scope,
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if stmt.constructor not in {"UndirectedGraph", "DirectedGraph"}:
+            diagnostics.append(
+                self._type_err(stmt.span, f"unknown structure constructor `{stmt.constructor}`")
+            )
+            return
+        if len(stmt.args) != 2:
+            diagnostics.append(
+                self._type_err(stmt.span, f"{stmt.constructor} expects 2 argument(s)")
+            )
+            return
+
+        vertex_name, relation_name = stmt.args
+        vertex_symbol = scope.lookup(vertex_name)
+        relation_symbol = scope.lookup(relation_name)
+        if (
+            vertex_symbol is None
+            or vertex_symbol.kind != SymbolKind.SET
+            or not isinstance(vertex_symbol.type, SetType)
+        ):
+            diagnostics.append(
+                self._type_err(
+                    stmt.span,
+                    f"{stmt.constructor} expects first argument to be a declared set",
+                )
+            )
+            return
+        if (
+            relation_symbol is None
+            or relation_symbol.kind != SymbolKind.RELATION
+            or not isinstance(relation_symbol.type, RelationType)
+        ):
+            diagnostics.append(
+                self._type_err(
+                    stmt.span,
+                    f"{stmt.constructor} expects second argument to be a declared relation",
+                )
+            )
+            return
+        fields = relation_symbol.type.fields
+        valid_fields = (
+            len(fields) == 2
+            and fields[0].set_type.name == vertex_name
+            and fields[1].set_type.name == vertex_name
+        )
+        if not valid_fields:
+            diagnostics.append(
+                self._type_err(
+                    stmt.span,
+                    f"{stmt.constructor} expects a binary relation over `{vertex_name} x {vertex_name}`",
+                )
+            )
 
     def _param_call_type(
         self,
@@ -645,7 +763,7 @@ class TypeChecker:
             return UNKNOWN
 
         arg = expr.args[0]
-        if not isinstance(arg, ast.NameRef):
+        if not isinstance(arg, (ast.NameRef, ast.DomainRef)):
             self._expr_type(arg, scope, binders, diagnostics, tmap)
             diagnostics.append(
                 self._type_err(
@@ -677,7 +795,10 @@ class TypeChecker:
         numeric_kind = (
             sym.type.numeric_kind if sym is not None and isinstance(sym.type, SetType) else None
         )
-        return ElemOfType(set_name=set_name, numeric_kind=numeric_kind)
+        elem_set_name = (
+            sym.type.name if sym is not None and isinstance(sym.type, SetType) else set_name
+        )
+        return ElemOfType(set_name=elem_set_name, numeric_kind=numeric_kind)
 
     def _extend_comp_binders(
         self,

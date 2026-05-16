@@ -118,14 +118,35 @@ find Tour : Route(Positions, Cities);
 `transition(...)` is the conjunction of two route-position decisions. It is
 quadratic when used directly; keep numeric expressions backend-safe.
 
-## 4. Graph Helpers (`stdlib.graph`)
+## 4. Graph Structures And Helpers (`stdlib.graph`)
 
 ```qsol
 use stdlib.graph;
+set V;
 relation Edge(u: V, v: V);
+structure G = UndirectedGraph(V, Edge);
 ```
 
-The graph module exposes compiler-owned relation helpers:
+The graph module exposes compiler-owned static graph structures:
+
+*   **`UndirectedGraph(V, Edge)`** expects a set and a binary relation over
+    `V x V`. It rejects loops, canonicalizes unordered edge pairs in
+    `G.edges`, and exposes `G.vertices`, `G.edges`, `G.non_edges`,
+    `G.adjacent(u, v)`, and `G.nonedge(u, v)`.
+*   **`DirectedGraph(V, Arc)`** expects a set and a binary relation over
+    `V x V`. It rejects loops and exposes `D.vertices`, `D.arcs`,
+    `D.non_arcs`, `D.adjacent(u, v)`, and `D.nonedge(u, v)`.
+
+Structure declarations create no solver variables or backend constraints by
+themselves. Their domains are static and can be used in tuple binders, scalar
+find indexing, and `size(...)`:
+
+```qsol
+find Selected[G.edges] : Bool;
+must forall (u, v) in G.non_edges: not (Chosen.has(u) and Chosen.has(v));
+```
+
+The graph module also keeps the older compiler-owned relation helpers:
 
 *   **`adjacent(Edge, u, v)`** lowers to `Edge(u, v) or Edge(v, u)`.
 *   **`nonedge(Edge, u, v)`** lowers to `not Edge(u, v) and not Edge(v, u)`.

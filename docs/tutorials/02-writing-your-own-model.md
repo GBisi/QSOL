@@ -182,17 +182,19 @@ use stdlib.graph;
 problem CompactGraphModel {
   set V;
   relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
 
   find Slot[V] : Int[0 .. size(V) - 1];
 
   must all_different(Slot[v] for v in V);
-  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+  minimize count((u, v) in G.edges where G.adjacent(u, v));
 }
 ```
 
-`all_different` lowers to pairwise disequality constraints. `adjacent` and
-`nonedge` lower to ordinary static relation membership formulas before backend
-compilation.
+`all_different` lowers to pairwise disequality constraints. `UndirectedGraph`
+creates no solver variables, but it exposes canonical static domains such as
+`G.edges` and `G.non_edges`. Graph methods lower to ordinary static relation
+membership formulas before backend compilation.
 
 ## 6. Backend-v1 Safety Checklist
 

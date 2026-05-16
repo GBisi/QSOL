@@ -30,6 +30,7 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
             "Edge": (("a1", "a2"),),
             "NonEdge": (("a2", "a1"),),
         },
+        structures={},
         derived_relations={"NonEdge": "pairs"},
         derived_sets={"Positions": "Range"},
         params={},
@@ -157,3 +158,36 @@ problem AbsBalance {
     assert len(aux_names) == 1
     assert report["decision_variables"][aux_names[0]]["kind"] == "Int"
     assert report["constraints"]["explicit"] == 2
+
+
+def test_estimate_reports_graph_structures_and_indexed_edge_decisions() -> None:
+    source = """
+use stdlib.graph;
+
+problem GraphEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find Selected[G.edges] : Bool;
+  maximize count((u, v) in G.edges where G.adjacent(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="graph_estimate.qsol",
+            instance_payload={
+                "problem": "GraphEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Edge": [["A", "B"], ["B", "A"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+    assert report["structures"]["G"]["constructor"] == "UndirectedGraph"
+    assert report["structures"]["G"]["domains"]["edges"] == 1
+    assert report["structures"]["G"]["domains"]["non_edges"] == 2
+    assert report["decision_variables"]["Selected"]["instances"] == 1
+    assert report["decisions"]["binary"] == 1
