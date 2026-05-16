@@ -204,12 +204,20 @@ Total = 5
     assert estimate_payload[0]["sets"]["Positions"]["derived"] is True
     assert estimate_payload[0]["relations"]["Pair"]["derived"] is True
     assert estimate_payload[0]["relations"]["Pair"]["source"] == "pairs"
+    assert estimate_payload[0]["relations"]["Pair"]["arity"] == 2
     aux_names = [
         name
         for name in estimate_payload[0]["decision_variables"]
         if name.startswith("__qsol_piecewise_max_")
     ]
     assert len(aux_names) == 1
+    assert estimate_payload[0]["decisions"]["integer"] == 3
+    assert estimate_payload[0]["decisions"]["auxiliary_integer"] == 1
+    assert estimate_payload[0]["expressions"] == {
+        "max_polynomial_degree_before_reduction": 0,
+        "max_polynomial_degree_after_reduction": 0,
+    }
+    assert estimate_payload[0]["backend"]["warnings"] == []
     assert estimate_payload[0]["backend"]["cqm_integer_variables"] == 3
 
     check_result = runner.invoke(

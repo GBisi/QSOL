@@ -228,6 +228,9 @@ Operate on `Real` or `Int` types.
     *   `abs(expr)` is supported in `minimize abs(expr)` and `must abs(expr) <= C`.
     *   `max(term for x in S)` is supported in `minimize max(term for x in S)`.
     *   `min(term for x in S)` is supported in `maximize min(term for x in S)`.
+*   **Compiler-owned global helpers**:
+    *   `all_different(term for x in S)` lowers to pairwise disequality constraints for one finite set binder.
+    *   `adjacent(Edge, u, v)` and `nonedge(Edge, u, v)` are graph relation helpers from `stdlib.graph`.
 *   **Conditional**:
     *   `if condition then val_true else val_false` — works for both numeric and boolean branches.
     *   Numeric: `if cond then 1 else 0` (returns `Real`)
@@ -470,6 +473,18 @@ Advanced mapping types built on `Mapping`.
     find Route : Permutation(Cities);
     // Route.map(city) gives the next city in the tour
     ```
+
+### 8.4. Route (`stdlib.route`)
+
+*   **`Route(Positions, V)`** wraps `BijectiveMapping(Positions, V)`.
+*   Views:
+    *   `at(p: Elem(Positions), v: Elem(V))`
+    *   `transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V))`
+
+### 8.5. Graph Helpers (`stdlib.graph`)
+
+`adjacent(Edge, u, v)` lowers to `Edge(u, v) or Edge(v, u)`.
+`nonedge(Edge, u, v)` lowers to `not Edge(u, v) and not Edge(v, u)`.
 
 ---
 

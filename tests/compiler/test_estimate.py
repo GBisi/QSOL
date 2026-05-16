@@ -93,8 +93,20 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
     )[0].to_dict()
 
     assert report["sets"]["Positions"] == {"size": 3, "derived": True, "source": "Range"}
-    assert report["relations"]["Edge"] == {"size": 1, "derived": False, "source": None}
-    assert report["relations"]["NonEdge"] == {"size": 1, "derived": True, "source": "pairs"}
+    assert report["relations"]["Edge"] == {
+        "size": 1,
+        "arity": 2,
+        "derived": False,
+        "source": None,
+    }
+    assert report["relations"]["NonEdge"] == {
+        "size": 1,
+        "arity": 2,
+        "derived": True,
+        "source": "pairs",
+    }
+    assert report["relations"]["Edge"]["arity"] == 2
+    assert report["relations"]["NonEdge"]["arity"] == 2
     assert report["decision_variables"]["Pick"]["binary_variables"] == 2
     assert report["decision_variables"]["Assign"]["exactly_one_constraints"] == 2
     assert report["decision_variables"]["Custom"]["supported"] is False
@@ -109,7 +121,17 @@ def test_estimate_ground_ir_reports_all_decision_kinds() -> None:
         "status": "partial",
         "cqm_binary_variables": 5,
         "cqm_integer_variables": 4,
+        "warnings": [],
     }
+    assert report["decisions"] == {
+        "binary": 5,
+        "integer": 4,
+        "auxiliary_binary": 0,
+        "auxiliary_integer": 0,
+    }
+    assert report["expressions"]["max_polynomial_degree_before_reduction"] == 0
+    assert report["expressions"]["max_polynomial_degree_after_reduction"] == 0
+    assert report["backend"]["warnings"] == []
 
 
 def test_estimate_reports_piecewise_generated_aux_decision() -> None:

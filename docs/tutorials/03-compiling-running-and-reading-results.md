@@ -86,6 +86,12 @@ and estimate outputs include generated scalar decisions named like
 `__qsol_piecewise_max_0`. These auxiliaries are part of the compiled model and
 are counted in CQM integer-variable totals.
 
+Graph/global helpers are visible through their lowered effects. `all_different`
+adds pairwise hard constraints, while `adjacent` and `nonedge` are rewritten to
+relation membership formulas before target support checks. `inspect estimate
+--json` reports relation arity/size, decision summaries, expression summary
+placeholders, backend CQM counts, and backend warnings.
+
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.
 - If one file exists, use it.

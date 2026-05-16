@@ -47,6 +47,7 @@ The backend keeps CQM as the canonical model:
 * Indexed scalar decisions create one native CQM variable per grounded index tuple, for example `Load[m1]`.
 * Relation-indexed scalar decisions create one native CQM variable per grounded relation tuple, for example `Flow[a,b]`.
 * Compiler-lowered piecewise builtins create generated scalar `Int` auxiliaries named like `__qsol_piecewise_abs_0` or `__qsol_piecewise_max_0`.
+* Compiler-owned global helpers are expanded before backend compilation. For example, `all_different(Slot[i] for i in Items)` becomes pairwise disequality constraints.
 
 The exported BQM is derived from the CQM for runtimes and export formats that require binary quadratic form.
 
@@ -66,6 +67,7 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 *   `A or B` -> `A + B - A*B` or via auxiliary variable `Z >= A`, `Z >= B`, `Z <= A + B`.
 *   `not A` -> `1 - A`
 *   `A implies B` -> `A <= B`
+*   Static relation guards are evaluated during grounded emission when all operands are scenario values.
 
 ## 4. Objectives and Soft Constraints
 

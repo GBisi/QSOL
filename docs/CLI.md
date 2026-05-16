@@ -478,10 +478,31 @@ The report includes set and relation sizes, whether each set/relation is derived
 decision-variable counts for `Subset`, `Mapping`, scalar `Bool`, and
 scalar/indexed `Int`, generated mapping exactly-one constraints, and estimated
 native CQM binary/integer variable counts. In JSON output, derived relations are
-reported under `relations` with a `source` such as `pairs` or `filter`.
+reported under `relations` with `arity`, `size`, and a `source` such as `pairs`
+or `filter`.
 Compiler-generated piecewise auxiliaries are reported under
 `decision_variables` with names such as `__qsol_piecewise_max_0`, and their
 generated hard constraints are included in the explicit constraint count.
+
+The stable JSON payload also includes summary fields:
+
+```json
+{
+  "decisions": {
+    "binary": 0,
+    "integer": 0,
+    "auxiliary_binary": 0,
+    "auxiliary_integer": 0
+  },
+  "expressions": {
+    "max_polynomial_degree_before_reduction": 0,
+    "max_polynomial_degree_after_reduction": 0
+  },
+  "backend": {
+    "warnings": []
+  }
+}
+```
 
 ---
 

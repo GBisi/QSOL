@@ -174,6 +174,26 @@ The supported first-pass forms are `minimize abs(expr)`, `must abs(expr) <= C`,
 generates bounded scalar auxiliaries and hard constraints before backend
 compilation.
 
+Compiler-owned global and graph helpers keep common relation models compact:
+
+```qsol
+use stdlib.graph;
+
+problem CompactGraphModel {
+  set V;
+  relation Edge(u: V, v: V);
+
+  find Slot[V] : Int[0 .. size(V) - 1];
+
+  must all_different(Slot[v] for v in V);
+  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+}
+```
+
+`all_different` lowers to pairwise disequality constraints. `adjacent` and
+`nonedge` lower to ordinary static relation membership formulas before backend
+compilation.
+
 ## 6. Backend-v1 Safety Checklist
 
 To reduce unsupported diagnostics:

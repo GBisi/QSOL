@@ -316,6 +316,21 @@ class DimodCodegen:
                     diagnostics=diagnostics,
                 )
                 return
+            lhs_indicator = self._bool_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
+            rhs_indicator = self._bool_expr(
+                problem, expr.right, binaries, diagnostics, env, cqm=cqm
+            )
+            if lhs_indicator is not None and rhs_indicator is not None:
+                self._add_numeric_constraint(
+                    cqm,
+                    lhs=lhs_indicator,
+                    rhs=rhs_indicator,
+                    op="<=",
+                    label=self._constraint_label(expr.span),
+                    span=expr.span,
+                    diagnostics=diagnostics,
+                )
+                return
 
         if isinstance(expr, ir.KCompare):
             lhs = self._num_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
@@ -568,6 +583,13 @@ class DimodCodegen:
                 return None
             return self._bool_or(cqm, 1 - left, right, span=expr.span, diagnostics=diagnostics)
         if isinstance(expr, ir.KCompare):
+            static_lhs = self._static_value(expr.left, env)
+            static_rhs = self._static_value(expr.right, env)
+            if static_lhs is not None and static_rhs is not None:
+                result = self._static_compare(expr.op, static_lhs, static_rhs)
+                if result is not None:
+                    return result
+
             lhs = self._num_expr(problem, expr.left, binaries, diagnostics, env, cqm=cqm)
             rhs = self._num_expr(problem, expr.right, binaries, diagnostics, env, cqm=cqm)
             if lhs is None or rhs is None:
@@ -596,6 +618,32 @@ class DimodCodegen:
                 return None
 
         return self._bool_atom(problem, expr, binaries, diagnostics, env)
+
+    def _static_value(self, expr: ir.KExpr, env: Mapping[str, object]) -> object | None:
+        if isinstance(expr, ir.KName) and expr.name in env:
+            return env[expr.name]
+        if isinstance(expr, ir.KNumLit):
+            return expr.value
+        if isinstance(expr, ir.KBoolLit):
+            return expr.value
+        return None
+
+    def _static_compare(self, op: str, lhs: object, rhs: object) -> float | None:
+        if op == "=":
+            return 1.0 if lhs == rhs else 0.0
+        if op == "!=":
+            return 1.0 if lhs != rhs else 0.0
+        if not isinstance(lhs, (int, float)) or not isinstance(rhs, (int, float)):
+            return None
+        if op == "<":
+            return 1.0 if lhs < rhs else 0.0
+        if op == "<=":
+            return 1.0 if lhs <= rhs else 0.0
+        if op == ">":
+            return 1.0 if lhs > rhs else 0.0
+        if op == ">=":
+            return 1.0 if lhs >= rhs else 0.0
+        return None
 
     def _bool_constant(self, value: Any) -> float | None:
         if isinstance(value, bool):

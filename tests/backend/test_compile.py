@@ -166,6 +166,134 @@ Edge = [
     assert Path(unit.artifacts.bqm_path or "").exists()
 
 
+def test_compile_lowers_all_different_global_for_indexed_ints(tmp_path: Path) -> None:
+    source = """
+problem AssignDistinct {
+  set Items;
+  set Slots = Range(1, size(Items));
+
+  find Slot[Items] : Int[0 .. size(Items) - 1];
+
+  must all_different(Slot[i] for i in Items);
+  minimize sum(Slot[i] for i in Items);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "AssignDistinct"
+
+[scenarios.baseline.sets]
+Items = ["a", "b", "c"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-all-different"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="all_different.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="cqm",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_lowers_graph_adjacency_helpers(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem GraphHelpers {
+  set V;
+  relation Edge(u: V, v: V);
+
+  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "GraphHelpers"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  { u = "a", v = "b" },
+  { u = "b", v = "c" },
+]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-graph-helpers"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="graph_helpers.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_supports_route_stdlib_unknown(tmp_path: Path) -> None:
+    source = """
+use stdlib.route;
+
+problem TinyRoute {
+  set Positions;
+  set V;
+
+  find Tour : Route(Positions, V);
+
+  must forall p in Positions: exists v in V: Tour.at(p, v);
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "TinyRoute"
+
+[scenarios.baseline.sets]
+Positions = ["p1", "p2"]
+V = ["a", "b"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-route"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="route.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.artifacts is not None
+    assert Path(unit.artifacts.cqm_path or "").exists()
+
+
 def test_compile_supports_tuple_relation_count_objective(tmp_path: Path) -> None:
     source = """
 problem ReciprocalEdges {

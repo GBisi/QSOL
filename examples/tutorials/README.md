@@ -22,6 +22,12 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `derived_max_clique.qsol.toml`
 - `job_sequencing_max.qsol`
 - `job_sequencing_max.qsol.toml`
+- `all_different_slots.qsol`
+- `all_different_slots.qsol.toml`
+- `graph_helpers.qsol`
+- `graph_helpers.qsol.toml`
+- `route_demo.qsol`
+- `route_demo.qsol.toml`
 
 ## Run
 
@@ -121,6 +127,33 @@ uv run qsol solve \
   --runtime-option sampler=exact
 ```
 
+```bash
+uv run qsol build \
+  examples/tutorials/all_different_slots.qsol \
+  --config examples/tutorials/all_different_slots.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/all_different_slots \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/graph_helpers.qsol \
+  --config examples/tutorials/graph_helpers.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/graph_helpers \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/route_demo.qsol \
+  --config examples/tutorials/route_demo.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/route_demo \
+  --format qubo
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -168,6 +201,17 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.params.Length`
   - `scenarios.baseline.relations.Precedence`
   - `minimize max(Finish[j] for j in Jobs)` generates a bounded piecewise auxiliary.
+- `all_different_slots.qsol.toml`
+  - `scenarios.baseline.sets.Items`
+  - `all_different(Slot[i] for i in Items)` lowers to pairwise disequality constraints.
+- `graph_helpers.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+  - `adjacent(Edge, u, v)` lowers to static relation membership checks.
+- `route_demo.qsol.toml`
+  - `scenarios.baseline.sets.Positions`
+  - `scenarios.baseline.sets.Cities`
+  - `Route(Positions, Cities)` wraps a `BijectiveMapping`.
 
 ## Related
 

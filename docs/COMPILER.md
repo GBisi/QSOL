@@ -13,8 +13,9 @@ The pipeline consists of the following stages:
 4.  **Name Resolution**: Links identifiers to their definitions and builds a symbol table.
 5.  **Type Checking**: Verifies type safety of expressions and constraints.
 6.  **Validation**: Checks for semantic errors (e.g., unused variables, invalid constructs).
-7.  **Desugaring and Piecewise Lowering**: Normalizes guards/aggregates and lowers supported compiler-owned piecewise builtins (`abs`, aggregate `min`/`max`) into generated scalar `Int` decisions plus explicit constraints.
-8.  **Kernel Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
+7.  **Global Helper Lowering**: Rewrites compiler-owned helpers such as `all_different`, `adjacent`, and `nonedge` into ordinary QSOL expressions.
+8.  **Desugaring and Piecewise Lowering**: Normalizes guards/aggregates and lowers supported compiler-owned piecewise builtins (`abs`, aggregate `min`/`max`) into generated scalar `Int` decisions plus explicit constraints.
+9.  **Kernel Lowering**: Transforms the validated AST into a symbolic Kernel IR (KIR).
 
 ### Middle / Grounding
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
@@ -69,3 +70,8 @@ Supported piecewise numeric forms are lowered before KIR:
 
 The generated aux decisions are ordinary scalar `Int` finds in KIR/GIR, so
 model-size estimates and backend artifacts account for them.
+
+Global helper lowering happens before KIR. `all_different(term for x in S)`
+becomes pairwise disequality constraints over the finite domain. `adjacent` and
+`nonedge` over binary relations become explicit relation membership formulas, so
+the backend sees only grounded static relation calls and ordinary boolean logic.

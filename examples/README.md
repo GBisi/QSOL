@@ -4,7 +4,7 @@ This index points to runnable QSOL example folders and the main command to start
 
 | Example | Summary | Primary command | Details |
 | --- | --- | --- | --- |
-| `tutorials/` | Tutorial starter models used by the docs walkthroughs, including relation, derived-relation, aggregate-bound, and piecewise-builtin examples | `uv run qsol solve examples/tutorials/first_program.qsol --config examples/tutorials/first_program.qsol.toml --runtime local-dimod --out outdir/first_program --runtime-option sampler=exact` | [`examples/tutorials/README.md`](tutorials/README.md) |
+| `tutorials/` | Tutorial starter models used by the docs walkthroughs, including relation, derived-relation, aggregate-bound, piecewise-builtin, graph-helper, global-helper, and route examples | `uv run qsol solve examples/tutorials/first_program.qsol --config examples/tutorials/first_program.qsol.toml --runtime local-dimod --out outdir/first_program --runtime-option sampler=exact` | [`examples/tutorials/README.md`](tutorials/README.md) |
 | `simple_subset/` | Minimal subset selection model | `uv run qsol solve examples/simple_subset/simple_subset.qsol --runtime local-dimod --out outdir/simple_subset` | — |
 | `generic_bqm/` | Generic unconstrained binary quadratic objective (`L`, `Q`, `C`) | `uv run python examples/generic_bqm/test_equivalence.py` | [`examples/generic_bqm/README.md`](generic_bqm/README.md) |
 | `min_bisection/` | Balanced graph bisection that minimizes cut edges | `uv run python examples/min_bisection/test_equivalence.py` | [`examples/min_bisection/README.md`](min_bisection/README.md) |

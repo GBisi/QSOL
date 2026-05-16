@@ -1,0 +1,8 @@
+use stdlib.graph;
+
+problem GraphHelpers {
+  set V;
+  relation Edge(u: V, v: V);
+
+  minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+}

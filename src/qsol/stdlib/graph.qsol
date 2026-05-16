@@ -1,0 +1,8 @@
+// Compiler-owned graph helpers.
+//
+// The frontend rewrites:
+//   adjacent(Edge, u, v) -> Edge(u, v) or Edge(v, u)
+//   nonedge(Edge, u, v) -> not Edge(u, v) and not Edge(v, u)
+//
+// This module exists so models can declare `use stdlib.graph;` explicitly.
+predicate graph_module_loaded(): Bool = true;

@@ -1,0 +1,11 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "AllDifferentSlots"
+
+[scenarios.baseline.sets]
+Items = ["a", "b", "c"]

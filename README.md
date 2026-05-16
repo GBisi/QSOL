@@ -29,7 +29,7 @@ A QSOL program is a **Problem Specification**, not a script. You describe the st
 A QSOL program consists of 5 core components:
 
 1.  **Sets** 🌍: The "entities" of your universe — the collections of things involved in the problem (e.g., `Nodes`, `Colors`, `Trucks`).
-2.  **Params** 📊: The known data that defines a specific instance (e.g., `Distance`, `Cost`, `Adjacency`). These values are fixed and provided in a configuration file.
+2.  **Params and Relations** 📊: The known data that defines a specific instance (e.g., `Distance`, `Cost`, or an `Edge(u, v)` relation). These values are fixed and provided in a configuration file.
 3.  **Unknowns (the things you want to find)** 🤔: The decisions the solver must make. These are the core of QSOL — you express them at a high level, describing *what shape* the answer takes rather than managing individual variables.
     *   For example: `find Hired : Subset(Workers)` means "find a subset of workers to hire".
     *   Or: `find ColorOf : Mapping(Nodes -> Colors)` means "find a function that assigns a color to each node".
@@ -49,6 +49,17 @@ find Load[Nodes] : Int[0 .. size(Nodes)];
 `Range(lo, hi)` is inclusive and derived during grounding, so it does not appear
 in scenario TOML. Bounded `Int` decisions compile to native CQM integer
 variables.
+
+Static relations let graph and incidence data stay tuple-shaped:
+
+```qsol
+relation Edge(u: Nodes, v: Nodes);
+minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in Nodes for v in Nodes);
+```
+
+Compiler-owned helpers such as `all_different(...)`, `adjacent(...)`, and
+`nonedge(...)` expand to ordinary constraints and relation membership formulas
+before backend compilation.
     *   `should` / `nice`: Soft preferences — penalized if violated, but not infeasible.
 5.  **Objectives** 🏆: The quantitative goal (e.g., `minimize` cost, `maximize` efficiency).
 
@@ -176,6 +187,16 @@ uv sync --extra dev
 
 # Run the solver
 uv run qsol solve examples/tutorials/graph_coloring.qsol
+```
+
+Use `inspect estimate` before a build when you want grounded set/relation sizes,
+decision summaries, CQM variable counts, and backend warnings without writing
+artifacts:
+
+```bash
+uv run qsol inspect estimate examples/tutorials/graph_helpers.qsol \
+  --config examples/tutorials/graph_helpers.qsol.toml \
+  --json
 ```
 
 **Output:**

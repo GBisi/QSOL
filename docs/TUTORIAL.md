@@ -113,6 +113,19 @@ minimize max(load[item] for item in Items);
 These lower to generated bounded auxiliaries and hard constraints before backend
 compilation.
 
+For compact graph/order models, compiler-owned helpers can expand common
+patterns:
+
+```qsol
+use stdlib.graph;
+
+must all_different(Slot[item] for item in Items);
+minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in Items for v in Items);
+```
+
+`all_different` becomes pairwise disequality constraints. `adjacent` and
+`nonedge` over a binary relation become ordinary relation membership formulas.
+
 ## 5. Compiling and Running
 
 To solve the model, you use the `qsol solve` command. This compiles your model, combines it with the data, and runs it using a solver backend.

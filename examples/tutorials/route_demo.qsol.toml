@@ -1,0 +1,12 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "RouteDemo"
+
+[scenarios.baseline.sets]
+Positions = ["p1", "p2", "p3"]
+Cities = ["a", "b", "c"]

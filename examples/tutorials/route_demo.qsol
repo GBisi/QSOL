@@ -1,0 +1,11 @@
+use stdlib.route;
+
+problem RouteDemo {
+  set Positions;
+  set Cities;
+
+  find Tour : Route(Positions, Cities);
+
+  must forall p in Positions: exists c in Cities: Tour.at(p, c);
+  minimize 0;
+}

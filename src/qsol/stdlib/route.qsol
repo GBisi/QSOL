@@ -1,0 +1,18 @@
+use stdlib.bijective_mapping;
+
+unknown Route(Positions, V) {
+  rep {
+    order : BijectiveMapping(Positions, V);
+  }
+  laws {
+  }
+  view {
+    predicate at(p: Elem(Positions), v: Elem(V)): Bool = order.is(p, v);
+    predicate transition(
+      p: Elem(Positions),
+      q: Elem(Positions),
+      u: Elem(V),
+      v: Elem(V)
+    ): Bool = order.is(p, u) and order.is(q, v);
+  }
+}

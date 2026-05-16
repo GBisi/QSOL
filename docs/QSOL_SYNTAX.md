@@ -183,6 +183,28 @@ numeric params, indexed params over static binders, `size(Set)`,
 membership over static values, and arithmetic over those forms.
 Decision-dependent bounds such as `sum(if Pick.has(j) then Weight[j] else 0 for j in Jobs)` are rejected.
 
+### 3.5 Graph and Global Helpers
+
+Compiler-owned helpers are rewritten before type checking:
+
+```qsol
+must all_different(Slot[i] for i in Items);
+```
+
+`all_different` currently supports one finite set binder and lowers to pairwise
+disequality constraints. For graph relations, import the graph module:
+
+```qsol
+use stdlib.graph;
+
+relation Edge(u: V, v: V);
+
+minimize sum(if adjacent(Edge, u, v) then 1 else 0 for u in V for v in V);
+```
+
+`adjacent(Edge, u, v)` lowers to `Edge(u, v) or Edge(v, u)`.
+`nonedge(Edge, u, v)` lowers to `not Edge(u, v) and not Edge(v, u)`.
+
 ## 4. Constraints and Objectives
 
 ### 4.1 Constraint keywords
