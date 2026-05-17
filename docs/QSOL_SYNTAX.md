@@ -91,6 +91,7 @@ are available. Scenario data must not supply values for derived sets.
 ```qsol
 param K : Int[1 .. 10] = 3;
 param Cost[Workers,Tasks] : Real;
+param EdgeCost[G.edges] : Real;
 param Allowed[Workers,Tasks] : Bool = true;
 param StartNode[Tasks] : Elem(Workers);
 param Terminals : StaticSubset(Workers);
@@ -98,6 +99,9 @@ param Terminals : StaticSubset(Workers);
 
 Usage notes:
 - Indexed params can be referenced as `Cost[w, t]`.
+- Relation-indexed params such as `EdgeCost[G.edges]` can be referenced with
+  unpacked tuple fields, for example `EdgeCost[u, v]` inside
+  `for (u, v) in G.edges`.
 - Indexed params must use brackets; `Cost(w, t)` is rejected with `QSOL2101`.
 - `Elem(SetName)` params return set elements and can be passed to methods like `Subset.has(...)`.
 - `Elem(SetName)` params do not allow defaults.

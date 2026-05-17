@@ -824,6 +824,12 @@ class TypeChecker:
         *,
         label: str = "param",
     ) -> Type:
+        relation_index = self._relation_index_for_param(ptype, scope)
+        if relation_index is not None:
+            return self._relation_param_call_type(
+                expr, ptype, relation_index, scope, binders, diagnostics, tmap
+            )
+
         expected_arity = len(ptype.indices)
         if expected_arity == 0:
             diagnostics.append(
@@ -848,6 +854,48 @@ class TypeChecker:
             if i >= expected_arity:
                 continue
             expected_set = ptype.indices[i].name
+            if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                diagnostics.append(
+                    self._type_err(arg.span, f"expected element of `{expected_set}`")
+                )
+        return ptype.elem
+
+    def _relation_index_for_param(self, ptype: ParamType, scope: Scope) -> RelationType | None:
+        if len(ptype.indices) != 1:
+            return None
+        index_name = ptype.indices[0].name
+        symbol = scope.lookup(index_name)
+        if (
+            symbol is not None
+            and symbol.kind == SymbolKind.RELATION
+            and isinstance(symbol.type, RelationType)
+        ):
+            return symbol.type
+        return None
+
+    def _relation_param_call_type(
+        self,
+        expr: ast.FuncCall,
+        ptype: ParamType,
+        relation: RelationType,
+        scope: Scope,
+        binders: dict[str, Type],
+        diagnostics: list[Diagnostic],
+        tmap: dict[int, str],
+    ) -> Type:
+        expected_arity = len(relation.fields)
+        if len(expr.args) != expected_arity:
+            diagnostics.append(
+                self._type_err(
+                    expr.span,
+                    f"param call `{expr.name}` expects {expected_arity} argument(s) for relation `{relation.name}`",
+                )
+            )
+        for i, arg in enumerate(expr.args):
+            arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+            if i >= expected_arity:
+                continue
+            expected_set = relation.fields[i].set_type.name
             if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
                 diagnostics.append(
                     self._type_err(arg.span, f"expected element of `{expected_set}`")

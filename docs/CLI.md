@@ -497,6 +497,18 @@ and domain sizes such as `edges`, `non_edges`, `arcs`, and `non_arcs`.
 Compiler-generated piecewise auxiliaries are reported under
 `decision_variables` with names such as `__qsol_piecewise_max_0`, and their
 generated hard constraints are included in the explicit constraint count.
+Compiler-owned graph unknowns are reported with their generated variable and
+constraint families. For example, `Forest(G)` reports acyclicity constraints,
+`SteinerTree(G, Terminals)` reports selected-vertex, selected-edge, and flow
+variables, and `HamiltonianPath(G)` / `HamiltonianCycle(G)` report assignment,
+transition, adjacency, and `uses` link counts.
+
+Backend warnings call out grounded shapes that are likely to dominate model
+size before build or solve. The warning list is included in JSON output and is
+printed as separate lines in the human-readable estimate output. Current
+warnings cover very large sets/relations, dense graph structures, forest
+subset-cut expansion, spanning-tree and Steiner flow encodings, and
+Hamiltonian transition/link expansions.
 
 The stable JSON payload also includes summary fields:
 

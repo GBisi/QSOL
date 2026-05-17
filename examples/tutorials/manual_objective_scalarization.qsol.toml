@@ -1,0 +1,31 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[entrypoint.objectives]
+qubo_policy = "manual"
+
+[entrypoint.objectives.qubo_weights]
+value = 10
+item_count = 1
+
+[scenarios.baseline]
+problem = "ManualObjectiveScalarization"
+
+[scenarios.baseline.sets]
+Items = ["i1", "i2", "i3"]
+
+[scenarios.baseline.params]
+Capacity = 5
+
+[scenarios.baseline.params.Value]
+i1 = 6
+i2 = 4
+i3 = 2
+
+[scenarios.baseline.params.Weight]
+i1 = 4
+i2 = 2
+i3 = 1

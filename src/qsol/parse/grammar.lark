@@ -112,7 +112,7 @@ relation_where: "where" bool_expr
 structure_decl: "structure" NAME "=" NAME "(" domain_ref_list? ")"
 
 param_decl: "param" NAME param_indexing? ":" param_value_type param_default?
-param_indexing: "[" name_list "]"
+param_indexing: "[" domain_ref_list "]"
 name_list: NAME ("," NAME)*
 
 param_default: "=" literal

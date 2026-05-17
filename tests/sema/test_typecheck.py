@@ -404,6 +404,21 @@ problem P {
     assert not any(d.is_error for d in unit.diagnostics)
 
 
+def test_graph_domain_param_indexing_typechecks() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Cost[G.edges] : Real;
+  find T : SpanningTree(G);
+  minimize sum(if T.has_edge(u, v) then Cost[u, v] else 0 for (u, v) in G.edges);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="graph_domain_param.qsol"))
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
 def test_matching_unknown_requires_graph_structure() -> None:
     valid_text = """
 use stdlib.graph;

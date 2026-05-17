@@ -193,7 +193,9 @@ uv run qsol solve examples/tutorials/graph_coloring.qsol
 
 Use `inspect estimate` before a build when you want grounded set/relation and
 structure-domain sizes, decision summaries, CQM variable counts, and backend
-warnings without writing artifacts:
+warnings without writing artifacts. The warnings include graph-helper expansion
+risks such as dense graph relations, forest acyclicity cuts, Steiner flow
+variables, and Hamiltonian transition/link variables:
 
 ```bash
 uv run qsol inspect estimate examples/tutorials/graph_helpers.qsol \

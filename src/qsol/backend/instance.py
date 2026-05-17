@@ -173,9 +173,17 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
             p_sets[decl.name] = list(range(lo, hi + 1))
             p_derived_sets[decl.name] = "Range"
 
+        relation_indexed_params: list[ir.KParamDecl] = []
         for pdecl in problem.params:
-            if pdecl.indices:
-                _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
+            if not pdecl.indices:
+                continue
+            if any(
+                _param_index_needs_relation_domain(index_name, problem)
+                for index_name in pdecl.indices
+            ):
+                relation_indexed_params.append(pdecl)
+                continue
+            _materialize_param(pdecl, params_payload, p_sets, p_params, diagnostics)
 
         declared_relation_names = {decl.name for decl in problem.relations}
         derived_relation_names = {decl.name for decl in problem.relations if decl.expr is not None}
@@ -212,6 +220,11 @@ def instantiate_ir(kernel: KernelIR, instance: Mapping[str, object]) -> Instance
             _materialize_derived_relations(problem, p_sets, p_params, p_relations, diagnostics)
         )
         p_structures.update(_materialize_structures(problem, p_sets, p_relations, diagnostics))
+
+        for pdecl in relation_indexed_params:
+            _materialize_param(
+                pdecl, params_payload, p_sets, p_params, diagnostics, p_relations=p_relations
+            )
 
         grounded_finds = tuple(
             _ground_find(
@@ -280,7 +293,10 @@ def _materialize_param(
     p_sets: dict[str, list[object]],
     p_params: dict[str, object],
     diagnostics: list[Diagnostic],
+    *,
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]] | None = None,
 ) -> None:
+    relation_values = {} if p_relations is None else p_relations
     provided = pdecl.name in params_payload
     if provided:
         value = params_payload[pdecl.name]
@@ -375,7 +391,9 @@ def _materialize_param(
     if pdecl.indices:
         if not isinstance(value, dict):
             if not provided and pdecl.default is not None:
-                value = _expand_indexed_default(pdecl.default, list(pdecl.indices), p_sets)
+                value = _expand_indexed_default(
+                    pdecl.default, list(pdecl.indices), p_sets, relation_values
+                )
             else:
                 diagnostics.append(
                     Diagnostic(
@@ -387,7 +405,7 @@ def _materialize_param(
                     )
                 )
                 return
-        if not _check_shape(value, list(pdecl.indices), p_sets):
+        if not _check_shape(value, list(pdecl.indices), p_sets, relation_values):
             diagnostics.append(
                 Diagnostic(
                     severity=Severity.ERROR,
@@ -441,6 +459,12 @@ def _materialize_param(
         value = normalized
 
     p_params[pdecl.name] = value
+
+
+def _param_index_needs_relation_domain(index_name: str, problem: ir.KProblem) -> bool:
+    if "." in index_name:
+        return True
+    return any(relation.name == index_name for relation in problem.relations)
 
 
 def _materialize_relation(
@@ -1270,6 +1294,9 @@ def _static_param_call_value(
     value = p_params.get(expr.name)
     if value is None:
         return None
+    relation_key = _relation_param_key(expr, value, p_relations, env, diagnostics)
+    if relation_key is not None:
+        return relation_key
     for arg in expr.args:
         key = _eval_static_value(
             arg,
@@ -1283,6 +1310,34 @@ def _static_param_call_value(
             return None
         value = value.get(str(key))
     return value
+
+
+def _relation_param_key(
+    expr: ir.KFuncCall,
+    value: object,
+    p_relations: Mapping[str, tuple[tuple[object, ...], ...]],
+    env: Mapping[str, object],
+    diagnostics: list[Diagnostic],
+) -> object | None:
+    if not isinstance(value, Mapping) or not expr.args:
+        return None
+    resolved_args: list[str] = []
+    for arg in expr.args:
+        key = _eval_static_value(
+            arg,
+            p_sets={},
+            p_params={},
+            p_relations=p_relations,
+            env=env,
+            diagnostics=diagnostics,
+        )
+        if key is None:
+            return None
+        resolved_args.append(str(key))
+    tuple_key = _tuple_key(tuple(resolved_args))
+    if tuple_key in value:
+        return value.get(tuple_key)
+    return None
 
 
 def _eval_static_numeric_binary(
@@ -1324,29 +1379,49 @@ def _eval_static_numeric_binary(
     return None
 
 
-def _check_shape(value: object, dims: list[str], sets: dict[str, list[object]]) -> bool:
+def _check_shape(
+    value: object,
+    dims: list[str],
+    sets: Mapping[str, list[object]],
+    relations: Mapping[str, tuple[tuple[object, ...], ...]],
+) -> bool:
     if not dims:
         return not isinstance(value, dict)
     if not isinstance(value, dict):
         return False
 
     dim = dims[0]
-    expected = sorted(str(v) for v in sets.get(dim, []))
+    if dim in relations:
+        expected = sorted(_tuple_key(row) for row in relations[dim])
+    else:
+        expected = sorted(str(v) for v in sets.get(dim, []))
     keys = sorted(str(k) for k in value.keys())
     if expected and keys != expected:
         return False
-    return all(_check_shape(v, dims[1:], sets) for v in value.values())
+    return all(_check_shape(v, dims[1:], sets, relations) for v in value.values())
 
 
 def _expand_indexed_default(
-    default_value: object, dims: list[str], sets: dict[str, list[object]]
+    default_value: object,
+    dims: list[str],
+    sets: Mapping[str, list[object]],
+    relations: Mapping[str, tuple[tuple[object, ...], ...]],
 ) -> object:
     if not dims:
         return default_value
 
     dim = dims[0]
-    elems = sorted(str(v) for v in sets.get(dim, []))
-    return {elem: _expand_indexed_default(default_value, dims[1:], sets) for elem in elems}
+    if dim in relations:
+        elems = sorted(_tuple_key(row) for row in relations[dim])
+    else:
+        elems = sorted(str(v) for v in sets.get(dim, []))
+    return {
+        elem: _expand_indexed_default(default_value, dims[1:], sets, relations) for elem in elems
+    }
+
+
+def _tuple_key(values: tuple[object, ...]) -> str:
+    return ",".join(str(value) for value in values)
 
 
 def _ground_find(

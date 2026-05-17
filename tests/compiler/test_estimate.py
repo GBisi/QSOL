@@ -313,6 +313,50 @@ problem TreeEstimate {
     assert report["constraints"]["graph_forest_acyclic"] == 1
 
 
+def test_estimate_warns_about_graph_encoding_blowups() -> None:
+    source = """
+use stdlib.graph;
+
+problem DenseGraphEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(V);
+  find F : Forest(G);
+  find ST : SteinerTree(G, Terminals);
+  find C : HamiltonianCycle(G);
+  minimize count((u, v) in G.edges where C.uses(u, v));
+}
+"""
+    vertices = [f"v{i}" for i in range(1, 9)]
+    edges = [
+        [left, right] for index, left in enumerate(vertices) for right in vertices[index + 1 :]
+    ]
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="dense_graph_estimate.qsol",
+            instance_payload={
+                "problem": "DenseGraphEstimate",
+                "sets": {"V": vertices},
+                "relations": {"Edge": edges},
+                "params": {"Terminals": ["v1", "v8"]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    warnings = estimate_ground_ir(unit.ground_ir)[0].to_dict()["backend"]["warnings"]
+
+    assert any("Forest `F` generates 219 acyclicity constraints" in warning for warning in warnings)
+    assert any("SteinerTree `ST` uses 56 integer flow variables" in warning for warning in warnings)
+    assert any(
+        "HamiltonianCycle `C` introduces 448 transition variables" in warning
+        for warning in warnings
+    )
+    assert any("28 tuples" in warning and "dense relation" in warning for warning in warnings)
+
+
 def test_estimate_reports_hamiltonian_graph_unknowns() -> None:
     source = """
 use stdlib.graph;

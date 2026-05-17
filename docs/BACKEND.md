@@ -112,6 +112,9 @@ Every terminal is forced selected. Selected edges imply both endpoint vertices
 are selected. Internal integer flow variables route connectivity from one
 terminal root to each selected non-root vertex, and the tree count constraint
 `sum(selected_edges) == sum(selected_vertices) - 1` removes connected cycles.
+`inspect estimate` reports the selected-vertex, selected-edge, flow-variable,
+and generated flow-constraint counts for this unknown, and emits a backend
+warning when the flow encoding is likely to dominate the CQM size.
 
 ### `HamiltonianPath(G)` and `HamiltonianCycle(G)`
 
@@ -143,7 +146,9 @@ numeric positions `1..size(G.vertices)` and do not require a user-declared set.
 `uses(u, v)` is linked to adjacent-position transitions for the corresponding
 grounded edge. The encoding is deliberately direct and inspectable: it uses
 O(n^2) assignment variables and O(n^3) forbidden-pair constraints in the dense
-worst case.
+worst case. `inspect estimate` reports assignment, transition, adjacency, and
+`uses` link counts, and emits a backend warning when the transition/link
+encoding is large enough to deserve target checking before solve.
 
 ### Scalar Decisions
 

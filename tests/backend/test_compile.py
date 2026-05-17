@@ -760,6 +760,57 @@ Terminals = ["a", "c"]
     assert "implicit_steiner_tree_count:T" in labels
 
 
+def test_graph_domain_indexed_param_weights_tree_edges(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem WeightedSpanningTree {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Cost[G.edges] : Real;
+  find T : SpanningTree(G);
+  minimize sum(if T.has_edge(u, v) then Cost[u, v] else 0 for (u, v) in G.edges);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "WeightedSpanningTree"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "c"], ["a", "c"]]
+
+[scenarios.baseline.params.Cost]
+"a,b" = 2
+"b,c" = 3
+"a,c" = 5
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="weighted_spanning_tree.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-weighted-spanning-tree"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.compiled_model is not None
+    objective = unit.compiled_model.cqm.objective
+    assert objective.get_linear("T.has_edge[a,b]") == 2
+    assert objective.get_linear("T.has_edge[b,c]") == 3
+    assert objective.get_linear("T.has_edge[a,c]") == 5
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {
@@ -876,6 +927,58 @@ V = ["a", "b"]
     assert not [d for d in unit.diagnostics if d.is_error]
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_compile_supports_route_cyclic_successor_objective(tmp_path: Path) -> None:
+    source = """
+use stdlib.route;
+
+problem RouteSuccessorDemo {
+  set Cities;
+  set Positions = Range(1, size(Cities));
+
+  param Cost[Cities, Cities] : Real = 0;
+
+  find Tour : Route(Positions, Cities);
+
+  minimize sum(
+    if Tour.transition(p, q, u, v) and cyclic_successor(p, q, size(Positions)) then Cost[u, v] else 0
+    for p in Positions for q in Positions for u in Cities for v in Cities
+  );
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "RouteSuccessorDemo"
+
+[scenarios.baseline.sets]
+Cities = ["a", "b", "c"]
+
+[scenarios.baseline.params.Cost]
+a = { a = 0, b = 4, c = 7 }
+b = { a = 4, b = 0, c = 2 }
+c = { a = 7, b = 2, c = 0 }
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="route_successor.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-route-successor"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.compiled_model is not None
+    objective = unit.compiled_model.cqm.objective
+    nonzero_quadratics = sorted(float(value) for value in objective.quadratic.values() if value)
+    assert nonzero_quadratics == [2.0] * 6 + [4.0] * 6 + [7.0] * 6
 
 
 def test_compile_supports_tuple_relation_count_objective(tmp_path: Path) -> None:

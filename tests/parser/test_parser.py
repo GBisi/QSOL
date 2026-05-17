@@ -189,6 +189,23 @@ problem P {
     assert problem.stmts[3].indices == ["G.edges"]
 
 
+def test_parse_param_indexing_accepts_graph_domain_refs() -> None:
+    text = """
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Cost[G.edges] : Real;
+}
+"""
+    program = parse_to_ast(text, filename="graph_param_indexing.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    param = problem.stmts[3]
+    assert isinstance(param, ast.ParamDecl)
+    assert param.indices == ["G.edges"]
+
+
 def test_parse_matching_unknown() -> None:
     text = """
 use stdlib.graph;

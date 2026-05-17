@@ -218,17 +218,25 @@ class Resolver:
 
                 indices: list[SetType] = []
                 for index_name in stmt.indices:
-                    set_symbol = scope.lookup(index_name)
-                    if set_symbol is None or set_symbol.kind != SymbolKind.SET:
-                        suggestion = self._did_you_mean(index_name, self._set_candidates(scope))
-                        help_items = ["Declare the set before using it in parameter indexing."]
+                    index_symbol = scope.lookup(index_name)
+                    if index_symbol is None or index_symbol.kind not in {
+                        SymbolKind.SET,
+                        SymbolKind.RELATION,
+                    }:
+                        suggestion = self._did_you_mean(
+                            index_name,
+                            self._set_candidates(scope) + self._relation_candidates(scope),
+                        )
+                        help_items = [
+                            "Declare the set or relation before using it in parameter indexing."
+                        ]
                         if suggestion is not None:
                             help_items.append(f"Did you mean `{suggestion}`?")
                         diagnostics.append(
                             Diagnostic(
                                 severity=Severity.ERROR,
                                 code="QSOL2201",
-                                message=f"unknown set `{index_name}` in param indexing",
+                                message=f"unknown domain `{index_name}` in param indexing",
                                 span=stmt.span,
                                 help=help_items,
                             )
@@ -592,6 +600,11 @@ class Resolver:
     def _set_candidates(self, scope: Scope) -> list[str]:
         return sorted(
             name for name, symbol in scope.symbols.items() if symbol.kind == SymbolKind.SET
+        )
+
+    def _relation_candidates(self, scope: Scope) -> list[str]:
+        return sorted(
+            name for name, symbol in scope.symbols.items() if symbol.kind == SymbolKind.RELATION
         )
 
     def _did_you_mean(self, name: str, candidates: list[str]) -> str | None:

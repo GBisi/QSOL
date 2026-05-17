@@ -251,6 +251,11 @@ def _print_estimate(console: Console, reports: list[dict[str, object]]) -> None:
         table.add_row("CQM Binary Variables", str(backend.get("cqm_binary_variables", 0)))
         table.add_row("CQM Integer Variables", str(backend.get("cqm_integer_variables", 0)))
         console.print(table)
+        warnings = backend.get("warnings", [])
+        if isinstance(warnings, list) and warnings:
+            console.print("Warnings:")
+            for warning in warnings:
+                console.print(f"- {warning}")
 
 
 def _runtime_parameters_summary(run_result: StandardRunResult) -> str:

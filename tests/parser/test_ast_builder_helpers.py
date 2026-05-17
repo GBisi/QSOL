@@ -82,7 +82,9 @@ def test_ast_builder_dispatch_branches() -> None:
     assert isinstance(use_node, ast.UseStmt)
     assert use_node.module == "stdlib.permutation"
     assert builder._from_tree(
-        Tree("param_indexing", [Tree("name_list", [Token("NAME", "A")])])
+        Tree(
+            "param_indexing", [Tree("domain_ref_list", [Tree("domain_ref", [Token("NAME", "A")])])]
+        )
     ) == ["A"]
     subset_type = _with_meta(Tree("subset_type", [Token("NAME", "A")]))
     find_decl = _with_meta(Tree("find_decl", [Token("NAME", "S"), subset_type]))

@@ -114,9 +114,14 @@ find Tour : Route(Positions, Cities);
 *   **Views**:
     *   `at(p: Elem(Positions), v: Elem(V))`
     *   `transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V))`
+*   **Successor predicates**:
+    *   `linear_successor(p: Real, q: Real): Bool` is true when `q == p + 1`.
+    *   `cyclic_successor(p: Real, q: Real, n: Real): Bool` is true when `q == p + 1`, or when `p == n` and `q == 1`.
 
 `transition(...)` is the conjunction of two route-position decisions. It is
-quadratic when used directly; keep numeric expressions backend-safe.
+quadratic when used directly; keep numeric expressions backend-safe. Successor
+predicates are static numeric helpers intended for route aggregates such as
+transition-cost objectives.
 
 ## 4. Graph Structures And Helpers (`stdlib.graph`)
 
@@ -143,8 +148,15 @@ find indexing, and `size(...)`:
 
 ```qsol
 find Selected[G.edges] : Bool;
+param Cost[G.edges] : Real;
 must forall (u, v) in G.non_edges: not (Chosen.has(u) and Chosen.has(v));
+minimize sum(if Selected[u, v] then Cost[u, v] else 0 for (u, v) in G.edges);
 ```
+
+Relation-indexed graph params use the canonical tuple order exposed by the
+graph domain. Scenario TOML supplies `Cost[G.edges]` with comma-joined tuple
+keys such as `"a,b" = 2`; for `UndirectedGraph`, those keys match the canonical
+orientation in `G.edges`.
 
 The graph module also exposes stdlib-surfaced graph unknowns whose encodings are
 compiler-owned:

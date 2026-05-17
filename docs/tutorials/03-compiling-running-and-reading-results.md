@@ -93,18 +93,35 @@ relation membership formulas before target support checks. `inspect estimate
 --json` reports relation arity/size, decision summaries, expression summary
 fields, backend CQM counts, and backend warnings.
 
+Backend warnings are early size-risk diagnostics. They do not mean the model is
+invalid; they flag grounded shapes such as dense graph relations,
+`Forest(G)` subset acyclicity constraints, `SteinerTree(G, Terminals)` flow
+variables, or Hamiltonian transition/link variables that can dominate the
+compiled CQM. Treat them as a prompt to check the target with
+`qsol targets check --estimate` before building or solving a larger scenario.
+
 If your model has multiple objective statements, the default backend reports
 `QSOL3201`. To compile them intentionally, label each objective and add manual
 weights to the config:
+
+```qsol
+maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items) as value;
+minimize count(i in Items where Pick.has(i)) as item_count;
+```
 
 ```toml
 [entrypoint.objectives]
 qubo_policy = "manual"
 
 [entrypoint.objectives.qubo_weights]
-primary = 1000.0
-secondary = 1.0
+value = 10.0
+item_count = 1.0
 ```
+
+The manual weights scalarize objectives into one backend objective in source
+order. Use weights large enough to reflect the intended priority gap, and keep
+the rationale in scenario config so the tradeoff is auditable. See
+`examples/tutorials/manual_objective_scalarization.qsol` for a runnable example.
 
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.

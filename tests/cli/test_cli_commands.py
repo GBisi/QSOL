@@ -240,6 +240,57 @@ Total = 5
     assert "CQM Integer Variables" in check_result.stdout
 
 
+def test_inspect_estimate_prints_backend_warnings(tmp_path: Path) -> None:
+    model = tmp_path / "dense_graph.qsol"
+    model.write_text(
+        """
+use stdlib.graph;
+
+problem DenseGraph {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find C : HamiltonianCycle(G);
+  minimize count((u, v) in G.edges where C.uses(u, v));
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "dense_graph.qsol.toml"
+    config.write_text(
+        """
+schema_version = "1"
+
+[scenarios.base]
+problem = "DenseGraph"
+
+[scenarios.base.sets]
+V = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8"]
+
+[scenarios.base.relations]
+Edge = [
+  ["v1", "v2"], ["v1", "v3"], ["v1", "v4"], ["v1", "v5"], ["v1", "v6"], ["v1", "v7"], ["v1", "v8"],
+  ["v2", "v3"], ["v2", "v4"], ["v2", "v5"], ["v2", "v6"], ["v2", "v7"], ["v2", "v8"],
+  ["v3", "v4"], ["v3", "v5"], ["v3", "v6"], ["v3", "v7"], ["v3", "v8"],
+  ["v4", "v5"], ["v4", "v6"], ["v4", "v7"], ["v4", "v8"],
+  ["v5", "v6"], ["v5", "v7"], ["v5", "v8"],
+  ["v6", "v7"], ["v6", "v8"],
+  ["v7", "v8"],
+]
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect", "estimate", str(model), "-c", str(config), "-n"])
+
+    assert result.exit_code == 0
+    output = _strip_ansi(result.stdout)
+    assert "Warnings" in output
+    assert "HamiltonianCycle `C` introduces 448 transition variables" in output
+
+
 def test_inspect_estimate_json_reports_graph_structures(tmp_path: Path) -> None:
     model = tmp_path / "graph.qsol"
     model.write_text(

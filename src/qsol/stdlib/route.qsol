@@ -1,5 +1,16 @@
 use stdlib.bijective_mapping;
 
+predicate linear_successor(
+  p: Real,
+  q: Real
+): Bool = q == p + 1;
+
+predicate cyclic_successor(
+  p: Real,
+  q: Real,
+  n: Real
+): Bool = q == p + 1 or (p == n and q == 1);
+
 unknown Route(Positions, V) {
   rep {
     order : BijectiveMapping(Positions, V);

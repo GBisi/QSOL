@@ -1651,6 +1651,17 @@ class DimodCodegen:
         if expr.name not in problem.params:
             return None
         value: object = problem.params[expr.name]
+        resolved_keys: list[str] = []
+        for arg in expr.args:
+            key = self._resolve_name_arg(problem, arg, diagnostics, env)
+            if key is None:
+                return None
+            resolved_keys.append(str(key))
+        if isinstance(value, dict) and len(resolved_keys) > 1:
+            tuple_key = ",".join(resolved_keys)
+            if tuple_key in value:
+                tuple_value: object = value[tuple_key]
+                return tuple_value
         for arg in expr.args:
             key = self._resolve_name_arg(problem, arg, diagnostics, env)
             if key is None or not isinstance(value, dict):

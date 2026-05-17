@@ -283,6 +283,7 @@ Indexed parameters:
 ```qsol
 param Weight[Items] : Real = 1;
 param Cost[Workers, Tasks] : Real = 0;
+param EdgeCost[G.edges] : Real;
 param Next[Positions] : Elem(Positions);
 ```
 
@@ -320,6 +321,24 @@ TOML data for indexed params is normally an object keyed by the index values:
 [scenarios.baseline.params]
 Weight = { a = 3, b = 5, c = 8 }
 Cost = { alice = { task1 = 2, task2 = 7 }, bob = { task1 = 4, task2 = 1 } }
+```
+
+Indexed params may also use static relation domains, including compiler-owned
+graph domains such as `G.edges`:
+
+```qsol
+param EdgeCost[G.edges] : Real;
+minimize sum(if T.has_edge(u, v) then EdgeCost[u, v] else 0 for (u, v) in G.edges);
+```
+
+Relation-domain TOML uses comma-joined tuple keys in the canonical relation
+order. For undirected `G.edges`, keys use the canonical orientation exposed by
+`G.edges`:
+
+```toml
+[scenarios.baseline.params.EdgeCost]
+"a,b" = 2
+"b,c" = 3
 ```
 
 ## 8. Decisions and Unknowns
@@ -650,6 +669,18 @@ visited values. It exposes:
 predicate at(p: Elem(Positions), v: Elem(V)): Bool
 predicate transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem(V)): Bool
 ```
+
+The module also exposes successor predicates for route aggregates:
+
+```qsol
+predicate linear_successor(p: Real, q: Real): Bool
+predicate cyclic_successor(p: Real, q: Real, n: Real): Bool
+```
+
+`linear_successor(p, q)` is true when `q == p + 1`.
+`cyclic_successor(p, q, n)` additionally treats `n -> 1` as the wraparound
+successor. These predicates are ordinary source-level helpers; backend support
+still depends on the expression shape in which they are used.
 
 ### 13.5 `stdlib.graph`
 

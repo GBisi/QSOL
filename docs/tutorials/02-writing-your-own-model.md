@@ -183,18 +183,48 @@ problem CompactGraphModel {
   set V;
   relation Edge(u: V, v: V);
   structure G = UndirectedGraph(V, Edge);
+  param Cost[G.edges] : Real = 1;
 
   find Slot[V] : Int[0 .. size(V) - 1];
 
   must all_different(Slot[v] for v in V);
-  minimize count((u, v) in G.edges where G.adjacent(u, v));
+  minimize sum(Cost[u, v] for (u, v) in G.edges where G.adjacent(u, v));
 }
 ```
 
 `all_different` lowers to pairwise disequality constraints. `UndirectedGraph`
 creates no solver variables, but it exposes canonical static domains such as
 `G.edges` and `G.non_edges`. Graph methods lower to ordinary static relation
-membership formulas before backend compilation.
+membership formulas before backend compilation. Parameters can index those
+graph domains directly; scenario TOML uses comma-joined tuple keys such as
+`"a,b" = 2` for values over `G.edges`. See
+`examples/tutorials/weighted_spanning_tree.qsol` for a weighted graph objective
+over `SpanningTree(G)`.
+
+Route/order models can combine `Route(Positions, V)` with successor predicates
+from `stdlib.route` to keep transition objectives readable:
+
+```qsol
+use stdlib.route;
+
+problem RouteCost {
+  set Cities;
+  set Positions = Range(1, size(Cities));
+  param Cost[Cities, Cities] : Real = 0;
+
+  find Tour : Route(Positions, Cities);
+
+  minimize sum(
+    if Tour.transition(p, q, u, v) and cyclic_successor(p, q, size(Positions)) then Cost[u, v] else 0
+    for p in Positions for q in Positions for u in Cities for v in Cities
+  );
+}
+```
+
+`linear_successor(p, q)` models `p -> q` for adjacent linear positions, while
+`cyclic_successor(p, q, n)` also includes the `n -> 1` wraparound transition.
+Keep backend-v1 hard constraints simpler than this aggregate pattern; validate
+route models with `targets check --estimate` before building larger instances.
 
 ## 6. Backend-v1 Safety Checklist
 

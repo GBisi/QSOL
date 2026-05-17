@@ -1,0 +1,15 @@
+use stdlib.route;
+
+problem RouteSuccessorDemo {
+  set Cities;
+  set Positions = Range(1, size(Cities));
+
+  param Cost[Cities, Cities] : Real = 0;
+
+  find Tour : Route(Positions, Cities);
+
+  minimize sum(
+    if Tour.transition(p, q, u, v) and cyclic_successor(p, q, size(Positions)) then Cost[u, v] else 0
+    for p in Positions for q in Positions for u in Cities for v in Cities
+  );
+}

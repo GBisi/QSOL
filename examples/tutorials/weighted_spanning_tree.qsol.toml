@@ -1,0 +1,19 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "WeightedSpanningTree"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "c"], ["a", "c"]]
+
+[scenarios.baseline.params.Cost]
+"a,b" = 2
+"b,c" = 3
+"a,c" = 5

@@ -1,0 +1,14 @@
+problem ManualObjectiveScalarization {
+  set Items;
+
+  param Value[Items] : Real = 1;
+  param Weight[Items] : Real = 1;
+  param Capacity : Real;
+
+  find Pick : Subset(Items);
+
+  must sum(if Pick.has(i) then Weight[i] else 0 for i in Items) <= Capacity;
+
+  maximize sum(if Pick.has(i) then Value[i] else 0 for i in Items) as value;
+  minimize count(i in Items where Pick.has(i)) as item_count;
+}

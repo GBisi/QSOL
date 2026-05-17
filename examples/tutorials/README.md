@@ -31,6 +31,12 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `graph_helpers.qsol.toml`
 - `route_demo.qsol`
 - `route_demo.qsol.toml`
+- `weighted_spanning_tree.qsol`
+- `weighted_spanning_tree.qsol.toml`
+- `route_successor.qsol`
+- `route_successor.qsol.toml`
+- `manual_objective_scalarization.qsol`
+- `manual_objective_scalarization.qsol.toml`
 
 ## Run
 
@@ -167,6 +173,33 @@ uv run qsol build \
   --format qubo
 ```
 
+```bash
+uv run qsol build \
+  examples/tutorials/weighted_spanning_tree.qsol \
+  --config examples/tutorials/weighted_spanning_tree.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/weighted_spanning_tree \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/route_successor.qsol \
+  --config examples/tutorials/route_successor.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/route_successor \
+  --format qubo
+```
+
+```bash
+uv run qsol build \
+  examples/tutorials/manual_objective_scalarization.qsol \
+  --config examples/tutorials/manual_objective_scalarization.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/manual_objective_scalarization \
+  --format qubo
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -232,6 +265,17 @@ Commands succeed and write artifacts under `outdir/*`, including:
   - `scenarios.baseline.sets.Positions`
   - `scenarios.baseline.sets.Cities`
   - `Route(Positions, Cities)` wraps a `BijectiveMapping`.
+- `weighted_spanning_tree.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Edge`
+  - `scenarios.baseline.params.Cost` uses comma-joined tuple keys for `Cost[G.edges]`.
+- `route_successor.qsol.toml`
+  - `scenarios.baseline.sets.Cities`
+  - `Positions` is a derived `Range(1, size(Cities))` set and is not supplied in TOML.
+  - `cyclic_successor` restricts the transition-cost objective to consecutive positions plus wraparound.
+- `manual_objective_scalarization.qsol.toml`
+  - `entrypoint.objectives.qubo_policy = "manual"` enables explicit multiple-objective scalarization.
+  - `entrypoint.objectives.qubo_weights` supplies one weight per objective label.
 
 ## Related
 

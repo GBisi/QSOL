@@ -1,0 +1,16 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "RouteSuccessorDemo"
+
+[scenarios.baseline.sets]
+Cities = ["a", "b", "c"]
+
+[scenarios.baseline.params.Cost]
+a = { a = 0, b = 4, c = 7 }
+b = { a = 4, b = 0, c = 2 }
+c = { a = 7, b = 2, c = 0 }
