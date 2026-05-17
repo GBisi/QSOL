@@ -1,0 +1,11 @@
+use stdlib.graph;
+
+problem DirectedAcyclicSubgraphDemo {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+
+  find Keep : DirectedAcyclicSubgraph(D);
+
+  maximize count((u, v) in D.arcs where Keep.has_arc(u, v));
+}

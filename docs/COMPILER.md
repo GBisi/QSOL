@@ -84,7 +84,9 @@ variable per grounded `G.edges` tuple plus incident-edge constraints for
 vertices of degree at least two. `MaximalMatching(G)` reuses that encoding and
 adds one maximality constraint per grounded edge. `SpanningTree(G)` adds a
 grounded edge-count constraint plus rooted connectivity flow. `Forest(G)` adds
-internal acyclicity constraints over vertex subsets.
+internal acyclicity constraints over vertex subsets. `DirectedAcyclicSubgraph(D)`
+allocates selected-arc binaries and internal rank integers over a grounded
+`DirectedGraph`.
 
 The reusable graph encoding helpers live in `qsol.backend.graph_encoding`.
 They centralize canonical undirected edge lookup, incident-edge enumeration,

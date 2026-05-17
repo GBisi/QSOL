@@ -132,9 +132,27 @@ minimize count((u, v) in G.edges where G.adjacent(u, v));
 
 `all_different` becomes pairwise disequality constraints. Graph structures
 create no solver variables by themselves; they expose static domains such as
-`G.edges` and `G.non_edges`, plus predicates such as `G.adjacent(u, v)`.
-The older `adjacent(Edge, u, v)` and `nonedge(Edge, u, v)` helpers remain
-available for direct binary-relation use.
+`G.edges`, `G.non_edges`, `D.arcs`, and `D.non_arcs`, plus predicates such as
+`G.adjacent(u, v)`. The older `adjacent(Edge, u, v)` and
+`nonedge(Edge, u, v)` helpers remain available for direct binary-relation use.
+
+Compiler-owned graph unknowns keep common graph encodings readable. For
+example, `DirectedAcyclicSubgraph(D)` selects arcs from a directed graph while
+the backend owns the topological-rank constraints:
+
+```qsol
+use stdlib.graph;
+
+problem KeepAcyclicArcs {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+
+  find Keep : DirectedAcyclicSubgraph(D);
+
+  maximize count((u, v) in D.arcs where Keep.has_arc(u, v));
+}
+```
 
 ## 5. Compiling and Running
 

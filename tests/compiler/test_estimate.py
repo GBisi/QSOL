@@ -357,6 +357,80 @@ problem DenseGraphEstimate {
     assert any("28 tuples" in warning and "dense relation" in warning for warning in warnings)
 
 
+def test_estimate_reports_directed_acyclic_subgraph() -> None:
+    source = """
+use stdlib.graph;
+
+problem DirectedAcyclicEstimate {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+  find A : DirectedAcyclicSubgraph(D);
+  minimize count((u, v) in D.arcs where A.has_arc(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="directed_acyclic_estimate.qsol",
+            instance_payload={
+                "problem": "DirectedAcyclicEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Arc": [["A", "B"], ["B", "C"], ["C", "A"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+
+    assert report["decision_variables"]["A"] == {
+        "kind": "DirectedAcyclicSubgraph",
+        "arc_variables": 3,
+        "rank_variables": 3,
+        "order_constraints": 3,
+    }
+    assert report["decisions"]["binary"] == 3
+    assert report["decisions"]["integer"] == 3
+    assert report["constraints"]["graph_directed_acyclic_order"] == 3
+
+
+def test_estimate_warns_about_route_transition_aggregate() -> None:
+    source = """
+use stdlib.route;
+
+problem RouteWarning {
+  set Cities;
+  set Positions = Range(1, size(Cities));
+  param Cost[Cities, Cities] : Real = 0;
+  find Tour : Route(Positions, Cities);
+  minimize sum(
+    if Tour.transition(p, q, u, v) and cyclic_successor(p, q, size(Positions)) then Cost[u, v] else 0
+    for p in Positions for q in Positions for u in Cities for v in Cities
+  );
+}
+"""
+    cities = [f"c{i}" for i in range(1, 7)]
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="route_warning.qsol",
+            instance_payload={
+                "problem": "RouteWarning",
+                "sets": {"Cities": cities},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    warnings = estimate_ground_ir(unit.ground_ir)[0].to_dict()["backend"]["warnings"]
+
+    assert any(
+        "Route `Tour.transition` appears in an aggregate over 1296 grounded combinations" in warning
+        for warning in warnings
+    )
+
+
 def test_estimate_reports_hamiltonian_graph_unknowns() -> None:
     source = """
 use stdlib.graph;

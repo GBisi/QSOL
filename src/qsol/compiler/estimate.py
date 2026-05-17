@@ -74,6 +74,7 @@ def estimate_ground_ir(
         graph_hamiltonian_assignment = 0
         graph_hamiltonian_adjacency = 0
         graph_hamiltonian_uses_link = 0
+        graph_directed_acyclic_order = 0
 
         for find in problem.finds:
             is_auxiliary = find.name.startswith("__qsol_")
@@ -194,6 +195,20 @@ def estimate_ground_ir(
                             "flow_capacity_constraints": steiner_flow_capacity_constraints,
                             "flow_balance_constraints": steiner_flow_balance_constraints,
                         }
+                elif kind == "DirectedAcyclicSubgraph":
+                    graph_name = find.decision_type.unknown_type.args[0]
+                    graph = GraphData.from_ground_problem(problem, graph_name, find.span, [])
+                    vertex_count = 0 if graph is None else len(graph.vertices)
+                    arc_count = 0 if graph is None else len(graph.edges)
+                    cqm_binary += arc_count
+                    cqm_integer += vertex_count
+                    graph_directed_acyclic_order += arc_count
+                    decision_report[find.name] = {
+                        "kind": kind,
+                        "arc_variables": arc_count,
+                        "rank_variables": vertex_count,
+                        "order_constraints": arc_count,
+                    }
                 elif kind in {"HamiltonianPath", "HamiltonianCycle"}:
                     graph_name = find.decision_type.unknown_type.args[0]
                     graph = GraphData.from_ground_problem(problem, graph_name, find.span, [])
@@ -290,6 +305,8 @@ def estimate_ground_ir(
             constraint_report["graph_hamiltonian_adjacency"] = graph_hamiltonian_adjacency
         if graph_hamiltonian_uses_link:
             constraint_report["graph_hamiltonian_uses_link"] = graph_hamiltonian_uses_link
+        if graph_directed_acyclic_order:
+            constraint_report["graph_directed_acyclic_order"] = graph_directed_acyclic_order
 
         reports.append(
             EstimateReport(
@@ -318,6 +335,7 @@ def estimate_ground_ir(
                         relation_report,
                         problem.structures,
                         decision_report,
+                        problem,
                     ),
                 },
             )
@@ -379,6 +397,7 @@ def _estimate_warnings(
     relations: dict[str, dict[str, object]],
     structures: dict[str, dict[str, object]],
     decisions: dict[str, dict[str, object]],
+    problem: ir.GroundProblem,
 ) -> list[str]:
     warnings: list[str] = []
     for name, report in relations.items():
@@ -393,6 +412,7 @@ def _estimate_warnings(
         warnings.extend(_graph_structure_warnings(name, report))
     for name, report in decisions.items():
         warnings.extend(_decision_warnings(name, report))
+    warnings.extend(_route_transition_warnings(problem))
     return warnings
 
 
@@ -459,7 +479,123 @@ def _decision_warnings(name: str, report: dict[str, object]) -> list[str]:
                 f"{kind} `{name}` introduces {transition_variables} transition variables and "
                 f"{uses_link_constraints} link constraints; route encodings scale with positions times edges"
             )
+    elif kind == "DirectedAcyclicSubgraph":
+        rank_variables = _int_field(report, "rank_variables")
+        order_constraints = _int_field(report, "order_constraints")
+        if order_constraints >= 100:
+            warnings.append(
+                f"DirectedAcyclicSubgraph `{name}` uses {rank_variables} rank variables and "
+                f"{order_constraints} order constraints; dense selected-arc models can become large"
+            )
     return warnings
+
+
+def _route_transition_warnings(problem: ir.GroundProblem) -> list[str]:
+    warnings: list[str] = []
+    seen: set[tuple[str, int]] = set()
+    for objective in problem.objectives:
+        _collect_route_transition_warnings(objective.expr, problem, warnings, seen)
+    for constraint in problem.constraints:
+        _collect_route_transition_warnings(constraint.expr, problem, warnings, seen)
+    return warnings
+
+
+def _collect_route_transition_warnings(
+    expr: ir.KExpr,
+    problem: ir.GroundProblem,
+    warnings: list[str],
+    seen: set[tuple[str, int]],
+) -> None:
+    if isinstance(expr, ir.KSum):
+        route_name = _find_route_transition_name(expr.comp.term)
+        if route_name is not None:
+            combinations = _comprehension_size(problem, expr.comp.binders)
+            key = (route_name, combinations)
+            if combinations >= 1_000 and key not in seen:
+                seen.add(key)
+                warnings.append(
+                    f"Route `{route_name}.transition` appears in an aggregate over "
+                    f"{combinations} grounded combinations; route/TSP-style objectives scale "
+                    "with positions times ordered vertex pairs"
+                )
+        _collect_route_transition_warnings(expr.comp.term, problem, warnings, seen)
+        return
+    for child in _expr_children(expr):
+        _collect_route_transition_warnings(child, problem, warnings, seen)
+
+
+def _find_route_transition_name(expr: ir.KExpr) -> str | None:
+    if (
+        isinstance(expr, ir.KMethodCall)
+        and expr.name == "transition"
+        and isinstance(expr.target, ir.KName)
+    ):
+        return expr.target.name
+    generated_mapping = _generated_route_mapping_name(expr)
+    if generated_mapping is not None:
+        return generated_mapping
+    for child in _expr_children(expr):
+        found = _find_route_transition_name(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _generated_route_mapping_name(expr: ir.KExpr) -> str | None:
+    if not isinstance(expr, ir.KAnd):
+        return None
+    calls = (expr.left, expr.right)
+    names: list[str] = []
+    for call in calls:
+        if (
+            not isinstance(call, ir.KMethodCall)
+            or call.name != "is"
+            or not isinstance(call.target, ir.KName)
+        ):
+            return None
+        names.append(call.target.name)
+    if names[0] != names[1]:
+        return None
+    generated = names[0]
+    prefix = "__qsol_u__"
+    suffix = "__order__f"
+    if generated.startswith(prefix) and generated.endswith(suffix):
+        return generated[len(prefix) : -len(suffix)]
+    return None
+
+
+def _expr_children(expr: ir.KExpr) -> tuple[ir.KExpr, ...]:
+    if isinstance(expr, (ir.KNot, ir.KNeg)):
+        return (expr.expr,)
+    if isinstance(
+        expr, (ir.KAnd, ir.KOr, ir.KImplies, ir.KCompare, ir.KAdd, ir.KSub, ir.KMul, ir.KDiv)
+    ):
+        return (expr.left, expr.right)
+    if isinstance(expr, ir.KFuncCall):
+        return expr.args
+    if isinstance(expr, ir.KMethodCall):
+        return (expr.target, *expr.args)
+    if isinstance(expr, ir.KIfThenElse):
+        return (expr.cond, expr.then_expr, expr.else_expr)
+    if isinstance(expr, ir.KBoolIfThenElse):
+        return (expr.cond, expr.then_expr, expr.else_expr)
+    if isinstance(expr, (ir.KQuantifier, ir.KTupleQuantifier)):
+        return (expr.expr,)
+    if isinstance(expr, ir.KSum):
+        return (expr.comp.term,)
+    return ()
+
+
+def _comprehension_size(
+    problem: ir.GroundProblem, binders: tuple[ir.KCompBinder | ir.KTupleCompBinder, ...]
+) -> int:
+    count = 1
+    for binder in binders:
+        if isinstance(binder, ir.KTupleCompBinder):
+            count *= len(problem.relation_values.get(binder.domain_relation, ()))
+        else:
+            count *= len(problem.set_values.get(binder.domain_set, ()))
+    return count
 
 
 def _int_field(report: dict[str, object], field: str) -> int:

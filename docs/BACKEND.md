@@ -150,6 +150,25 @@ worst case. `inspect estimate` reports assignment, transition, adjacency, and
 `uses` link counts, and emits a backend warning when the transition/link
 encoding is large enough to deserve target checking before solve.
 
+### `DirectedAcyclicSubgraph(D)`
+
+`DirectedAcyclicSubgraph(D)` expects a grounded `DirectedGraph`. It creates one
+binary selected-arc variable per tuple in `D.arcs` and one internal integer rank
+variable per vertex:
+
+```text
+A.has_arc(u,v) in {0,1}
+__qsol_rank:A:v in [0, size(D.vertices)-1]
+```
+
+For every grounded arc `(u, v)`, the backend adds a gated topological-order
+constraint. If the arc is selected, `rank[u] + 1 <= rank[v]`; if the arc is not
+selected, the constraint is relaxed by a big-M term based on vertex count. This
+keeps directed feedback-edge and acyclic-subgraph models compact and auditable
+without requiring users to declare rank variables manually. `inspect estimate`
+reports selected-arc variables, rank variables, and generated order constraints,
+and warns when dense directed arc sets make the order family large.
+
 ### Scalar Decisions
 
 ```qsol

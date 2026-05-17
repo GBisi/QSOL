@@ -355,6 +355,7 @@ class Resolver:
                     "SteinerTree",
                     "HamiltonianPath",
                     "HamiltonianCycle",
+                    "DirectedAcyclicSubgraph",
                 }:
                     expected_args = 2 if unknown_ref.kind == "SteinerTree" else 1
                     if len(unknown_ref.args) != expected_args:
@@ -367,7 +368,11 @@ class Resolver:
                                     + (
                                         "an UndirectedGraph and StaticSubset argument"
                                         if unknown_ref.kind == "SteinerTree"
-                                        else "one UndirectedGraph structure argument"
+                                        else (
+                                            "one DirectedGraph structure argument"
+                                            if unknown_ref.kind == "DirectedAcyclicSubgraph"
+                                            else "one UndirectedGraph structure argument"
+                                        )
                                     )
                                 ),
                                 span=stmt.span,
@@ -381,24 +386,35 @@ class Resolver:
                     else:
                         graph_name = unknown_ref.args[0]
                         graph_symbol = scope.lookup(graph_name)
+                        expected_constructor = (
+                            "DirectedGraph"
+                            if unknown_ref.kind == "DirectedAcyclicSubgraph"
+                            else "UndirectedGraph"
+                        )
                         if (
                             graph_symbol is None
                             or graph_symbol.kind != SymbolKind.STRUCTURE
                             or not isinstance(graph_symbol.type, StructureInstanceType)
-                            or graph_symbol.type.constructor != "UndirectedGraph"
+                            or graph_symbol.type.constructor != expected_constructor
                         ):
                             diagnostics.append(
                                 Diagnostic(
                                     severity=Severity.ERROR,
                                     code="QSOL2001",
                                     message=(
-                                        f"{unknown_ref.kind} expects an UndirectedGraph "
-                                        "structure argument"
+                                        f"{unknown_ref.kind} expects "
+                                        f"{'a' if expected_constructor == 'DirectedGraph' else 'an'} "
+                                        f"{expected_constructor} structure argument"
                                     ),
                                     span=stmt.span,
                                     help=[
-                                        "Declare `structure G = UndirectedGraph(V, Edge);` "
-                                        f"before `find M : {unknown_ref.kind}(G);`."
+                                        "Declare `structure D = DirectedGraph(V, Arc);` "
+                                        f"before `find A : {unknown_ref.kind}(D);`."
+                                        if expected_constructor == "DirectedGraph"
+                                        else (
+                                            "Declare `structure G = UndirectedGraph(V, Edge);` "
+                                            f"before `find M : {unknown_ref.kind}(G);`."
+                                        )
                                     ],
                                 )
                             )

@@ -266,6 +266,43 @@ def test_extract_required_capabilities_includes_hamiltonian_graph_unknowns() -> 
     assert "unknown.graph.hamiltonian_cycle.v1" in required
 
 
+def test_extract_required_capabilities_includes_directed_acyclic_subgraph() -> None:
+    span = _span()
+    ground = ir.GroundIR(
+        span=span,
+        problems=(
+            ir.GroundProblem(
+                span=span,
+                name="G",
+                set_values={"V": ("a", "b"), "D.vertices": ("a", "b")},
+                relation_values={"Arc": (("a", "b"),), "D.arcs": (("a", "b"),)},
+                structures={
+                    "D": {
+                        "constructor": "DirectedGraph",
+                        "domains": {"vertices": 2, "arcs": 1, "non_arcs": 1},
+                    }
+                },
+                params={},
+                finds=(
+                    ir.KFindDecl(
+                        span=span,
+                        name="A",
+                        unknown_type=ast.UnknownTypeRef(
+                            span=span, kind="DirectedAcyclicSubgraph", args=("D",)
+                        ),
+                    ),
+                ),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    required = extract_required_capabilities(ground)
+
+    assert "unknown.graph.directed_acyclic_subgraph.v1" in required
+
+
 def test_check_pair_support_full_support() -> None:
     ground = _ground_program()
     selection = TargetSelection(runtime_id="local-dimod", backend_id="dimod-cqm-v1")

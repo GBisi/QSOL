@@ -1,0 +1,19 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "baseline"
+runtime = "local-dimod"
+
+[scenarios.baseline]
+problem = "DirectedAcyclicSubgraphDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c", "d"]
+
+[scenarios.baseline.relations]
+Arc = [
+  ["a", "b"],
+  ["b", "c"],
+  ["c", "a"],
+  ["c", "d"],
+]

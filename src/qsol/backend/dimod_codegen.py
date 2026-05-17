@@ -12,6 +12,7 @@ from qsol.backend.graph_encoding import (
     GraphData,
     GraphUnknownLabels,
     add_degree_at_most_one_constraints,
+    add_directed_acyclic_constraints,
     add_forest_constraints,
     add_maximal_matching_constraints,
     add_rooted_connectivity_constraints,
@@ -297,6 +298,10 @@ class DimodCodegen:
                     )
             elif kind in {"Matching", "MaximalMatching", "SpanningTree", "Forest", "SteinerTree"}:
                 self._declare_matching_variables(problem, find, cqm, binaries, varmap, diagnostics)
+            elif kind == "DirectedAcyclicSubgraph":
+                self._declare_directed_acyclic_variables(
+                    problem, find, cqm, binaries, varmap, diagnostics
+                )
             elif kind in {"HamiltonianPath", "HamiltonianCycle"}:
                 self._declare_hamiltonian_variables(
                     problem, find, cqm, binaries, varmap, diagnostics
@@ -305,6 +310,54 @@ class DimodCodegen:
                 diagnostics.append(
                     self._unsupported(find.span, f"unsupported unknown kind `{kind}`")
                 )
+
+    def _declare_directed_acyclic_variables(
+        self,
+        problem: ir.GroundProblem,
+        find: ir.KFindDecl,
+        cqm: dimod.ConstrainedQuadraticModel,
+        binaries: dict[str, BinaryVar],
+        varmap: dict[str, str],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if len(find.unknown_type.args) != 1:
+            diagnostics.append(
+                self._unsupported(find.span, "`DirectedAcyclicSubgraph` expects one graph argument")
+            )
+            return
+        graph_name = find.unknown_type.args[0]
+        graph = GraphData.from_ground_problem(problem, graph_name, find.span, diagnostics)
+        if graph is None:
+            return
+        if not graph.directed:
+            diagnostics.append(
+                self._unsupported(
+                    find.span, "DirectedAcyclicSubgraph expects a DirectedGraph structure"
+                )
+            )
+            return
+
+        labels = GraphUnknownLabels(find.name)
+        ranks: dict[str, Any] = {}
+        upper_bound = max(len(graph.vertices) - 1, 0)
+        for vertex in sorted(graph.vertices, key=str):
+            label = labels.rank_var(vertex)
+            ranks[vertex] = _new_integer(label, lower_bound=0, upper_bound=upper_bound)
+            varmap[label] = f"{find.name}.rank({vertex})"
+        for arc in sorted(graph.edges, key=lambda item: tuple(str(part) for part in item)):
+            label = labels.arc_var(arc)
+            binaries[label] = _new_binary(label)
+            varmap[label] = labels.arc_meaning(arc)
+
+        add_directed_acyclic_constraints(
+            cqm,
+            graph=graph,
+            labels=labels,
+            binaries=binaries,
+            ranks=ranks,
+            span=find.span,
+            diagnostics=diagnostics,
+        )
 
     def _declare_hamiltonian_variables(
         self,
@@ -752,7 +805,60 @@ class DimodCodegen:
                     )
                     return
 
-        diagnostics.append(self._unsupported(expr.span, "unsupported hard constraint shape"))
+        message = "unsupported hard constraint shape"
+        if self._contains_generated_route_transition(expr):
+            message = "unsupported route transition hard constraint shape"
+        diagnostics.append(self._unsupported(expr.span, message))
+
+    def _contains_generated_route_transition(self, expr: ir.KExpr) -> bool:
+        if isinstance(expr, ir.KAnd):
+            return (
+                self._is_generated_route_transition(expr)
+                or self._contains_generated_route_transition(expr.left)
+                or self._contains_generated_route_transition(expr.right)
+            )
+        if isinstance(expr, (ir.KOr, ir.KImplies, ir.KCompare)):
+            return self._contains_generated_route_transition(
+                expr.left
+            ) or self._contains_generated_route_transition(expr.right)
+        if isinstance(expr, (ir.KNot, ir.KNeg)):
+            return self._contains_generated_route_transition(expr.expr)
+        if isinstance(expr, ir.KFuncCall):
+            return any(self._contains_generated_route_transition(arg) for arg in expr.args)
+        if isinstance(expr, ir.KMethodCall):
+            return self._contains_generated_route_transition(expr.target) or any(
+                self._contains_generated_route_transition(arg) for arg in expr.args
+            )
+        if isinstance(expr, (ir.KIfThenElse, ir.KBoolIfThenElse)):
+            return (
+                self._contains_generated_route_transition(expr.cond)
+                or self._contains_generated_route_transition(expr.then_expr)
+                or self._contains_generated_route_transition(expr.else_expr)
+            )
+        if isinstance(expr, (ir.KQuantifier, ir.KTupleQuantifier)):
+            return self._contains_generated_route_transition(expr.expr)
+        if isinstance(expr, ir.KSum):
+            return self._contains_generated_route_transition(expr.comp.term)
+        return False
+
+    def _is_generated_route_transition(self, expr: ir.KExpr) -> bool:
+        if not isinstance(expr, ir.KAnd):
+            return False
+        calls = (expr.left, expr.right)
+        names: list[str] = []
+        for call in calls:
+            if (
+                not isinstance(call, ir.KMethodCall)
+                or call.name != "is"
+                or not isinstance(call.target, ir.KName)
+            ):
+                return False
+            names.append(call.target.name)
+        return (
+            names[0] == names[1]
+            and names[0].startswith("__qsol_u__")
+            and names[0].endswith("__order__f")
+        )
 
     def _is_quadratic_model(self, expr: Any) -> bool:
         return isinstance(expr, (BinaryQuadraticModel, QuadraticModel))
@@ -1725,6 +1831,38 @@ class DimodCodegen:
                 )
             )
             return None
+        if expr.name == "has_arc" and len(expr.args) == 2:
+            find = next(
+                (candidate for candidate in problem.finds if candidate.name == target), None
+            )
+            if (
+                find is None
+                or not isinstance(find.decision_type, ir.KUnknownDecisionType)
+                or find.unknown_type.kind != "DirectedAcyclicSubgraph"
+            ):
+                return None
+            a = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+            b = self._resolve_name_arg(problem, expr.args[1], diagnostics, env)
+            if a is None or b is None:
+                return None
+            graph_name = find.unknown_type.args[0] if find.unknown_type.args else ""
+            graph = GraphData.from_ground_problem(problem, graph_name, expr.span, diagnostics)
+            if graph is None:
+                return None
+            arc = graph.edge_key(a, b)
+            if arc is not None:
+                return GraphUnknownLabels(target).arc_var(arc)
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL3302",
+                    message=f"`{target}.has_arc({a}, {b})` is not an arc of `{graph_name}`",
+                    span=expr.span,
+                    help=["Call directed graph unknown arc views only for tuples in `D.arcs`."],
+                )
+            )
+            return None
+
         if expr.name == "has_vertex" and len(expr.args) == 1:
             find = next(
                 (candidate for candidate in problem.finds if candidate.name == target), None
@@ -1948,6 +2086,11 @@ class DimodCodegen:
     def _help_for_backend_message(self, message: str) -> list[str]:
         if "unsupported unknown kind" in message:
             return ["Backend v1 currently supports only `Subset` and `Mapping` unknown kinds."]
+        if "unsupported route transition hard constraint shape" in message:
+            return [
+                "Route transition views expand to quadratic terms; try a numeric penalty/objective aggregate or a simpler supported comparison.",
+                "Run `qsol targets check --estimate` to inspect grounded route expansion size.",
+            ]
         if "unsupported hard constraint shape" in message:
             return [
                 "Rewrite the hard constraint into comparisons/boolean forms supported by backend v1."

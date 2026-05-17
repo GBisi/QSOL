@@ -233,7 +233,7 @@ Built-in graph structures:
 | Structure | Static domains | Methods |
 | --- | --- | --- |
 | `UndirectedGraph(V, Edge)` | `G.vertices`, `G.edges`, `G.non_edges` | `G.adjacent(u, v)`, `G.nonedge(u, v)` |
-| `DirectedGraph(V, Arc)` | `D.vertices`, `D.arcs`, `D.non_arcs` | `D.arc(u, v)`, `D.nonarc(u, v)` |
+| `DirectedGraph(V, Arc)` | `D.vertices`, `D.arcs`, `D.non_arcs` | `D.adjacent(u, v)`, `D.nonedge(u, v)` |
 
 Structures do not create decisions or backend variables. They materialize static
 domains and lower methods to static relation membership checks.
@@ -259,6 +259,7 @@ QSOL has scalar, element, comprehension, and decision-abstraction types.
 | `SteinerTree(G, Terminals)` | Unknown Steiner tree spanning a static terminal subset | `find T : SteinerTree(G, Terminals);` |
 | `HamiltonianPath(G)` | Unknown Hamiltonian path over an undirected graph | `find P : HamiltonianPath(G);` |
 | `HamiltonianCycle(G)` | Unknown Hamiltonian cycle over an undirected graph | `find C : HamiltonianCycle(G);` |
+| `DirectedAcyclicSubgraph(D)` | Unknown acyclic selected-arc subgraph over a directed graph | `find A : DirectedAcyclicSubgraph(D);` |
 | User unknown | Custom abstraction from `unknown` | `find Tour : Permutation(Cities);` |
 
 Numeric literals are typed as `Real`. Integer decision bounds use numeric
@@ -355,6 +356,7 @@ find F : Forest(G);
 find ST : SteinerTree(G, Terminals);
 find P : HamiltonianPath(G);
 find C : HamiltonianCycle(G);
+find A : DirectedAcyclicSubgraph(D);
 find Enabled : Bool;
 find Load[Machines] : Int[0 .. Capacity];
 ```
@@ -383,6 +385,9 @@ Semantics:
   each vertex appears exactly once, and consecutive positions must be adjacent.
 - `HamiltonianCycle(G)` has the same views and also requires the final and
   first positions to be adjacent.
+- `DirectedAcyclicSubgraph(D)` expects `D` to be a `DirectedGraph`. It exposes
+  `A.has_arc(u, v)` over `D.arcs` and internally enforces a topological rank
+  order on selected arcs.
 - Scalar `Bool` creates one binary decision.
 - Scalar `Int[lo .. hi]` creates a bounded integer CQM decision. Indexed integer
   finds create one bounded integer decision per grounded index.
@@ -700,6 +705,7 @@ find F : Forest(G);
 find ST : SteinerTree(G, Terminals);
 find P : HamiltonianPath(G);
 find C : HamiltonianCycle(G);
+find A : DirectedAcyclicSubgraph(D);
 ```
 
 `Matching(G)` requires an `UndirectedGraph`. It creates a matching decision over
@@ -715,6 +721,10 @@ requires `Terminals` to be a nonempty grounded `StaticSubset` of graph vertices.
 numeric positions `1..size(G.vertices)`; users do not declare a positions set.
 The path form requires adjacent consecutive positions, and the cycle form also
 requires wraparound adjacency from the final position to the first.
+`DirectedAcyclicSubgraph(D)` requires a `DirectedGraph`, exposes `has_arc(u, v)`,
+and selects arcs that can satisfy an internal topological rank order. It is the
+preferred high-level primitive for feedback-arc and directed-acyclic-subgraph
+models before writing manual rank constraints.
 
 ## 14. TOML Configuration Format
 

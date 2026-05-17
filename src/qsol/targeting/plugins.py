@@ -764,6 +764,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
             "unknown.graph.steiner_tree.v1": "full",
             "unknown.graph.hamiltonian_path.v1": "full",
             "unknown.graph.hamiltonian_cycle.v1": "full",
+            "unknown.graph.directed_acyclic_subgraph.v1": "full",
             "unknown.custom.v1": "none",
             "decision.scalar.bool.v1": "full",
             "decision.scalar.int.v1": "full",

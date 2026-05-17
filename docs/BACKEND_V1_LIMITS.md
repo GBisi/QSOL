@@ -39,3 +39,16 @@ If you encounter `QSOL3001`, you have likely used a construct that cannot be low
 *   **Global Helper Blowups**: `all_different` creates pairwise constraints over its finite domain. Large domains can produce quadratic constraint growth.
 *   **Unsupported Piecewise Contexts**: `maximize abs(e)`, `minimize min(...)`, `maximize max(...)`, `abs(e) >= C`, non-affine expressions that would exceed backend degree, and missing finite auxiliary bounds are rejected with `QSOL3101`.
 *   **Multiple Objectives**: More than one objective statement is rejected with `QSOL3201` unless config uses `qubo_policy = "manual"` and provides one `qubo_weights` entry for every objective label (or `objective_N` fallback name). `qubo_policy = "auto"` is reserved and reports `QSOL3202`.
+
+## 5. Directed Acyclic Subgraphs And Route Warnings
+
+`DirectedAcyclicSubgraph(D)` is backend-supported for grounded `DirectedGraph`
+structures. It introduces one selected-arc binary per `D.arcs` tuple and one
+internal integer rank per vertex. Dense directed graphs therefore produce one
+order constraint per arc. Prefer `inspect estimate --json` or `targets check
+--estimate` before solving large feedback-arc-style instances.
+
+Route transition hard constraints that expand to unsupported boolean formulas
+are rejected with route-specific help. Prefer numeric transition-cost objectives
+or explicit penalty aggregates, then inspect the route aggregate warning in
+estimator output.

@@ -620,6 +620,61 @@ problem P {
     )
 
 
+def test_directed_acyclic_subgraph_requires_directed_graph_and_types_has_arc() -> None:
+    valid_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+  find A : DirectedAcyclicSubgraph(D);
+  must forall (u, v) in D.arcs: A.has_arc(u, v) or not A.has_arc(u, v);
+}
+"""
+    valid_unit = compile_source(valid_text, options=CompileOptions(filename="dag_ok.qsol"))
+    assert not any(d.is_error for d in valid_unit.diagnostics)
+
+    wrong_arg_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find A : DirectedAcyclicSubgraph(G);
+}
+"""
+    wrong_arg_unit = compile_source(
+        wrong_arg_text, options=CompileOptions(filename="dag_bad_arg.qsol")
+    )
+    assert any(
+        d.code == "QSOL2001"
+        and "DirectedAcyclicSubgraph expects a DirectedGraph structure argument" in d.message
+        for d in wrong_arg_unit.diagnostics
+    )
+
+    wrong_method_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  set W;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+  find A : DirectedAcyclicSubgraph(D);
+  must forall u in V: forall w in W: A.has_arc(u, w);
+}
+"""
+    wrong_method_unit = compile_source(
+        wrong_method_text, options=CompileOptions(filename="dag_bad_method.qsol")
+    )
+    assert any(
+        d.code == "QSOL2101" and "expected element of `V`" in d.message
+        for d in wrong_method_unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_wrong_relation_shape() -> None:
     ternary_text = """
 problem P {

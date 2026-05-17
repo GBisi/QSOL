@@ -17,6 +17,7 @@ class GraphData:
     vertices: tuple[str, ...]
     edges: tuple[tuple[str, str], ...]
     edge_lookup: frozenset[tuple[str, str]]
+    directed: bool = False
 
     @classmethod
     def from_ground_problem(
@@ -27,18 +28,20 @@ class GraphData:
         diagnostics: list[Diagnostic],
     ) -> GraphData | None:
         structure = problem.structures.get(graph_name)
-        if structure is not None and structure.get("constructor") != "UndirectedGraph":
+        constructor = structure.get("constructor") if structure is not None else "UndirectedGraph"
+        if structure is not None and constructor not in {"UndirectedGraph", "DirectedGraph"}:
             diagnostics.append(
                 _graph_diagnostic(
                     span,
                     "QSOL3301",
-                    f"graph unknown expects an UndirectedGraph, got `{graph_name}`",
+                    f"graph unknown expects a graph structure, got `{graph_name}`",
                 )
             )
             return None
 
         vertices = problem.set_values.get(f"{graph_name}.vertices")
-        edges = problem.relation_values.get(f"{graph_name}.edges")
+        edge_domain = "arcs" if constructor == "DirectedGraph" else "edges"
+        edges = problem.relation_values.get(f"{graph_name}.{edge_domain}")
         if vertices is None or edges is None:
             diagnostics.append(
                 _graph_diagnostic(span, "QSOL3301", f"missing grounded graph `{graph_name}`")
@@ -51,12 +54,15 @@ class GraphData:
             vertices=tuple(str(vertex) for vertex in vertices),
             edges=normalized_edges,
             edge_lookup=frozenset(normalized_edges),
+            directed=constructor == "DirectedGraph",
         )
 
     def edge_key(self, u: object, v: object) -> tuple[str, str] | None:
         forward = (str(u), str(v))
         if forward in self.edge_lookup:
             return forward
+        if self.directed:
+            return None
         reverse = (str(v), str(u))
         if reverse in self.edge_lookup:
             return reverse
@@ -78,6 +84,17 @@ class GraphUnknownLabels:
     def edge_meaning(self, edge: tuple[object, object]) -> str:
         u, v = edge
         return f"{self.find_name}.has_edge({u},{v})"
+
+    def arc_var(self, arc: tuple[object, object]) -> str:
+        u, v = arc
+        return f"{self.find_name}.has_arc[{u},{v}]"
+
+    def arc_meaning(self, arc: tuple[object, object]) -> str:
+        u, v = arc
+        return f"{self.find_name}.has_arc({u},{v})"
+
+    def rank_var(self, vertex: object) -> str:
+        return f"__qsol_rank:{self.find_name}:{vertex}"
 
     def vertex_var(self, vertex: object) -> str:
         return f"{self.find_name}.has_vertex[{vertex}]"
@@ -329,6 +346,53 @@ def add_steiner_tree_constraints(
             )
         added += 1
 
+    return added
+
+
+def add_directed_acyclic_constraints(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    graph: GraphData,
+    labels: GraphUnknownLabels,
+    binaries: dict[str, Any],
+    ranks: dict[str, Any],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> int:
+    if not graph.directed:
+        diagnostics.append(
+            _graph_diagnostic(
+                span,
+                "QSOL3301",
+                f"DirectedAcyclicSubgraph expects a DirectedGraph, got `{graph.name}`",
+            )
+        )
+        return 0
+
+    vertex_count = len(graph.vertices)
+    added = 0
+    for u, v in graph.edges:
+        arc_label = labels.arc_var((u, v))
+        selected = binaries.get(arc_label)
+        left_rank = ranks.get(u)
+        right_rank = ranks.get(v)
+        if selected is None or left_rank is None or right_rank is None:
+            diagnostics.append(
+                _graph_diagnostic(
+                    span,
+                    "QSOL3303",
+                    f"missing DirectedAcyclicSubgraph variables for `{labels.find_name}`",
+                )
+            )
+            continue
+        _add_model_constraint(
+            cqm,
+            lhs=left_rank + 1 - right_rank - (vertex_count * (1 - selected)),
+            rhs=0,
+            sense="<=",
+            label=f"implicit_directed_acyclic_order:{labels.find_name}:{u}:{v}",
+        )
+        added += 1
     return added
 
 

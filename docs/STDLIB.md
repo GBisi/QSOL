@@ -166,6 +166,8 @@ find M : Matching(G);
 minimize count((u, v) in G.edges where M.has_edge(u, v));
 find C : HamiltonianCycle(G);
 minimize count((u, v) in G.edges where C.uses(u, v));
+find A : DirectedAcyclicSubgraph(D);
+maximize count((u, v) in D.arcs where A.has_arc(u, v));
 ```
 
 *   **`Matching(G)`** expects an `UndirectedGraph` structure. It selects a set
@@ -189,6 +191,9 @@ minimize count((u, v) in G.edges where C.uses(u, v));
     `1..size(G.vertices)`; users do not declare a positions set.
 *   **`HamiltonianCycle(G)`** has the same views and also requires the last
     and first positions to be adjacent.
+*   **`DirectedAcyclicSubgraph(D)`** expects a `DirectedGraph` structure. It
+    selects a subset of `D.arcs` that admits a topological order.
+*   **View**: `has_arc(u: Elem(V), v: Elem(V))`.
 
 For `dimod-cqm-v1`, `Matching(G)` creates one binary variable per grounded edge
 in `G.edges`. The backend adds incident-edge `<= 1` constraints only for
@@ -219,6 +224,12 @@ one edge variable per grounded edge. It requires nonempty terminals, selects
 every terminal vertex, gates selected edges by selected endpoints, routes
 internal connectivity flow from one terminal root, and enforces
 `sum(selected_edges) == sum(selected_vertices) - 1`.
+
+`DirectedAcyclicSubgraph(D)` creates one selected-arc binary variable per
+grounded arc in `D.arcs` and one internal integer rank variable per vertex. For
+every selected arc `(u, v)`, the backend enforces `rank[u] + 1 <= rank[v]`;
+unselected arcs relax that order constraint. This provides a compact feedback
+edge/arc modeling primitive while keeping objective choice in source.
 
 The graph module also keeps the older compiler-owned relation helpers:
 

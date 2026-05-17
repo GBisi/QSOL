@@ -811,6 +811,111 @@ Edge = [["a", "b"], ["b", "c"], ["a", "c"]]
     assert objective.get_linear("T.has_edge[a,c]") == 5
 
 
+def test_compile_supports_directed_acyclic_subgraph(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem DirectedAcyclicSubgraphDemo {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+
+  find A : DirectedAcyclicSubgraph(D);
+
+  maximize count((u, v) in D.arcs where A.has_arc(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "DirectedAcyclicSubgraphDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Arc = [["a", "b"], ["b", "c"], ["c", "a"]]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="directed_acyclic_subgraph.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-directed-acyclic-subgraph"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not [d for d in unit.diagnostics if d.is_error]
+    assert unit.compiled_model is not None
+    labels = set(unit.compiled_model.cqm.variables)
+    assert "A.has_arc[a,b]" in labels
+    assert "A.has_arc[b,c]" in labels
+    assert "A.has_arc[c,a]" in labels
+    assert "__qsol_rank:A:a" in labels
+    assert any(
+        label.startswith("implicit_directed_acyclic_order:A:")
+        for label in unit.compiled_model.cqm.constraints
+    )
+
+
+def test_directed_acyclic_subgraph_rejects_non_arc_view() -> None:
+    source = """
+use stdlib.graph;
+
+problem DirectedAcyclicSubgraphDemo {
+  set V;
+  relation Arc(u: V, v: V);
+  structure D = DirectedGraph(V, Arc);
+
+  param Start : Elem(V);
+  param End : Elem(V);
+
+  find A : DirectedAcyclicSubgraph(D);
+
+  must A.has_arc(Start, End);
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "DirectedAcyclicSubgraphDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Arc = [["a", "b"], ["b", "c"]]
+
+[scenarios.baseline.params]
+Start = "a"
+End = "c"
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="directed_acyclic_subgraph_bad_view.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir="outdir/directed_acyclic_subgraph_bad_view",
+            output_format="qubo",
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL3302" and "A.has_arc(a, c)` is not an arc of `D`" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {
@@ -927,6 +1032,57 @@ V = ["a", "b"]
     assert not [d for d in unit.diagnostics if d.is_error]
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
+
+
+def test_route_hard_constraint_shape_reports_source_span() -> None:
+    source = """
+use stdlib.route;
+
+problem RouteSuccessorDemo {
+  set Cities;
+  set Positions = Range(1, size(Cities));
+  param Cost[Cities, Cities] : Real = 0;
+  find Tour : Route(Positions, Cities);
+
+  must forall p in Positions: forall q in Positions: forall u in Cities: forall v in Cities:
+    not Tour.transition(p, q, u, v) or not cyclic_successor(p, q, size(Positions)) or Cost[u, v] > 0;
+
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "RouteSuccessorDemo"
+
+[scenarios.baseline.sets]
+Cities = ["a", "b", "c"]
+
+[scenarios.baseline.params.Cost]
+a = { a = 0, b = 4, c = 7 }
+b = { a = 4, b = 0, c = 2 }
+c = { a = 7, b = 2, c = 0 }
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="route_hard_constraint.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir="outdir/route_hard_constraint",
+            output_format="qubo",
+        ),
+    )
+
+    errors = [d for d in unit.diagnostics if d.code == "QSOL3001"]
+    assert errors
+    assert all(d.span.filename == "route_hard_constraint.qsol" for d in errors)
+    assert any(
+        "numeric penalty/objective aggregate" in help_text for d in errors for help_text in d.help
+    )
 
 
 def test_compile_supports_route_cyclic_successor_objective(tmp_path: Path) -> None:

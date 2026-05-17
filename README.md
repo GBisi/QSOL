@@ -112,7 +112,8 @@ problem GraphColoring {
 > For more on the QSOL syntax, see [QSOL Syntax Guide](docs/QSOL_SYNTAX.md). For the full standard library, see [stdlib reference](docs/STDLIB.md).
 
 For graph models, `use stdlib.graph;` exposes compiler-owned unknowns such as
-`Matching(G)`, `SteinerTree(G, Terminals)`, and Hamiltonian path/cycle forms.
+`Matching(G)`, `SteinerTree(G, Terminals)`, Hamiltonian path/cycle forms, and
+`DirectedAcyclicSubgraph(D)`.
 They keep graph semantics declarative while the backend owns the internal
 variables and connectivity encodings.
 
@@ -195,7 +196,8 @@ Use `inspect estimate` before a build when you want grounded set/relation and
 structure-domain sizes, decision summaries, CQM variable counts, and backend
 warnings without writing artifacts. The warnings include graph-helper expansion
 risks such as dense graph relations, forest acyclicity cuts, Steiner flow
-variables, and Hamiltonian transition/link variables:
+variables, Hamiltonian transition/link variables, route transition aggregates,
+and directed acyclic subgraph order constraints:
 
 ```bash
 uv run qsol inspect estimate examples/tutorials/graph_helpers.qsol \

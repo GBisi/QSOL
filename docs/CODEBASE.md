@@ -125,9 +125,10 @@ that did not materialize during grounding.
 
 `src/qsol/backend/graph_encoding.py` owns shared graph encoding utilities:
 canonical undirected edge lookup, graph unknown labels, matching/maximality
-constraints, rooted connectivity flow constraints, and internal forest
-acyclicity constraints. These utilities are backend internals and should not
-leak orientation or cycle-enumeration syntax into QSOL source.
+constraints, rooted connectivity flow constraints, internal forest acyclicity
+constraints, and directed topological-order constraints. These utilities are
+backend internals and should not leak low-level flow, rank, or cycle-enumeration
+syntax into QSOL source.
 
 ## 8. Test Suite Map
 

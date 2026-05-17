@@ -73,13 +73,21 @@ def _span(filename: str) -> Span:
     )
 
 
-def _diag(filename: str, *, code: str, message: str, notes: list[str] | None = None) -> Diagnostic:
+def _diag(
+    filename: str,
+    *,
+    code: str,
+    message: str,
+    notes: list[str] | None = None,
+    help: list[str] | None = None,
+) -> Diagnostic:
     return Diagnostic(
         severity=Severity.ERROR,
         code=code,
         message=message,
         span=_span(filename),
         notes=notes or [],
+        help=help or [],
     )
 
 
@@ -165,9 +173,13 @@ def _with_support_diagnostics(unit: CompilationUnit, *, filename: str) -> Compil
 
     for issue in unit.support_report.issues:
         diagnostic_code = None
+        help_items: list[str] = []
         if isinstance(issue.detail, dict):
             raw_code = issue.detail.get("diagnostic_code")
             diagnostic_code = raw_code if isinstance(raw_code, str) else None
+            raw_help = issue.detail.get("help")
+            if isinstance(raw_help, list):
+                help_items = [item for item in raw_help if isinstance(item, str)]
         unit.diagnostics.append(
             _diag(
                 filename,
@@ -175,6 +187,7 @@ def _with_support_diagnostics(unit: CompilationUnit, *, filename: str) -> Compil
                 message=issue.message,
                 notes=[f"stage={issue.stage}"]
                 + ([f"capability={issue.capability_id}"] if issue.capability_id else []),
+                help=help_items,
             )
         )
     return unit

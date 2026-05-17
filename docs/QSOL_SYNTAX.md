@@ -206,6 +206,7 @@ find F : Forest(G); // from `use stdlib.graph;`
 find ST : SteinerTree(G, Terminals); // `Terminals : StaticSubset(V)`
 find P : HamiltonianPath(G); // from `use stdlib.graph;`
 find C : HamiltonianCycle(G); // from `use stdlib.graph;`
+find A : DirectedAcyclicSubgraph(D); // `D = DirectedGraph(V, Arc)`
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
@@ -241,6 +242,8 @@ Scalar decisions are also valid:
   `1..size(G.vertices)`; consecutive positions must be adjacent in `G`.
 - `HamiltonianCycle(G)` has the same views and also requires the final and
   first positions to be adjacent.
+- `DirectedAcyclicSubgraph(D)` expects a `DirectedGraph`, exposes
+  `A.has_arc(u, v)`, and enforces an internal topological rank order on selected arcs.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,

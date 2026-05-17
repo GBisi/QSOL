@@ -37,6 +37,8 @@ These examples back `docs/tutorials/` and provide small end-to-end models for ta
 - `route_successor.qsol.toml`
 - `manual_objective_scalarization.qsol`
 - `manual_objective_scalarization.qsol.toml`
+- `directed_acyclic_subgraph.qsol`
+- `directed_acyclic_subgraph.qsol.toml`
 
 ## Run
 
@@ -200,6 +202,15 @@ uv run qsol build \
   --format qubo
 ```
 
+```bash
+uv run qsol build \
+  examples/tutorials/directed_acyclic_subgraph.qsol \
+  --config examples/tutorials/directed_acyclic_subgraph.qsol.toml \
+  --runtime local-dimod \
+  --out outdir/directed_acyclic_subgraph \
+  --format qubo
+```
+
 ## Expected Result
 
 Commands succeed and write artifacts under `outdir/*`, including:
@@ -276,6 +287,10 @@ Commands succeed and write artifacts under `outdir/*`, including:
 - `manual_objective_scalarization.qsol.toml`
   - `entrypoint.objectives.qubo_policy = "manual"` enables explicit multiple-objective scalarization.
   - `entrypoint.objectives.qubo_weights` supplies one weight per objective label.
+- `directed_acyclic_subgraph.qsol.toml`
+  - `scenarios.baseline.sets.V`
+  - `scenarios.baseline.relations.Arc` supplies the directed graph.
+  - `DirectedAcyclicSubgraph(D)` selects a maximum acyclic subset of arcs.
 
 ## Related
 

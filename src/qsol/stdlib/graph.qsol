@@ -6,7 +6,7 @@
 //
 // The compiler also recognizes stdlib-surfaced graph unknowns such as
 // Matching(G), MaximalMatching(G), SpanningTree(G), Forest(G), SteinerTree(G, Terminals),
-// HamiltonianPath(G), and HamiltonianCycle(G). Their
+// HamiltonianPath(G), HamiltonianCycle(G), and DirectedAcyclicSubgraph(D). Their
 // implementations live in the compiler/backend because they need efficient
 // graph-indexed decision variables and constraints.
 //

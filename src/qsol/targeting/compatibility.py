@@ -37,6 +37,8 @@ def extract_required_capabilities(ground: ir.GroundIR) -> set[str]:
                 capabilities.add("unknown.graph.hamiltonian_path.v1")
             elif kind == "HamiltonianCycle":
                 capabilities.add("unknown.graph.hamiltonian_cycle.v1")
+            elif kind == "DirectedAcyclicSubgraph":
+                capabilities.add("unknown.graph.directed_acyclic_subgraph.v1")
             else:
                 capabilities.add("unknown.custom.v1")
 
@@ -196,6 +198,7 @@ def check_pair_support(
                         "diagnostic_code": diag.code,
                         "line": diag.span.line,
                         "col": diag.span.col,
+                        "help": list(diag.help),
                     },
                 )
             )
