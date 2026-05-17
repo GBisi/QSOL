@@ -71,6 +71,13 @@ relation and materialize compiler-owned static domains such as `G.edges`,
 decision variables or backend constraints; their methods lower to static
 relation membership formulas.
 
+Stdlib-surfaced graph unknowns such as `Matching(G)` remain graph-level unknowns
+through semantic checking and Kernel IR. The backend graph encoder validates the
+grounded graph data, allocates only the required graph-indexed variables, and
+adds the implicit graph constraints. For `Matching(G)`, this means one binary
+variable per grounded `G.edges` tuple plus incident-edge constraints for
+vertices of degree at least two.
+
 Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
 
 Supported piecewise numeric forms are lowered before KIR:

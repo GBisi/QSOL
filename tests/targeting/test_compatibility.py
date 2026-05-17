@@ -44,6 +44,15 @@ def _subset_find(name: str, set_name: str) -> ir.KFindDecl:
     )
 
 
+def _matching_find(name: str, graph_name: str) -> ir.KFindDecl:
+    span = _span()
+    return ir.KFindDecl(
+        span=span,
+        name=name,
+        unknown_type=ast.UnknownTypeRef(span=span, kind="Matching", args=(graph_name,)),
+    )
+
+
 def _ground_program(*, custom_find: bool = False) -> ir.GroundIR:
     span = _span()
     x_name = ir.KName(span=span, name="x")
@@ -125,6 +134,29 @@ def test_extract_required_capabilities_includes_key_features() -> None:
 
     assert "objective.sum.v1" in required
     assert "objective.if_then_else.v1" in required
+
+
+def test_extract_required_capabilities_includes_matching_unknown() -> None:
+    span = _span()
+    ground = ir.GroundIR(
+        span=span,
+        problems=(
+            ir.GroundProblem(
+                span=span,
+                name="P",
+                set_values={"G.vertices": ("a", "b"), "V": ("a", "b")},
+                relation_values={"G.edges": (("a", "b"),)},
+                params={},
+                finds=(_matching_find("M", "G"),),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    required = extract_required_capabilities(ground)
+
+    assert "unknown.graph.matching.v1" in required
 
 
 def test_check_pair_support_full_support() -> None:

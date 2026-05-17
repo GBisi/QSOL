@@ -1,3 +1,4 @@
+import json
 import tomllib
 from pathlib import Path
 
@@ -310,6 +311,61 @@ Arc = [
         ("C", "A"),
         ("C", "B"),
     )
+
+
+def test_matching_graph_unknown_builds_efficient_edge_variables(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem MatchingDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+
+  find M : Matching(G);
+
+  minimize count((u, v) in G.edges where M.has_edge(v, u));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MatchingDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["b", "a"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-matching"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="matching.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert unit.artifacts.stats["cqm_binary_variables"] == 2
+    assert unit.artifacts.stats["num_constraints"] >= 1
+    varmap = json.loads(Path(unit.artifacts.varmap_path or "").read_text(encoding="utf-8"))
+    assert varmap == {
+        "M.has_edge[a,b]": "M.has_edge(a,b)",
+        "M.has_edge[b,c]": "M.has_edge(b,c)",
+    }
 
 
 def test_graph_structure_rejects_loops() -> None:

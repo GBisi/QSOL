@@ -252,6 +252,7 @@ QSOL has scalar, element, comprehension, and decision-abstraction types.
 | `Comp(Real)` | Numeric comprehension argument | `Weight[i] for i in Items` |
 | `Subset(S)` | Unknown subset of `S` | `find Pick : Subset(Items);` |
 | `Mapping(A -> B)` | Unknown total mapping from `A` to `B` | `find Assign : Mapping(Tasks -> Workers);` |
+| `Matching(G)` | Unknown matching over an undirected graph | `find M : Matching(G);` |
 | User unknown | Custom abstraction from `unknown` | `find Tour : Permutation(Cities);` |
 
 Numeric literals are typed as `Real`. Integer decision bounds use numeric
@@ -322,6 +323,7 @@ Primitive decision forms:
 ```qsol
 find Pick : Subset(Items);
 find Assign : Mapping(Tasks -> Workers);
+find M : Matching(G);
 find Enabled : Bool;
 find Load[Machines] : Int[0 .. Capacity];
 ```
@@ -331,6 +333,10 @@ Semantics:
 - `Subset(S)` exposes `Pick.has(x)`, a boolean decision for each `x in S`.
 - `Mapping(A -> B)` exposes `Assign.is(a, b)`, with exactly one target `b` for
   each source `a`.
+- `Matching(G)` expects `G` to be an `UndirectedGraph`. It exposes
+  `M.has_edge(u, v)` and selects edges such that each vertex is incident to at
+  most one selected edge. It is surfaced through `stdlib.graph` but implemented
+  by compiler/backend graph encoders for efficient edge-indexed variables.
 - Scalar `Bool` creates one binary decision.
 - Scalar `Int[lo .. hi]` creates a bounded integer CQM decision. Indexed integer
   finds create one bounded integer decision per grounded index.
@@ -622,6 +628,19 @@ predicate transition(p: Elem(Positions), q: Elem(Positions), u: Elem(V), v: Elem
 This module marks graph helpers and enables graph structure names used by the
 compiler. Static graph behavior is compiler-owned rather than implemented as
 ordinary QSOL decisions.
+
+It also exposes compiler-known graph unknowns:
+
+```qsol
+use stdlib.graph;
+
+find M : Matching(G);
+```
+
+`Matching(G)` requires an `UndirectedGraph`. It creates a matching decision over
+`G.edges` and exposes `M.has_edge(u, v)`. The unknown itself only enforces the
+matching property; cardinality, weights, and optimization direction belong in
+ordinary `minimize` or `maximize` objectives.
 
 ## 14. TOML Configuration Format
 

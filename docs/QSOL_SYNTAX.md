@@ -195,6 +195,7 @@ Structures create no solver variables or backend constraints by themselves.
 ```qsol
 find Pick : Subset(Workers);
 find Assign : Mapping(Workers -> Tasks);
+find M : Matching(G); // from `use stdlib.graph;`
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
@@ -203,8 +204,10 @@ find Flow[Arc] : Int[0 .. size(Arc)];
 find TotalLength : Int[0 .. sum(Length[j] for j in Jobs)];
 ```
 
-`find` supports primitive unknowns (`Subset`, `Mapping`) and user-defined unknowns.
-Custom unknown finds are elaborated in frontend into primitive finds plus generated constraints.
+`find` supports primitive unknowns (`Subset`, `Mapping`), stdlib-surfaced
+compiler-known unknowns such as `Matching(G)`, and user-defined unknowns. Custom
+unknown finds are elaborated in frontend into primitive finds plus generated
+constraints.
 
 Scalar decisions are also valid:
 - `Bool` creates a binary scalar decision usable in boolean expressions.
@@ -213,6 +216,9 @@ Scalar decisions are also valid:
 - Relation-indexed scalar decisions create one decision per relation tuple and use one bracket argument per relation field, for example `Flow[u, v]` inside `for (u, v) in Arc`.
 - Structure-domain-indexed scalar decisions work the same way, for example
   `Selected[u, v]` inside `for (u, v) in G.edges`.
+- `Matching(G)` expects an `UndirectedGraph` and exposes
+  `M.has_edge(u, v)`. It selects edges so no vertex is incident to more than
+  one selected edge.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,

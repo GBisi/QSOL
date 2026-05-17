@@ -4,5 +4,9 @@
 //   adjacent(Edge, u, v) -> Edge(u, v) or Edge(v, u)
 //   nonedge(Edge, u, v) -> not Edge(u, v) and not Edge(v, u)
 //
+// The compiler also recognizes stdlib-surfaced graph unknowns such as
+// Matching(G). Their implementations live in the compiler/backend because
+// they need efficient graph-indexed decision variables and constraints.
+//
 // This module exists so models can declare `use stdlib.graph;` explicitly.
 predicate graph_module_loaded(): Bool = true;

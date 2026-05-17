@@ -404,6 +404,59 @@ problem P {
     assert not any(d.is_error for d in unit.diagnostics)
 
 
+def test_matching_unknown_requires_graph_structure() -> None:
+    valid_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : Matching(G);
+  must forall (u, v) in G.edges: M.has_edge(u, v) or not M.has_edge(u, v);
+}
+"""
+    valid_unit = compile_source(valid_text, options=CompileOptions(filename="matching_ok.qsol"))
+    assert not any(d.is_error for d in valid_unit.diagnostics)
+
+    wrong_arg_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  find M : Matching(V);
+}
+"""
+    wrong_arg_unit = compile_source(
+        wrong_arg_text, options=CompileOptions(filename="matching_bad_arg.qsol")
+    )
+    assert any(
+        d.code == "QSOL2001"
+        and "Matching expects an UndirectedGraph structure argument" in d.message
+        for d in wrong_arg_unit.diagnostics
+    )
+
+    wrong_method_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  set W;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : Matching(G);
+  must forall u in V: forall w in W: M.has_edge(u, w);
+}
+"""
+    wrong_method_unit = compile_source(
+        wrong_method_text, options=CompileOptions(filename="matching_bad_method.qsol")
+    )
+    assert any(
+        d.code == "QSOL2101" and "expected element of `V`" in d.message
+        for d in wrong_method_unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_wrong_relation_shape() -> None:
     ternary_text = """
 problem P {

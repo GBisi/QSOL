@@ -757,6 +757,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
         return {
             "unknown.subset.v1": "full",
             "unknown.mapping.v1": "full",
+            "unknown.graph.matching.v1": "full",
             "unknown.custom.v1": "none",
             "decision.scalar.bool.v1": "full",
             "decision.scalar.int.v1": "full",

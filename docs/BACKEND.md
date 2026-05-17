@@ -6,7 +6,7 @@ The `dimod-cqm-v1` backend translates QSOL models into Constrained Quadratic Mod
 
 This backend supports:
 *   **Problem Types**: Optimization and Satisfaction.
-*   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
+*   **Variables**: Binary variables generated from higher-level `Subset`, `Mapping`, and supported graph unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
 *   **Objectives**: One linear or quadratic objective statement.
 *   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
@@ -31,6 +31,24 @@ For a find `Map : Mapping(D -> C)`, the backend generates binary variables for e
 
 It also generates implicit "exactly one" constraints to ensure each element in `D` maps to exactly one element in `C`:
 `sum(Map.is(d, c) for c in C) == 1` for each `d` in `D`.
+
+### `Matching(G)`
+
+For a find `M : Matching(G)`, where `G` is an `UndirectedGraph`, the backend
+generates one binary variable for each grounded edge in `G.edges`:
+
+*   `M.has_edge(u, v)`
+
+The backend also generates matching constraints. For every vertex with at least
+two incident grounded edges, the incident selected-edge sum is constrained:
+
+```text
+sum(M.has_edge(u, v) for (u, v) incident to x) <= 1
+```
+
+Vertices with degree 0 or 1 do not need a backend constraint. The view
+`M.has_edge(v, u)` resolves to the same binary variable as `M.has_edge(u, v)`
+for the canonical undirected edge stored in `G.edges`.
 
 ### Scalar Decisions
 

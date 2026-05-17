@@ -189,6 +189,26 @@ problem P {
     assert problem.stmts[3].indices == ["G.edges"]
 
 
+def test_parse_matching_unknown() -> None:
+    text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : Matching(G);
+}
+"""
+    program = parse_to_ast(text, filename="matching_unknown.qsol")
+    problem = program.items[1]
+    assert isinstance(problem, ast.ProblemDef)
+    find = problem.stmts[3]
+    assert isinstance(find, ast.FindDecl)
+    assert find.unknown_type.kind == "Matching"
+    assert find.unknown_type.args == ("G",)
+
+
 def test_parse_bare_scalar_bool_param_in_constraint() -> None:
     text = """
 problem P {

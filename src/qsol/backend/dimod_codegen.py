@@ -205,10 +205,64 @@ class DimodCodegen:
                         span=find.span,
                         diagnostics=diagnostics,
                     )
+            elif kind == "Matching":
+                self._declare_matching_variables(problem, find, cqm, binaries, varmap, diagnostics)
             else:
                 diagnostics.append(
                     self._unsupported(find.span, f"unsupported unknown kind `{kind}`")
                 )
+
+    def _declare_matching_variables(
+        self,
+        problem: ir.GroundProblem,
+        find: ir.KFindDecl,
+        cqm: dimod.ConstrainedQuadraticModel,
+        binaries: dict[str, BinaryVar],
+        varmap: dict[str, str],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if len(find.unknown_type.args) != 1:
+            diagnostics.append(
+                self._unsupported(find.span, "`Matching` expects one graph argument")
+            )
+            return
+        graph_name = find.unknown_type.args[0]
+        vertices = problem.set_values.get(f"{graph_name}.vertices")
+        edges = problem.relation_values.get(f"{graph_name}.edges")
+        if vertices is None or edges is None:
+            diagnostics.append(
+                self._unsupported(find.span, f"missing grounded graph `{graph_name}` for Matching")
+            )
+            return
+
+        for edge in sorted(edges, key=lambda item: tuple(str(part) for part in item)):
+            if len(edge) != 2:
+                diagnostics.append(
+                    self._unsupported(find.span, f"invalid edge arity for graph `{graph_name}`")
+                )
+                continue
+            u, v = str(edge[0]), str(edge[1])
+            label = self._matching_edge_label(find.name, u, v)
+            binaries[label] = _new_binary(label)
+            varmap[label] = f"{find.name}.has_edge({u},{v})"
+
+        for vertex in sorted((str(value) for value in vertices), key=str):
+            incident = [
+                binaries[self._matching_edge_label(find.name, str(edge[0]), str(edge[1]))]
+                for edge in edges
+                if len(edge) == 2 and vertex in {str(edge[0]), str(edge[1])}
+            ]
+            if len(incident) <= 1:
+                continue
+            self._add_numeric_constraint(
+                cqm,
+                lhs=sum(incident, 0.0),
+                rhs=1.0,
+                op="<=",
+                label=f"implicit_matching_degree:{find.name}:{vertex}",
+                span=find.span,
+                diagnostics=diagnostics,
+            )
 
     def _emit_constraint(
         self,
@@ -1358,6 +1412,36 @@ class DimodCodegen:
             if a is None or b is None:
                 return None
             return self._mapping_label(target, a, b)
+        if expr.name == "has_edge" and len(expr.args) == 2:
+            find = next(
+                (candidate for candidate in problem.finds if candidate.name == target), None
+            )
+            if (
+                find is None
+                or not isinstance(find.decision_type, ir.KUnknownDecisionType)
+                or find.unknown_type.kind != "Matching"
+            ):
+                return None
+            a = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+            b = self._resolve_name_arg(problem, expr.args[1], diagnostics, env)
+            if a is None or b is None:
+                return None
+            graph_name = find.unknown_type.args[0] if find.unknown_type.args else ""
+            edges = {
+                (str(edge[0]), str(edge[1]))
+                for edge in problem.relation_values.get(f"{graph_name}.edges", ())
+                if len(edge) == 2
+            }
+            if (a, b) in edges:
+                return self._matching_edge_label(target, a, b)
+            if (b, a) in edges:
+                return self._matching_edge_label(target, b, a)
+            diagnostics.append(
+                self._unsupported(
+                    expr.span, f"`{target}.has_edge({a}, {b})` is not an edge of `{graph_name}`"
+                )
+            )
+            return None
         return None
 
     def _int_bounds(self, decision_type: ir.KIntDecisionType) -> tuple[int | None, int | None]:
@@ -1458,6 +1542,9 @@ class DimodCodegen:
 
     def _mapping_label(self, name: str, a: object, b: object) -> str:
         return f"{name}.is[{a},{b}]"
+
+    def _matching_edge_label(self, name: str, u: object, v: object) -> str:
+        return f"{name}.has_edge[{u},{v}]"
 
     def _constraint_label(self, span: Span) -> str:
         self._label_counter += 1

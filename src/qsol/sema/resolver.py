@@ -339,6 +339,40 @@ class Resolver:
                                     help=help_items,
                                 )
                             )
+                elif unknown_ref.kind == "Matching":
+                    if len(unknown_ref.args) != 1:
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2001",
+                                message="Matching expects one UndirectedGraph structure argument",
+                                span=stmt.span,
+                                help=["Use `find M : Matching(G);`."],
+                            )
+                        )
+                    else:
+                        graph_name = unknown_ref.args[0]
+                        graph_symbol = scope.lookup(graph_name)
+                        if (
+                            graph_symbol is None
+                            or graph_symbol.kind != SymbolKind.STRUCTURE
+                            or not isinstance(graph_symbol.type, StructureInstanceType)
+                            or graph_symbol.type.constructor != "UndirectedGraph"
+                        ):
+                            diagnostics.append(
+                                Diagnostic(
+                                    severity=Severity.ERROR,
+                                    code="QSOL2001",
+                                    message=(
+                                        "Matching expects an UndirectedGraph structure argument"
+                                    ),
+                                    span=stmt.span,
+                                    help=[
+                                        "Declare `structure G = UndirectedGraph(V, Edge);` "
+                                        "before `find M : Matching(G);`."
+                                    ],
+                                )
+                            )
                 else:
                     if global_scope.lookup(unknown_ref.kind) is None:
                         candidates = [

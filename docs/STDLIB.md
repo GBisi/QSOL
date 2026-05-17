@@ -146,6 +146,25 @@ find Selected[G.edges] : Bool;
 must forall (u, v) in G.non_edges: not (Chosen.has(u) and Chosen.has(v));
 ```
 
+The graph module also exposes stdlib-surfaced graph unknowns whose encodings are
+compiler-owned:
+
+```qsol
+find M : Matching(G);
+minimize count((u, v) in G.edges where M.has_edge(u, v));
+```
+
+*   **`Matching(G)`** expects an `UndirectedGraph` structure. It selects a set
+    of edges such that each vertex is incident to at most one selected edge.
+*   **View**: `has_edge(u: Elem(V), v: Elem(V))`.
+
+For `dimod-cqm-v1`, `Matching(G)` creates one binary variable per grounded edge
+in `G.edges`. The backend adds incident-edge `<= 1` constraints only for
+vertices with two or more incident grounded edges, so degree-0 and degree-1
+vertices do not create redundant constraints. Objectives decide whether the
+matching should be minimum, maximum, weighted, or used as a feasibility
+component.
+
 The graph module also keeps the older compiler-owned relation helpers:
 
 *   **`adjacent(Edge, u, v)`** lowers to `Edge(u, v) or Edge(v, u)`.
