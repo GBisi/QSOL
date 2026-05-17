@@ -417,6 +417,59 @@ Edge = [
     )
 
 
+def test_maximal_matching_adds_maximality_constraints(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem MinimumMaximalMatchingDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+
+  find M : MaximalMatching(G);
+
+  minimize count((u, v) in G.edges where M.has_edge(u, v)) as cardinality;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MinimumMaximalMatchingDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="maximal_matching.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-maximal-matching"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert unit.artifacts.stats["cqm_binary_variables"] == 2
+    assert unit.artifacts.stats["num_constraints"] >= 3
+    varmap = json.loads(Path(unit.artifacts.varmap_path or "").read_text(encoding="utf-8"))
+    assert varmap == {
+        "M.has_edge[a,b]": "M.has_edge(a,b)",
+        "M.has_edge[b,c]": "M.has_edge(b,c)",
+    }
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {

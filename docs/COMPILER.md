@@ -76,7 +76,8 @@ through semantic checking and Kernel IR. The backend graph encoder validates the
 grounded graph data, allocates only the required graph-indexed variables, and
 adds the implicit graph constraints. For `Matching(G)`, this means one binary
 variable per grounded `G.edges` tuple plus incident-edge constraints for
-vertices of degree at least two.
+vertices of degree at least two. `MaximalMatching(G)` reuses that encoding and
+adds one maximality constraint per grounded edge.
 
 The reusable graph encoding helpers live in `qsol.backend.graph_encoding`.
 They centralize canonical undirected edge lookup, incident-edge enumeration,

@@ -113,5 +113,51 @@ def add_degree_at_most_one_constraints(
     return added
 
 
+def add_maximal_matching_constraints(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    graph: GraphData,
+    labels: GraphUnknownLabels,
+    binaries: dict[str, Any],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> int:
+    added = 0
+    for edge in graph.edges:
+        incident_edges = {
+            incident
+            for endpoint in edge
+            for incident in graph.incident_edges(endpoint)
+            if labels.edge_var(incident) in binaries
+        }
+        if not incident_edges:
+            diagnostics.append(
+                _graph_diagnostic(
+                    span,
+                    "QSOL3303",
+                    f"could not add maximality constraint for `{labels.find_name}`",
+                )
+            )
+            continue
+        label = f"implicit_maximal_matching:{labels.find_name}:{edge[0]}:{edge[1]}"
+        try:
+            cqm.add_constraint(
+                sum((binaries[labels.edge_var(incident)] for incident in incident_edges), 0.0)
+                >= 1.0,
+                label=label,
+            )
+        except TypeError:
+            diagnostics.append(
+                _graph_diagnostic(
+                    span,
+                    "QSOL3303",
+                    f"could not add maximality constraint for `{labels.find_name}`",
+                )
+            )
+            continue
+        added += 1
+    return added
+
+
 def _graph_diagnostic(span: Span, code: str, message: str) -> Diagnostic:
     return Diagnostic(severity=Severity.ERROR, code=code, message=message, span=span)

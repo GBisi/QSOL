@@ -196,6 +196,7 @@ Structures create no solver variables or backend constraints by themselves.
 find Pick : Subset(Workers);
 find Assign : Mapping(Workers -> Tasks);
 find M : Matching(G); // from `use stdlib.graph;`
+find MM : MaximalMatching(G); // from `use stdlib.graph;`
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
@@ -219,6 +220,8 @@ Scalar decisions are also valid:
 - `Matching(G)` expects an `UndirectedGraph` and exposes
   `M.has_edge(u, v)`. It selects edges so no vertex is incident to more than
   one selected edge.
+- `MaximalMatching(G)` has the same `has_edge` view and also ensures no
+  additional graph edge can be added without violating the matching property.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,

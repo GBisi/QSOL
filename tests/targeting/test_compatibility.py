@@ -159,6 +159,37 @@ def test_extract_required_capabilities_includes_matching_unknown() -> None:
     assert "unknown.graph.matching.v1" in required
 
 
+def test_extract_required_capabilities_includes_maximal_matching_unknown() -> None:
+    span = _span()
+    ground = ir.GroundIR(
+        span=span,
+        problems=(
+            ir.GroundProblem(
+                span=span,
+                name="P",
+                set_values={"G.vertices": ("a", "b"), "V": ("a", "b")},
+                relation_values={"G.edges": (("a", "b"),)},
+                params={},
+                finds=(
+                    ir.KFindDecl(
+                        span=span,
+                        name="M",
+                        unknown_type=ast.UnknownTypeRef(
+                            span=span, kind="MaximalMatching", args=("G",)
+                        ),
+                    ),
+                ),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    required = extract_required_capabilities(ground)
+
+    assert "unknown.graph.maximal_matching.v1" in required
+
+
 def test_check_pair_support_full_support() -> None:
     ground = _ground_program()
     selection = TargetSelection(runtime_id="local-dimod", backend_id="dimod-cqm-v1")

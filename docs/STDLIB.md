@@ -157,6 +157,9 @@ minimize count((u, v) in G.edges where M.has_edge(u, v));
 *   **`Matching(G)`** expects an `UndirectedGraph` structure. It selects a set
     of edges such that each vertex is incident to at most one selected edge.
 *   **View**: `has_edge(u: Elem(V), v: Elem(V))`.
+*   **`MaximalMatching(G)`** has the same view and also enforces maximality:
+    for every edge in `G.edges`, the edge is selected or at least one endpoint
+    is already incident to a selected edge.
 
 For `dimod-cqm-v1`, `Matching(G)` creates one binary variable per grounded edge
 in `G.edges`. The backend adds incident-edge `<= 1` constraints only for
@@ -164,6 +167,10 @@ vertices with two or more incident grounded edges, so degree-0 and degree-1
 vertices do not create redundant constraints. Objectives decide whether the
 matching should be minimum, maximum, weighted, or used as a feasibility
 component.
+
+`MaximalMatching(G)` reuses the same edge variables and degree constraints, then
+adds one maximality constraint per grounded edge. It does not impose a minimum
+or maximum cardinality objective by itself.
 
 The graph module also keeps the older compiler-owned relation helpers:
 

@@ -314,7 +314,7 @@ git push origin main
 - Test: `tests/targeting/test_compatibility.py`
 - Docs: `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, `docs/STDLIB.md`, `docs/BACKEND.md`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Program:
 
@@ -352,11 +352,11 @@ uv run pytest tests/backend/test_compile.py::test_maximal_matching_adds_maximali
 
 Expected: fail.
 
-- [ ] **Step 2: Implement registry and type support**
+- [x] **Step 2: Implement registry and type support**
 
 `MaximalMatching` has the same graph argument and `.has_edge(u, v)` view as `Matching`.
 
-- [ ] **Step 3: Implement efficient maximality constraints**
+- [x] **Step 3: Implement efficient maximality constraints**
 
 For each edge `(u, v)`:
 
@@ -374,7 +374,7 @@ uv run pytest tests/backend/test_compile.py::test_maximal_matching_adds_maximali
 
 Expected: pass.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
 
 Run mandatory gates, then:
 

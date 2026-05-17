@@ -617,10 +617,10 @@ class TypeChecker:
                     )
             return BOOL
 
-        if ref_name == "Matching" and expr.name == "has_edge":
+        if ref_name in {"Matching", "MaximalMatching"} and expr.name == "has_edge":
             if len(expr.args) != 2:
                 diagnostics.append(
-                    self._type_err(expr.span, "Matching.has_edge expects two arguments")
+                    self._type_err(expr.span, f"{ref_name}.has_edge expects two arguments")
                 )
             else:
                 graph_name = target_ty.ref.args[0] if target_ty.ref.args else ""

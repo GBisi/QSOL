@@ -12,6 +12,7 @@ from qsol.backend.graph_encoding import (
     GraphData,
     GraphUnknownLabels,
     add_degree_at_most_one_constraints,
+    add_maximal_matching_constraints,
 )
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.source import Span
@@ -210,7 +211,7 @@ class DimodCodegen:
                         span=find.span,
                         diagnostics=diagnostics,
                     )
-            elif kind == "Matching":
+            elif kind in {"Matching", "MaximalMatching"}:
                 self._declare_matching_variables(problem, find, cqm, binaries, varmap, diagnostics)
             else:
                 diagnostics.append(
@@ -250,6 +251,15 @@ class DimodCodegen:
             span=find.span,
             diagnostics=diagnostics,
         )
+        if find.unknown_type.kind == "MaximalMatching":
+            add_maximal_matching_constraints(
+                cqm,
+                graph=graph,
+                labels=labels,
+                binaries=binaries,
+                span=find.span,
+                diagnostics=diagnostics,
+            )
 
     def _emit_constraint(
         self,
@@ -1406,7 +1416,7 @@ class DimodCodegen:
             if (
                 find is None
                 or not isinstance(find.decision_type, ir.KUnknownDecisionType)
-                or find.unknown_type.kind != "Matching"
+                or find.unknown_type.kind not in {"Matching", "MaximalMatching"}
             ):
                 return None
             a = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)

@@ -32,7 +32,7 @@ For a find `Map : Mapping(D -> C)`, the backend generates binary variables for e
 It also generates implicit "exactly one" constraints to ensure each element in `D` maps to exactly one element in `C`:
 `sum(Map.is(d, c) for c in C) == 1` for each `d` in `D`.
 
-### `Matching(G)`
+### `Matching(G)` and `MaximalMatching(G)`
 
 For a find `M : Matching(G)`, where `G` is an `UndirectedGraph`, the backend
 generates one binary variable for each grounded edge in `G.edges`:
@@ -52,6 +52,16 @@ for the canonical undirected edge stored in `G.edges`.
 
 The graph encoder reports `Matching(G)` in model estimates as the number of
 edge variables and the number of non-redundant degree constraints.
+
+`MaximalMatching(G)` uses the same edge variables and matching degree
+constraints. It also adds one maximality constraint per grounded edge:
+
+```text
+sum(M.has_edge(e) for e incident to u or v) >= 1
+```
+
+for every `(u, v)` in `G.edges`. This means no unselected edge can be added
+without touching an already selected edge.
 
 ### Scalar Decisions
 

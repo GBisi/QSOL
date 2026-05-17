@@ -6,6 +6,7 @@ from qsol.backend.graph_encoding import (
     GraphData,
     GraphUnknownLabels,
     add_degree_at_most_one_constraints,
+    add_maximal_matching_constraints,
 )
 from qsol.diag.source import Span
 from qsol.lower import ir
@@ -79,4 +80,26 @@ def test_add_degree_at_most_one_constraints_skips_redundant_vertices() -> None:
 
     assert added == 1
     assert len(cqm.constraints) == 1
+    assert not diagnostics
+
+
+def test_add_maximal_matching_constraints_adds_one_per_edge() -> None:
+    diagnostics = []
+    graph = GraphData.from_ground_problem(_path_problem(), "G", _span(), diagnostics)
+    assert graph is not None
+    labels = GraphUnknownLabels("M")
+    cqm = dimod.ConstrainedQuadraticModel()
+    binaries = {labels.edge_var(edge): dimod.Binary(labels.edge_var(edge)) for edge in graph.edges}
+
+    added = add_maximal_matching_constraints(
+        cqm,
+        graph=graph,
+        labels=labels,
+        binaries=binaries,
+        span=_span(),
+        diagnostics=diagnostics,
+    )
+
+    assert added == 2
+    assert len(cqm.constraints) == 2
     assert not diagnostics

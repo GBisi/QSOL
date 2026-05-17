@@ -339,15 +339,18 @@ class Resolver:
                                     help=help_items,
                                 )
                             )
-                elif unknown_ref.kind == "Matching":
+                elif unknown_ref.kind in {"Matching", "MaximalMatching"}:
                     if len(unknown_ref.args) != 1:
                         diagnostics.append(
                             Diagnostic(
                                 severity=Severity.ERROR,
                                 code="QSOL2001",
-                                message="Matching expects one UndirectedGraph structure argument",
+                                message=(
+                                    f"{unknown_ref.kind} expects one UndirectedGraph "
+                                    "structure argument"
+                                ),
                                 span=stmt.span,
-                                help=["Use `find M : Matching(G);`."],
+                                help=[f"Use `find M : {unknown_ref.kind}(G);`."],
                             )
                         )
                     else:
@@ -364,12 +367,13 @@ class Resolver:
                                     severity=Severity.ERROR,
                                     code="QSOL2001",
                                     message=(
-                                        "Matching expects an UndirectedGraph structure argument"
+                                        f"{unknown_ref.kind} expects an UndirectedGraph "
+                                        "structure argument"
                                     ),
                                     span=stmt.span,
                                     help=[
                                         "Declare `structure G = UndirectedGraph(V, Edge);` "
-                                        "before `find M : Matching(G);`."
+                                        f"before `find M : {unknown_ref.kind}(G);`."
                                     ],
                                 )
                             )

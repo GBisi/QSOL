@@ -227,3 +227,40 @@ problem MatchingEstimate {
     }
     assert report["decisions"]["binary"] == 2
     assert report["constraints"]["graph_matching_degree"] == 1
+
+
+def test_estimate_reports_maximal_matching_constraints() -> None:
+    source = """
+use stdlib.graph;
+
+problem MaximalMatchingEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : MaximalMatching(G);
+  minimize count((u, v) in G.edges where M.has_edge(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="maximal_matching_estimate.qsol",
+            instance_payload={
+                "problem": "MaximalMatchingEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Edge": [["A", "B"], ["B", "C"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+
+    assert report["decision_variables"]["M"] == {
+        "kind": "MaximalMatching",
+        "binary_variables": 2,
+        "degree_constraints": 1,
+        "maximality_constraints": 2,
+    }
+    assert report["constraints"]["graph_matching_degree"] == 1
+    assert report["constraints"]["graph_maximal_matching"] == 2

@@ -457,6 +457,41 @@ problem P {
     )
 
 
+def test_maximal_matching_unknown_uses_matching_graph_contract() -> None:
+    valid_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : MaximalMatching(G);
+  must forall (u, v) in G.edges: M.has_edge(u, v) or not M.has_edge(u, v);
+}
+"""
+    valid_unit = compile_source(
+        valid_text, options=CompileOptions(filename="maximal_matching_ok.qsol")
+    )
+    assert not any(d.is_error for d in valid_unit.diagnostics)
+
+    wrong_arg_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  find M : MaximalMatching(V);
+}
+"""
+    wrong_arg_unit = compile_source(
+        wrong_arg_text, options=CompileOptions(filename="maximal_matching_bad_arg.qsol")
+    )
+    assert any(
+        d.code == "QSOL2001"
+        and "MaximalMatching expects an UndirectedGraph structure argument" in d.message
+        for d in wrong_arg_unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_wrong_relation_shape() -> None:
     ternary_text = """
 problem P {
