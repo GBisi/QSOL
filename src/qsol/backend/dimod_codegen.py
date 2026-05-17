@@ -8,6 +8,11 @@ from typing import Any, Callable, cast
 import dimod
 from dimod import BinaryQuadraticModel, QuadraticModel
 
+from qsol.backend.graph_encoding import (
+    GraphData,
+    GraphUnknownLabels,
+    add_degree_at_most_one_constraints,
+)
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.source import Span
 from qsol.lower import ir
@@ -227,42 +232,24 @@ class DimodCodegen:
             )
             return
         graph_name = find.unknown_type.args[0]
-        vertices = problem.set_values.get(f"{graph_name}.vertices")
-        edges = problem.relation_values.get(f"{graph_name}.edges")
-        if vertices is None or edges is None:
-            diagnostics.append(
-                self._unsupported(find.span, f"missing grounded graph `{graph_name}` for Matching")
-            )
+        graph = GraphData.from_ground_problem(problem, graph_name, find.span, diagnostics)
+        if graph is None:
             return
 
-        for edge in sorted(edges, key=lambda item: tuple(str(part) for part in item)):
-            if len(edge) != 2:
-                diagnostics.append(
-                    self._unsupported(find.span, f"invalid edge arity for graph `{graph_name}`")
-                )
-                continue
-            u, v = str(edge[0]), str(edge[1])
-            label = self._matching_edge_label(find.name, u, v)
+        labels = GraphUnknownLabels(find.name)
+        for edge in sorted(graph.edges, key=lambda item: tuple(str(part) for part in item)):
+            label = labels.edge_var(edge)
             binaries[label] = _new_binary(label)
-            varmap[label] = f"{find.name}.has_edge({u},{v})"
+            varmap[label] = labels.edge_meaning(edge)
 
-        for vertex in sorted((str(value) for value in vertices), key=str):
-            incident = [
-                binaries[self._matching_edge_label(find.name, str(edge[0]), str(edge[1]))]
-                for edge in edges
-                if len(edge) == 2 and vertex in {str(edge[0]), str(edge[1])}
-            ]
-            if len(incident) <= 1:
-                continue
-            self._add_numeric_constraint(
-                cqm,
-                lhs=sum(incident, 0.0),
-                rhs=1.0,
-                op="<=",
-                label=f"implicit_matching_degree:{find.name}:{vertex}",
-                span=find.span,
-                diagnostics=diagnostics,
-            )
+        add_degree_at_most_one_constraints(
+            cqm,
+            graph=graph,
+            labels=labels,
+            binaries=binaries,
+            span=find.span,
+            diagnostics=diagnostics,
+        )
 
     def _emit_constraint(
         self,
@@ -1427,18 +1414,19 @@ class DimodCodegen:
             if a is None or b is None:
                 return None
             graph_name = find.unknown_type.args[0] if find.unknown_type.args else ""
-            edges = {
-                (str(edge[0]), str(edge[1]))
-                for edge in problem.relation_values.get(f"{graph_name}.edges", ())
-                if len(edge) == 2
-            }
-            if (a, b) in edges:
-                return self._matching_edge_label(target, a, b)
-            if (b, a) in edges:
-                return self._matching_edge_label(target, b, a)
+            graph = GraphData.from_ground_problem(problem, graph_name, expr.span, diagnostics)
+            if graph is None:
+                return None
+            edge = graph.edge_key(a, b)
+            if edge is not None:
+                return GraphUnknownLabels(target).edge_var(edge)
             diagnostics.append(
-                self._unsupported(
-                    expr.span, f"`{target}.has_edge({a}, {b})` is not an edge of `{graph_name}`"
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL3302",
+                    message=f"`{target}.has_edge({a}, {b})` is not an edge of `{graph_name}`",
+                    span=expr.span,
+                    help=["Call graph unknown edge views only for tuples in `G.edges`."],
                 )
             )
             return None
@@ -1542,9 +1530,6 @@ class DimodCodegen:
 
     def _mapping_label(self, name: str, a: object, b: object) -> str:
         return f"{name}.is[{a},{b}]"
-
-    def _matching_edge_label(self, name: str, u: object, v: object) -> str:
-        return f"{name}.has_edge[{u},{v}]"
 
     def _constraint_label(self, span: Span) -> str:
         self._label_counter += 1

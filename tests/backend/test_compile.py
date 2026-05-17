@@ -368,6 +368,55 @@ Edge = [
     }
 
 
+def test_matching_has_edge_reports_graph_diagnostic_for_non_edge(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem MatchingDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+
+  find M : Matching(G);
+
+  must forall (u, v) in G.non_edges: not M.has_edge(u, v);
+  minimize 0;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MatchingDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="matching_non_edge.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-matching-non-edge"),
+            output_format="qubo",
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL3302" and "`M.has_edge(a, c)` is not an edge of `G`" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {

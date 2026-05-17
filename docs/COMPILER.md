@@ -78,6 +78,11 @@ adds the implicit graph constraints. For `Matching(G)`, this means one binary
 variable per grounded `G.edges` tuple plus incident-edge constraints for
 vertices of degree at least two.
 
+The reusable graph encoding helpers live in `qsol.backend.graph_encoding`.
+They centralize canonical undirected edge lookup, incident-edge enumeration,
+graph-unknown variable labels, and small graph constraint emitters so future
+stdlib graph unknowns can share the same grounded graph semantics.
+
 Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
 
 Supported piecewise numeric forms are lowered before KIR:

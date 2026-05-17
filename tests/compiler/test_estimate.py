@@ -191,3 +191,39 @@ problem GraphEstimate {
     assert report["structures"]["G"]["domains"]["non_edges"] == 2
     assert report["decision_variables"]["Selected"]["instances"] == 1
     assert report["decisions"]["binary"] == 1
+
+
+def test_estimate_reports_matching_graph_unknowns() -> None:
+    source = """
+use stdlib.graph;
+
+problem MatchingEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find M : Matching(G);
+  minimize count((u, v) in G.edges where M.has_edge(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="matching_estimate.qsol",
+            instance_payload={
+                "problem": "MatchingEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Edge": [["A", "B"], ["B", "C"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+
+    assert report["decision_variables"]["M"] == {
+        "kind": "Matching",
+        "binary_variables": 2,
+        "degree_constraints": 1,
+    }
+    assert report["decisions"]["binary"] == 2
+    assert report["constraints"]["graph_matching_degree"] == 1

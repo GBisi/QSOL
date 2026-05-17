@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from itertools import product
 
+from qsol.backend.graph_encoding import GraphData
 from qsol.lower import ir
 
 
@@ -60,6 +61,7 @@ def estimate_ground_ir(
         auxiliary_binary = 0
         auxiliary_integer = 0
         mapping_exactly_one = 0
+        graph_matching_degree = 0
 
         for find in problem.finds:
             is_auxiliary = find.name.startswith("__qsol_")
@@ -89,6 +91,24 @@ def estimate_ground_ir(
                         "binary_variables": count,
                         "exactly_one_constraints": dom_count,
                     }
+                elif kind == "Matching":
+                    graph_name = find.decision_type.unknown_type.args[0]
+                    graph = GraphData.from_ground_problem(problem, graph_name, find.span, [])
+                    edge_count = 0 if graph is None else len(graph.edges)
+                    degree_constraints = 0
+                    if graph is not None:
+                        degree_constraints = sum(
+                            1 for vertex in graph.vertices if len(graph.incident_edges(vertex)) > 1
+                        )
+                    cqm_binary += edge_count
+                    if is_auxiliary:
+                        auxiliary_binary += edge_count
+                    graph_matching_degree += degree_constraints
+                    decision_report[find.name] = {
+                        "kind": "Matching",
+                        "binary_variables": edge_count,
+                        "degree_constraints": degree_constraints,
+                    }
                 else:
                     decision_report[find.name] = {"kind": kind, "supported": False}
                 continue
@@ -117,6 +137,13 @@ def estimate_ground_ir(
                     "domain_size": domain_size,
                 }
 
+        constraint_report: dict[str, int] = {
+            "explicit": len(problem.constraints),
+            "mapping_exactly_one": mapping_exactly_one,
+        }
+        if graph_matching_degree:
+            constraint_report["graph_matching_degree"] = graph_matching_degree
+
         reports.append(
             EstimateReport(
                 problem=str(problem.name),
@@ -130,10 +157,7 @@ def estimate_ground_ir(
                     "auxiliary_binary": auxiliary_binary,
                     "auxiliary_integer": auxiliary_integer,
                 },
-                constraints={
-                    "explicit": len(problem.constraints),
-                    "mapping_exactly_one": mapping_exactly_one,
-                },
+                constraints=constraint_report,
                 expressions={
                     "max_polynomial_degree_before_reduction": 0,
                     "max_polynomial_degree_after_reduction": 0,

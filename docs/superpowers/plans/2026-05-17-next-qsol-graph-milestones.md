@@ -212,7 +212,7 @@ git push origin main
 - Test: `tests/compiler/test_estimate.py`
 - Docs: `docs/BACKEND.md`, `docs/COMPILER.md`, `docs/CODEBASE.md`
 
-- [ ] **Step 1: Add failing unit tests for graph encoding helpers**
+- [x] **Step 1: Add failing unit tests for graph encoding helpers**
 
 Required helper behavior:
 
@@ -229,19 +229,19 @@ uv run pytest tests/backend/test_graph_encoding.py -q
 
 Expected: fail because the helper module does not exist.
 
-- [ ] **Step 2: Extract helpers**
+- [x] **Step 2: Extract helpers**
 
 Create `graph_encoding.py` with focused utilities:
 
 - `GraphData.from_ground_problem(problem, graph_name, span, diagnostics)`
 - `GraphData.edge_key(u, v)`
 - `GraphData.incident_edges(vertex)`
-- `GraphUnknownLabels.edge_var(find_name, edge)`
-- `add_degree_at_most_one(cqm, graph_data, labels, binaries, diagnostics)`
+- `GraphUnknownLabels(find_name).edge_var(edge)`
+- `add_degree_at_most_one_constraints(cqm, graph=..., labels=..., binaries=..., span=..., diagnostics=...)`
 
 Keep it backend-local for now. Do not expose it as public API.
 
-- [ ] **Step 3: Rewire `Matching(G)` to helpers**
+- [x] **Step 3: Rewire `Matching(G)` to helpers**
 
 `dimod_codegen.py` should call helper functions rather than reimplementing canonical edge logic.
 
@@ -253,7 +253,7 @@ uv run pytest tests/backend/test_compile.py::test_matching_graph_unknown_builds_
 
 Expected: pass.
 
-- [ ] **Step 4: Add diagnostics and estimates**
+- [x] **Step 4: Add diagnostics and estimates**
 
 Diagnostics:
 
@@ -264,12 +264,15 @@ Estimate payload:
 
 ```json
 {
-  "graph_unknowns": {
+  "decision_variables": {
     "M": {
       "kind": "Matching",
-      "variables": 3,
-      "constraints": 3
+      "binary_variables": 2,
+      "degree_constraints": 1
     }
+  },
+  "constraints": {
+    "graph_matching_degree": 1
   }
 }
 ```
@@ -282,7 +285,7 @@ uv run pytest tests/compiler/test_estimate.py tests/backend/test_graph_encoding.
 
 Expected: pass.
 
-- [ ] **Step 5: Gate and commit**
+- [x] **Step 5: Gate and commit**
 
 Run mandatory gates, then:
 

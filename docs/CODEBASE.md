@@ -29,7 +29,7 @@ Pipeline from source to runtime result:
 - `src/qsol/parse/`: grammar, parser, AST, AST builder, module loader
 - `src/qsol/sema/`: symbol resolution, custom unknown elaboration, type checking, groundability checks, static validation
 - `src/qsol/lower/`: global/helper lowering, desugaring, piecewise lowering, and kernel IR lowering
-- `src/qsol/backend/`: instance grounding, static bound evaluation, dimod codegen/export primitives
+- `src/qsol/backend/`: instance grounding, static bound evaluation, graph encoding helpers, dimod codegen/export primitives
 - `src/qsol/config/`: config TOML parsing, scenario selection, and instance materialization
 - `src/qsol/stdlib/`: packaged unknown modules and source-level helper modules (`stdlib.*`)
 - `src/qsol/diag/`: diagnostics, spans, reporter
@@ -118,6 +118,10 @@ Families:
 - `QSOL3xxx`: backend language-shape limitations
 - `QSOL4xxx`: CLI/targeting/plugin resolution/preparation
 - `QSOL5xxx`: runtime execution
+
+Backend graph encoders use `QSOL330x` diagnostics for grounded graph data or
+graph-unknown encoding failures, for example a graph unknown referencing a graph
+that did not materialize during grounding.
 
 ## 8. Test Suite Map
 

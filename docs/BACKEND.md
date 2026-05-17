@@ -50,6 +50,9 @@ Vertices with degree 0 or 1 do not need a backend constraint. The view
 `M.has_edge(v, u)` resolves to the same binary variable as `M.has_edge(u, v)`
 for the canonical undirected edge stored in `G.edges`.
 
+The graph encoder reports `Matching(G)` in model estimates as the number of
+edge variables and the number of non-redundant degree constraints.
+
 ### Scalar Decisions
 
 ```qsol
