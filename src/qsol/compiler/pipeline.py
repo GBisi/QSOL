@@ -164,10 +164,14 @@ def _with_support_diagnostics(unit: CompilationUnit, *, filename: str) -> Compil
         return unit
 
     for issue in unit.support_report.issues:
+        diagnostic_code = None
+        if isinstance(issue.detail, dict):
+            raw_code = issue.detail.get("diagnostic_code")
+            diagnostic_code = raw_code if isinstance(raw_code, str) else None
         unit.diagnostics.append(
             _diag(
                 filename,
-                code=issue.code,
+                code=diagnostic_code or issue.code,
                 message=issue.message,
                 notes=[f"stage={issue.stage}"]
                 + ([f"capability={issue.capability_id}"] if issue.capability_id else []),

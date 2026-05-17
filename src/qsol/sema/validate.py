@@ -7,6 +7,34 @@ from qsol.parse import ast
 def validate_program(program: ast.Program) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     for item in program.items:
+        if isinstance(item, ast.ProblemDef):
+            seen_objective_labels: dict[str, ast.Objective] = {}
+            for stmt in item.stmts:
+                if not isinstance(stmt, ast.Objective) or stmt.label is None:
+                    continue
+                previous = seen_objective_labels.get(stmt.label)
+                if previous is not None:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL2101",
+                            message=f"duplicate objective label `{stmt.label}`",
+                            span=stmt.span,
+                            notes=[
+                                (
+                                    f"first objective label `{stmt.label}` appears at "
+                                    f"{previous.span.filename}:{previous.span.line}:{previous.span.col}"
+                                )
+                            ],
+                            help=[
+                                "Use unique objective labels within a problem.",
+                                "Objective labels are metadata and do not create expression names.",
+                            ],
+                        )
+                    )
+                    continue
+                seen_objective_labels[stmt.label] = stmt
+
         if isinstance(item, ast.UnknownDef):
             if not item.rep_block:
                 diagnostics.append(

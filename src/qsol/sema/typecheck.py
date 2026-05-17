@@ -101,7 +101,7 @@ class TypeChecker:
                                 )
                             )
                     elif isinstance(stmt, ast.ParamDecl) and stmt.default is not None:
-                        if isinstance(stmt.value_type, ast.ElemTypeRef):
+                        if isinstance(stmt.value_type, (ast.ElemTypeRef, ast.StaticSubsetTypeRef)):
                             diagnostics.append(
                                 self._type_err(
                                     stmt.default.span,
@@ -562,6 +562,20 @@ class TypeChecker:
         if isinstance(target_ty, StructureInstanceType):
             return self._structure_method_type(expr, target_ty, scope, binders, diagnostics, tmap)
 
+        if isinstance(target_ty, SetType) and expr.name == "has":
+            if len(expr.args) != 1:
+                diagnostics.append(
+                    self._type_err(expr.span, "StaticSubset.has expects one argument")
+                )
+            else:
+                expected_set = target_ty.element_set or target_ty.name
+                arg_ty = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+                if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                    diagnostics.append(
+                        self._type_err(expr.args[0].span, f"expected element of `{expected_set}`")
+                    )
+            return BOOL
+
         if not isinstance(target_ty, UnknownInstanceType):
             diagnostics.append(
                 self._type_err(expr.span, "method call target is not an unknown instance")
@@ -796,7 +810,9 @@ class TypeChecker:
             sym.type.numeric_kind if sym is not None and isinstance(sym.type, SetType) else None
         )
         elem_set_name = (
-            sym.type.name if sym is not None and isinstance(sym.type, SetType) else set_name
+            (sym.type.element_set or sym.type.name)
+            if sym is not None and isinstance(sym.type, SetType)
+            else set_name
         )
         return ElemOfType(set_name=elem_set_name, numeric_kind=numeric_kind)
 
@@ -1389,6 +1405,8 @@ class TypeChecker:
     def _param_decl_type(self, stmt: ast.ParamDecl) -> Type:
         if isinstance(stmt.value_type, ast.ElemTypeRef):
             return ElemOfType(stmt.value_type.set_name)
+        if isinstance(stmt.value_type, ast.StaticSubsetTypeRef):
+            return SetType(stmt.name, element_set=stmt.value_type.set_name)
 
         scalar = stmt.value_type
         if scalar.kind == "Bool":

@@ -214,4 +214,4 @@ Try one at a time and rerun `inspect check` and `targets check`:
 
 1. Add a `should` balance preference.
 2. Add a boolean forbidden-assignment param and hard exclusion.
-3. Add a second weighted objective term.
+3. Add another weighted term to the same objective statement.

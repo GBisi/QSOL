@@ -71,24 +71,48 @@ class DimodCodegen:
                         problem, constraint.expr, cqm, binaries, diagnostics, env={}
                     )
 
-            for objective_stmt in problem.objectives:
-                expr_obj = self._num_expr(
-                    problem,
-                    objective_stmt.expr,
-                    binaries,
-                    diagnostics,
-                    env={},
-                    cqm=cqm,
-                )
-                if expr_obj is None:
-                    diagnostics.append(
-                        self._unsupported(objective_stmt.span, "unsupported objective expression")
+            if len(problem.objectives) > 1:
+                names = [
+                    objective_stmt.label or f"objective_{idx}"
+                    for idx, objective_stmt in enumerate(problem.objectives, start=1)
+                ]
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL3201",
+                        message=(
+                            "multiple objective statements are not supported by backend "
+                            "`dimod-cqm-v1`"
+                        ),
+                        span=problem.objectives[0].span,
+                        notes=[f"objectives in source order: {', '.join(names)}"],
+                        help=[
+                            "Combine terms explicitly in one weighted objective expression.",
+                            "Keep separate objective labels for future ordered-objective backends.",
+                        ],
                     )
-                    continue
-                if objective_stmt.kind.value == "minimize":
-                    objective += expr_obj
-                else:
-                    objective += -expr_obj
+                )
+            else:
+                for objective_stmt in problem.objectives:
+                    expr_obj = self._num_expr(
+                        problem,
+                        objective_stmt.expr,
+                        binaries,
+                        diagnostics,
+                        env={},
+                        cqm=cqm,
+                    )
+                    if expr_obj is None:
+                        diagnostics.append(
+                            self._unsupported(
+                                objective_stmt.span, "unsupported objective expression"
+                            )
+                        )
+                        continue
+                    if objective_stmt.kind.value == "minimize":
+                        objective += expr_obj
+                    else:
+                        objective += -expr_obj
 
             for constraint in problem.constraints:
                 if constraint.kind.value in {"should", "nice"}:
@@ -1003,6 +1027,20 @@ class DimodCodegen:
                     return truth
             return None
         if isinstance(expr, ir.KMethodCall):
+            if (
+                isinstance(expr.target, ir.KName)
+                and expr.name == "has"
+                and len(expr.args) == 1
+                and expr.target.name in problem.set_values
+            ):
+                arg = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+                if arg is None:
+                    diagnostics.append(
+                        self._unsupported(expr.span, "unsupported static set lookup")
+                    )
+                    return None
+                members = frozenset(str(member) for member in problem.set_values[expr.target.name])
+                return 1.0 if arg in members else 0.0
             label = self._method_label(problem, expr, diagnostics, env)
             if label is None:
                 diagnostics.append(self._unsupported(expr.span, "unsupported method call atom"))

@@ -27,6 +27,68 @@ problem P {
     assert "QSOL2201" in codes
 
 
+def test_static_subset_param_typechecks_as_static_domain() -> None:
+    text = """
+problem P {
+  set V;
+  param Terminals : StaticSubset(V);
+  find Pick : Subset(V);
+
+  must forall t in Terminals: Pick.has(t);
+  minimize size(Terminals);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="static_subset.qsol"))
+
+    assert not any(d.is_error for d in unit.diagnostics)
+
+
+def test_static_subset_param_rejects_unknown_parent_set_and_indexing() -> None:
+    text = """
+problem P {
+  set V;
+  param Bad[V] : StaticSubset(Missing);
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="static_subset_bad_decl.qsol"))
+
+    assert any(
+        d.code == "QSOL2201" and "StaticSubset params cannot be indexed" in d.message
+        for d in unit.diagnostics
+    )
+    assert any(
+        d.code == "QSOL2201" and "unknown set `Missing` in param value type" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_static_subset_has_validates_arity_and_element_type() -> None:
+    arity_text = """
+problem P {
+  set V;
+  param Terminals : StaticSubset(V);
+  must Terminals.has();
+}
+"""
+    arity_unit = compile_source(
+        arity_text, options=CompileOptions(filename="static_subset_has_arity.qsol")
+    )
+    assert any("StaticSubset.has expects one argument" in d.message for d in arity_unit.diagnostics)
+
+    type_text = """
+problem P {
+  set V;
+  set Other;
+  param Terminals : StaticSubset(V);
+  must forall x in Other: Terminals.has(x);
+}
+"""
+    type_unit = compile_source(
+        type_text, options=CompileOptions(filename="static_subset_has_type.qsol")
+    )
+    assert any("expected element of `V`" in d.message for d in type_unit.diagnostics)
+
+
 def test_elem_param_unknown_set_target() -> None:
     text = """
 problem P {
@@ -186,6 +248,23 @@ problem P {
     unit = compile_source(text, options=CompileOptions(filename="scalar_numeric_bare.qsol"))
     assert not any(
         d.code == "QSOL2101" and "objective expression must be numeric" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_duplicate_objective_labels_are_rejected() -> None:
+    text = """
+problem P {
+  set V;
+  find Pick : Subset(V);
+  minimize count(v in V where Pick.has(v)) as score;
+  maximize count(v in V where not Pick.has(v)) as score;
+}
+"""
+    unit = compile_source(text, options=CompileOptions(filename="duplicate_objective_label.qsol"))
+
+    assert any(
+        d.code == "QSOL2101" and "duplicate objective label `score`" in d.message
         for d in unit.diagnostics
     )
 

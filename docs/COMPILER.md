@@ -21,7 +21,7 @@ The pipeline consists of the following stages:
 If instance data is provided (via `model.qsol.toml`), the compiler performs **instantiation**:
 1.  **Loading**: Reads data from the TOML file.
 2.  **Binding**: Maps data values to model `set` and `param` declarations.
-3.  **Grounding**: Evaluates derived `Range` sets and derived static relations, materializes scalar/indexed params, resolves bounded scalar decision domains including scenario-time static aggregate bounds, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
+3.  **Grounding**: Evaluates derived `Range` sets and derived static relations, materializes scalar/indexed params and `StaticSubset` static domains, resolves bounded scalar decision domains including scenario-time static aggregate bounds, unrolls quantifiers (`forall`, `exists`), and expands data-dependent expressions, producing a Ground IR (GIR).
 
 ### Backend / Targeting
 1.  **Target Selection**: Identifies the target runtime and backend (e.g., `local-dimod` + `dimod-cqm-v1`).

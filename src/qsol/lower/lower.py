@@ -54,16 +54,15 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                     )
                 )
             elif isinstance(stmt, ast.ParamDecl):
-                scalar_kind = (
-                    stmt.value_type.kind
-                    if isinstance(stmt.value_type, ast.ScalarTypeRef)
-                    else "Elem"
-                )
-                elem_set = (
-                    stmt.value_type.set_name
-                    if isinstance(stmt.value_type, ast.ElemTypeRef)
-                    else None
-                )
+                if isinstance(stmt.value_type, ast.ScalarTypeRef):
+                    scalar_kind = stmt.value_type.kind
+                    elem_set = None
+                elif isinstance(stmt.value_type, ast.ElemTypeRef):
+                    scalar_kind = "Elem"
+                    elem_set = stmt.value_type.set_name
+                else:
+                    scalar_kind = "StaticSubset"
+                    elem_set = stmt.value_type.set_name
                 params.append(
                     ir.KParamDecl(
                         span=stmt.span,
@@ -89,7 +88,12 @@ def lower_symbolic(program: ast.Program) -> ir.KernelIR:
                 )
             elif isinstance(stmt, ast.Objective):
                 objectives.append(
-                    ir.KObjective(span=stmt.span, kind=stmt.kind, expr=_lower_num(stmt.expr))
+                    ir.KObjective(
+                        span=stmt.span,
+                        kind=stmt.kind,
+                        expr=_lower_num(stmt.expr),
+                        label=stmt.label,
+                    )
                 )
 
         problems.append(

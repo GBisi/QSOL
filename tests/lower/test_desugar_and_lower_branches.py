@@ -4,6 +4,7 @@ from qsol.diag.source import Span
 from qsol.lower.desugar import desugar_program
 from qsol.lower.lower import lower_symbolic
 from qsol.parse import ast
+from qsol.parse.parser import parse_to_ast
 
 
 def _span() -> Span:
@@ -141,3 +142,20 @@ def test_desugar_and_lower_cover_additional_expression_paths() -> None:
     assert lowered.problems
     assert len(lowered.problems[0].constraints) == 2
     assert len(lowered.problems[0].objectives) == 4
+
+
+def test_objective_label_survives_lowering() -> None:
+    program = parse_to_ast(
+        """
+problem P {
+  set V;
+  find Pick : Subset(V);
+  minimize count(v in V where Pick.has(v)) as selected;
+}
+""",
+        filename="objective_label_lowering.qsol",
+    )
+
+    lowered = lower_symbolic(desugar_program(program))
+
+    assert lowered.problems[0].objectives[0].label == "selected"

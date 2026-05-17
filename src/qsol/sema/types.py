@@ -27,6 +27,7 @@ class IntRangeType(Type):
 class SetType(Type):
     name: str
     numeric_kind: str | None = None
+    element_set: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -325,13 +325,13 @@ class ASTBuilder:
         if data == "param_decl":
             name = self._name(c[0])
             indices: list[str] = []
-            value_type: ast.ScalarTypeRef | ast.ElemTypeRef | None = None
+            value_type: ast.ScalarTypeRef | ast.ElemTypeRef | ast.StaticSubsetTypeRef | None = None
             default: ast.Literal | None = None
             for ch in c[1:]:
                 v = self._from_tree(ch)
                 if isinstance(v, list) and all(isinstance(it, str) for it in v):
                     indices = cast(list[str], v)
-                elif isinstance(v, (ast.ScalarTypeRef, ast.ElemTypeRef)):
+                elif isinstance(v, (ast.ScalarTypeRef, ast.ElemTypeRef, ast.StaticSubsetTypeRef)):
                     value_type = v
                 elif isinstance(v, ast.Literal):
                     default = v
@@ -424,6 +424,9 @@ class ASTBuilder:
         if data == "elem_type":
             return ast.ElemTypeRef(span=self._span(node), set_name=self._name(c[0]))
 
+        if data == "static_subset_type":
+            return ast.StaticSubsetTypeRef(span=self._span(node), set_name=self._name(c[0]))
+
         if data == "int_type":
             lo = int(cast(float, self._from_tree(c[0])))
             hi = int(cast(float, self._from_tree(c[1])))
@@ -453,9 +456,17 @@ class ASTBuilder:
                 if prefix.startswith("maximize")
                 else ast.ObjectiveKind.MINIMIZE
             )
+            label = None
+            if len(c) > 1:
+                label = cast(str, self._from_tree(c[1]))
             return ast.Objective(
-                span=self._span(node), kind=kind, expr=cast(ast.NumExpr, self._from_tree(c[0]))
+                span=self._span(node),
+                kind=kind,
+                expr=cast(ast.NumExpr, self._from_tree(c[0])),
+                label=label,
             )
+        if data == "objective_label":
+            return self._name(c[0])
 
         if data == "quantifier":
             head = self._slice(node).lstrip()

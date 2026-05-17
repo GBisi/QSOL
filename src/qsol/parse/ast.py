@@ -104,6 +104,11 @@ class ElemTypeRef(Node):
 
 
 @dataclass(frozen=True, slots=True)
+class StaticSubsetTypeRef(Node):
+    set_name: str
+
+
+@dataclass(frozen=True, slots=True)
 class Literal(Node):
     value: bool | float | int | str
 
@@ -112,7 +117,7 @@ class Literal(Node):
 class ParamDecl(ProblemStmt):
     name: str
     indices: list[str]
-    value_type: ScalarTypeRef | ElemTypeRef
+    value_type: ScalarTypeRef | ElemTypeRef | StaticSubsetTypeRef
     default: Literal | None
 
 
@@ -190,6 +195,7 @@ class Constraint(ProblemStmt):
 class Objective(ProblemStmt):
     kind: ObjectiveKind
     expr: NumExpr
+    label: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

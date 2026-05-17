@@ -163,6 +163,59 @@ class Resolver:
 
         for stmt in problem.stmts:
             if isinstance(stmt, ast.ParamDecl):
+                if isinstance(stmt.value_type, ast.StaticSubsetTypeRef):
+                    if stmt.indices:
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2201",
+                                message="StaticSubset params cannot be indexed",
+                                span=stmt.span,
+                                help=["Use `param Name : StaticSubset(SetName);`."],
+                            )
+                        )
+                    set_symbol = scope.lookup(stmt.value_type.set_name)
+                    if (
+                        set_symbol is None
+                        or set_symbol.kind != SymbolKind.SET
+                        or not isinstance(set_symbol.type, SetType)
+                    ):
+                        suggestion = self._did_you_mean(
+                            stmt.value_type.set_name, self._set_candidates(scope)
+                        )
+                        help_items = [
+                            (
+                                f"Declare set `{stmt.value_type.set_name}` before using it "
+                                "as `StaticSubset(...)` parent."
+                            )
+                        ]
+                        if suggestion is not None:
+                            help_items.append(f"Did you mean `{suggestion}`?")
+                        diagnostics.append(
+                            Diagnostic(
+                                severity=Severity.ERROR,
+                                code="QSOL2201",
+                                message=(
+                                    f"unknown set `{stmt.value_type.set_name}` in param value type"
+                                ),
+                                span=stmt.span,
+                                help=help_items,
+                            )
+                        )
+                    existing = scope.symbols.get(stmt.name)
+                    if existing is not None:
+                        diagnostics.append(self._dup(stmt.span, stmt.name, previous=existing.span))
+                    else:
+                        scope.define(
+                            Symbol(
+                                stmt.name,
+                                SymbolKind.SET,
+                                SetType(stmt.name, element_set=stmt.value_type.set_name),
+                                stmt.span,
+                            )
+                        )
+                    continue
+
                 indices: list[SetType] = []
                 for index_name in stmt.indices:
                     set_symbol = scope.lookup(index_name)
@@ -401,12 +454,14 @@ class Resolver:
     def _param_value_to_type(
         self,
         scope: Scope,
-        value_type: ast.ScalarTypeRef | ast.ElemTypeRef,
+        value_type: ast.ScalarTypeRef | ast.ElemTypeRef | ast.StaticSubsetTypeRef,
         diagnostics: list[Diagnostic],
         span: Span,
     ) -> Type:
         if isinstance(value_type, ast.ScalarTypeRef):
             return self._scalar_to_type(value_type)
+        if isinstance(value_type, ast.StaticSubsetTypeRef):
+            return SetType(value_type.set_name)
 
         set_symbol = scope.lookup(value_type.set_name)
         if set_symbol is None or set_symbol.kind != SymbolKind.SET:

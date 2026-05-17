@@ -138,12 +138,14 @@ user_unknown_type: NAME "(" [name_list] ")"
 // Scalar types
 param_value_type: scalar_type
                 | elem_type
+                | static_subset_type
 
 scalar_type: "Bool"
            | "Real"
            | int_type
 
 elem_type: "Elem" "(" NAME ")"
+static_subset_type: "StaticSubset" "(" NAME ")"
 
 int_type: "Int" "[" signed_int ".." signed_int "]"
 signed_int: SIGNED_NUMBER
@@ -156,7 +158,8 @@ constraint_stmt: hardness bool_expr guard?
 hardness: "must" | "should" | "nice"
 guard: "if" bool_expr
 
-objective_stmt: ("minimize" | "maximize") num_expr
+objective_stmt: ("minimize" | "maximize") num_expr objective_label?
+objective_label: "as" NAME
 
 // -----------------------
 // Quantifiers

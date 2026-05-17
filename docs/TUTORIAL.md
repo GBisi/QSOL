@@ -46,6 +46,10 @@ problem MyFirstModel {
 }
 ```
 
+Objectives can be labeled with `as name` for diagnostics. The current
+`dimod-cqm-v1` backend accepts one objective statement; combine weighted terms
+inside that statement when you need a scalar tradeoff.
+
 ## 4. Preparing Data
 
 QSOL models separate logic from data. You provide data in a separate TOML configuration file.

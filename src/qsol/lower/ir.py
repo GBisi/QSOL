@@ -355,6 +355,7 @@ class KConstraint(KNode):
 class KObjective(KNode):
     kind: ObjectiveKind
     expr: KNumExpr
+    label: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

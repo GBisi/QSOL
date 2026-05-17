@@ -8,8 +8,9 @@ This backend supports:
 *   **Problem Types**: Optimization and Satisfaction.
 *   **Variables**: Binary variables generated from higher-level `Subset` and `Mapping` unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
-*   **Objectives**: Linear and Quadratic objectives.
+*   **Objectives**: One linear or quadratic objective statement.
 *   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
+*   **Static subsets**: `StaticSubset(S)` params are validated against their parent set and materialized as grounded static domains. They create no backend variables.
 *   **Static graph structures**: `UndirectedGraph` and `DirectedGraph` are resolved before backend compilation. Their derived domains are ordinary grounded static relations from the backend's perspective.
 
 ## 2. Variable Mapping
@@ -75,6 +76,8 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 
 *   `minimize expr` adds `expr` to the CQM objective.
 *   `maximize expr` adds `-expr` to the CQM objective.
+*   `minimize expr as label` and `maximize expr as label` preserve label metadata for diagnostics.
+*   Multiple objective statements are rejected with `QSOL3201`; this backend does not silently sum or lexicographically scalarize them.
 *   `should expr` adds a penalty to the objective if `expr` is violated (weight 10.0).
 *   `nice expr` adds a smaller penalty (weight 1.0).
 

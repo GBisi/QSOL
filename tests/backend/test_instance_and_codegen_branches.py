@@ -828,6 +828,57 @@ def test_instantiate_ir_emits_shape_and_missing_errors() -> None:
     )
 
 
+def test_instantiate_ir_static_subset_internal_shape_errors() -> None:
+    span = _span()
+    kernel = ir.KernelIR(
+        span=span,
+        problems=(
+            ir.KProblem(
+                span=span,
+                name="P",
+                sets=(ir.KSetDecl(span=span, name="A"),),
+                params=(
+                    ir.KParamDecl(
+                        span=span,
+                        name="IndexedSubset",
+                        indices=("A",),
+                        scalar_kind="StaticSubset",
+                        elem_set="A",
+                        default=None,
+                    ),
+                    ir.KParamDecl(
+                        span=span,
+                        name="MissingParent",
+                        indices=(),
+                        scalar_kind="StaticSubset",
+                        elem_set="Missing",
+                        default=None,
+                    ),
+                ),
+                finds=(),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    result = instantiate_ir(
+        kernel,
+        {
+            "problem": "P",
+            "sets": {"A": ["a1"]},
+            "params": {"IndexedSubset": ["a1"], "MissingParent": ["a1"]},
+        },
+    )
+
+    assert result.ground_ir is None
+    assert any(
+        "StaticSubset param `IndexedSubset` cannot be indexed" in diag.message
+        for diag in result.diagnostics
+    )
+    assert any("missing parent set values" in diag.message for diag in result.diagnostics)
+
+
 def test_instantiate_ir_validates_and_normalizes_elem_params() -> None:
     span = _span()
     kernel = ir.KernelIR(

@@ -866,6 +866,43 @@ problem BadAbs {
     assert any(d.code == "QSOL3101" and "maximize abs()" in d.message for d in unit.diagnostics)
 
 
+def test_compile_rejects_multiple_objectives_for_dimod_backend(tmp_path: Path) -> None:
+    source = """
+problem MultiObjective {
+  set V;
+  find Pick : Subset(V);
+
+  minimize count(v in V where not Pick.has(v)) as missing;
+  minimize count(v in V where Pick.has(v)) as selected;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MultiObjective"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="multi_objective.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-multi-objective"),
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL3201" and "multiple objective statements" in d.message
+        for d in unit.diagnostics
+    )
+
+
 def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:
     source = """
 problem ScalarBare {
@@ -909,6 +946,155 @@ Flag = true
     assert unit.artifacts is not None
     assert Path(unit.artifacts.cqm_path or "").exists()
     assert Path(unit.artifacts.bqm_path or "").exists()
+
+
+def test_compile_supports_static_subset_param(tmp_path: Path) -> None:
+    source = """
+problem StaticSubsetDemo {
+  set V;
+  param Terminals : StaticSubset(V);
+  find Pick : Subset(V);
+
+  must forall t in Terminals: Pick.has(t);
+  minimize size(Terminals) + count(v in V where Terminals.has(v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticSubsetDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.params]
+Terminals = ["a", "c"]
+""".lstrip()
+    )
+
+    outdir = tmp_path / "out-static-subset"
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_subset.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(outdir),
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.ground_ir is not None
+    problem = unit.ground_ir.problems[0]
+    assert problem.set_values["Terminals"] == ["a", "c"]
+    assert not any(find.name == "Terminals" for find in problem.finds)
+
+
+def test_static_subset_param_rejects_unknown_element() -> None:
+    source = """
+problem StaticSubsetDemo {
+  set V;
+  param Terminals : StaticSubset(V);
+  minimize size(Terminals);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticSubsetDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+
+[scenarios.baseline.params]
+Terminals = ["a", "z"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_subset_bad.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL2201" and "not present in set `V`" in d.message for d in unit.diagnostics
+    )
+
+
+def test_static_subset_param_rejects_non_array_value() -> None:
+    source = """
+problem StaticSubsetDemo {
+  set V;
+  param Terminals : StaticSubset(V);
+  minimize size(Terminals);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticSubsetDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+
+[scenarios.baseline.params]
+Terminals = "a"
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_subset_not_array.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert any(d.code == "QSOL2201" and "expects an array" in d.message for d in unit.diagnostics)
+
+
+def test_static_subset_param_rejects_duplicate_element() -> None:
+    source = """
+problem StaticSubsetDemo {
+  set V;
+  param Terminals : StaticSubset(V);
+  minimize size(Terminals);
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "StaticSubsetDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+
+[scenarios.baseline.params]
+Terminals = ["a", "a"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="static_subset_duplicate.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL2201" and "contains duplicate `a`" in d.message for d in unit.diagnostics
+    )
 
 
 def test_compile_supports_bare_scalar_elem_param_in_method_arg(tmp_path: Path) -> None:

@@ -93,6 +93,7 @@ param K : Int[1 .. 10] = 3;
 param Cost[Workers,Tasks] : Real;
 param Allowed[Workers,Tasks] : Bool = true;
 param StartNode[Tasks] : Elem(Workers);
+param Terminals : StaticSubset(Workers);
 ```
 
 Usage notes:
@@ -100,6 +101,8 @@ Usage notes:
 - Indexed params must use brackets; `Cost(w, t)` is rejected with `QSOL2101`.
 - `Elem(SetName)` params return set elements and can be passed to methods like `Subset.has(...)`.
 - `Elem(SetName)` params do not allow defaults.
+- `StaticSubset(SetName)` params are scenario-supplied arrays of unique parent-set members.
+- Static subset params can be used as domains (`forall t in Terminals`), with `size(Terminals)`, and with `Terminals.has(x)`.
 - Scalar params must be referenced as bare names (for example `C`, `Flag`, `Start`).
 - Scalar call/index forms such as `C[]` and `Flag()` are rejected with `QSOL2101`.
 
@@ -260,7 +263,13 @@ must expr if cond;
 ```qsol
 minimize numeric_expr;
 maximize numeric_expr;
+minimize numeric_expr as label;
 ```
+
+Objective labels are optional metadata and must be unique within a problem. They
+do not create expression aliases. Multiple objective statements are ordered by
+source order at the language level, but the current `dimod-cqm-v1` backend
+rejects multiple objective statements instead of silently scalarizing them.
 
 ## 5. Expressions
 

@@ -300,6 +300,78 @@ def _materialize_param(
         )
         return
 
+    if pdecl.scalar_kind == "StaticSubset":
+        if pdecl.indices:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"StaticSubset param `{pdecl.name}` cannot be indexed",
+                    span=pdecl.span,
+                    help=["Use `param Name : StaticSubset(SetName);`."],
+                )
+            )
+            return
+        if pdecl.elem_set is None or pdecl.elem_set not in p_sets:
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"missing parent set values for StaticSubset param `{pdecl.name}`",
+                    span=pdecl.span,
+                    help=["Provide the parent set before its StaticSubset params are grounded."],
+                )
+            )
+            return
+        if not isinstance(value, list):
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL2201",
+                    message=f"StaticSubset param `{pdecl.name}` expects an array",
+                    span=pdecl.span,
+                    help=[f'Use `params.{pdecl.name} = ["member1", "member2"]`.'],
+                )
+            )
+            return
+        allowed_members = frozenset(str(member) for member in p_sets[pdecl.elem_set])
+        subset: list[str] = []
+        seen: set[str] = set()
+        for raw_member in value:
+            member = str(raw_member)
+            if member not in allowed_members:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=(
+                            f"StaticSubset param `{pdecl.name}` has value `{member}` "
+                            f"not present in set `{pdecl.elem_set}`"
+                        ),
+                        span=pdecl.span,
+                        help=[
+                            f"Restrict `{pdecl.name}` to members declared in set `{pdecl.elem_set}`."
+                        ],
+                    )
+                )
+                return
+            if member in seen:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL2201",
+                        message=f"StaticSubset param `{pdecl.name}` contains duplicate `{member}`",
+                        span=pdecl.span,
+                        help=["List each static subset member at most once."],
+                    )
+                )
+                return
+            seen.add(member)
+            subset.append(member)
+        p_params[pdecl.name] = list(subset)
+        p_sets[pdecl.name] = list(subset)
+        return
+
     if pdecl.indices:
         if not isinstance(value, dict):
             if not provided and pdecl.default is not None:
@@ -1034,6 +1106,25 @@ def _eval_static_bool(
             diagnostics=diagnostics,
         )
         return value if isinstance(value, bool) else None
+    if isinstance(expr, ir.KMethodCall):
+        if (
+            isinstance(expr.target, ir.KName)
+            and expr.name == "has"
+            and len(expr.args) == 1
+            and expr.target.name in p_sets
+        ):
+            value = _eval_static_value(
+                expr.args[0],
+                p_sets=p_sets,
+                p_params=p_params,
+                p_relations=p_relations,
+                env=env,
+                diagnostics=diagnostics,
+            )
+            if value is None:
+                return None
+            members = frozenset(str(member) for member in p_sets[expr.target.name])
+            return str(value) in members
     if isinstance(expr, ir.KBoolIfThenElse):
         cond = _eval_static_bool(
             expr.cond,

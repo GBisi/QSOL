@@ -8,6 +8,7 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 *   **Logic**: `and`, `or`, `not`, `implies` are supported.
 *   **Quantifiers**: `forall`, `exists`, `sum`, `count` are supported.
 *   **Static relations**: Tuple binders over grounded relations are supported. Base relations come from scenario data; derived relations are evaluated during grounding. Relation membership calls evaluate against static relation values.
+*   **Static subsets**: `StaticSubset(S)` params are validated as scenario arrays and materialized as static domains. `size(SubsetParam)`, iteration, and `SubsetParam.has(x)` evaluate from grounded data.
 *   **Grounded integer bounds**: Bounded `Int` decisions may use scenario-time static aggregate bounds such as `sum(Length[j] for j in Jobs)`, `count((u, v) in Edge where Weight[u, v] > 0)`, and `size(Edge)`. Bounds that reference decisions or unknown view methods are rejected.
 *   **Safe piecewise builtins**: `minimize abs(e)`, `must abs(e) <= C`, `minimize max(term for ...)`, and `maximize min(term for ...)` are supported when the compiler can create finite bounded `Int` auxiliaries.
 *   **Source-level globals/helpers**: `all_different(term for x in S)` lowers to pairwise disequality constraints for one finite set binder. `adjacent` and `nonedge` are graph relation helpers that lower to explicit static relation membership formulas.
@@ -37,3 +38,4 @@ If you encounter `QSOL3001`, you have likely used a construct that cannot be low
 *   **Aggregate Bound Blowups**: Aggregate bounds are evaluated during grounding. Large static domains or relations can increase grounding time even though they do not add backend expression degree by themselves.
 *   **Global Helper Blowups**: `all_different` creates pairwise constraints over its finite domain. Large domains can produce quadratic constraint growth.
 *   **Unsupported Piecewise Contexts**: `maximize abs(e)`, `minimize min(...)`, `maximize max(...)`, `abs(e) >= C`, non-affine expressions that would exceed backend degree, and missing finite auxiliary bounds are rejected with `QSOL3101`.
+*   **Multiple Objectives**: More than one objective statement is rejected with `QSOL3201`. Combine terms explicitly in one weighted objective expression until a target supports ordered objectives or explicit scalarization policy.

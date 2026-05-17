@@ -126,6 +126,7 @@ The major declaration forms are:
 | `structure G = UndirectedGraph(V, Edge);` | A compiler-owned static structure. |
 | `param P : T;` | A scalar scenario parameter. |
 | `param P[I, J] : T = default;` | An indexed scenario parameter with optional scalar default. |
+| `param S : StaticSubset(V);` | A scenario-supplied subset that also acts as a static domain. |
 | `find X : T;` | A scalar or structured decision. |
 | `find X[I] : T;` | An indexed scalar decision over a static domain. |
 | `must expr;` | A hard constraint. |
@@ -133,6 +134,7 @@ The major declaration forms are:
 | `nice expr;` | A weaker soft preference in language surface; backend support is currently narrow. |
 | `minimize expr;` | Numeric minimization objective. |
 | `maximize expr;` | Numeric maximization objective. |
+| `minimize expr as label;` | Labeled objective metadata. |
 
 Only backend-supported constructs can be built or solved. Frontend-valid QSOL
 can still be rejected by `targets check` if the selected backend cannot encode
@@ -278,7 +280,32 @@ param Next[Positions] : Elem(Positions);
 ```
 
 Defaults are allowed for `Bool`, `Real`, and bounded `Int` parameters. Element
-parameters (`Elem(S)`) do not support defaults.
+parameters (`Elem(S)`) and static subset parameters (`StaticSubset(S)`) do not
+support defaults.
+
+Static subset parameters:
+
+```qsol
+param Terminals : StaticSubset(Nodes);
+```
+
+`StaticSubset(S)` is scenario-time data, not a decision. TOML supplies it as an
+array of members from the parent set:
+
+```toml
+[scenarios.baseline.params]
+Terminals = ["a", "c"]
+```
+
+During grounding, the compiler validates that every member belongs to `S`,
+rejects duplicates, stores the value as a parameter, and materializes a static
+domain with the parameter name. Static subsets can be used in binders,
+`size(...)`, and static membership checks:
+
+```qsol
+must forall t in Terminals: Pick.has(t);
+minimize size(Terminals) + count(v in Nodes where Terminals.has(v));
+```
 
 TOML data for indexed params is normally an object keyed by the index values:
 
@@ -476,10 +503,18 @@ Objectives:
 ```qsol
 minimize sum(Cost[w, t] for w in Workers for t in Tasks where Assign.is(t, w));
 maximize count(i in Items where Pick.has(i));
+minimize count(i in Items where not Pick.has(i)) as missing;
 ```
 
-Multiple objectives are parsed and lowered, but backend/runtime interpretation
-is intentionally narrow. Prefer one primary objective for current backend runs.
+Objective labels use `as NAME`. Labels are metadata for diagnostics and future
+target/runtime policy; they do not create expression names. Labels must be
+unique within a problem.
+
+Multiple objective statements express ordered objective intent in source order.
+The current `dimod-cqm-v1` backend is single-objective and rejects multiple
+objective statements with `QSOL3201` instead of silently summing them. To build
+with this backend today, combine terms explicitly in one weighted objective
+expression.
 
 ## 12. Compiler-Owned Helpers and Piecewise Forms
 

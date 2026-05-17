@@ -122,6 +122,22 @@ problem P {
     assert isinstance(program.items[0], ast.ProblemDef)
 
 
+def test_parse_static_subset_param_type() -> None:
+    text = """
+problem P {
+  set V;
+  param Terminals : StaticSubset(V);
+}
+"""
+    program = parse_to_ast(text, filename="static_subset_param.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    param = problem.stmts[1]
+    assert isinstance(param, ast.ParamDecl)
+    assert isinstance(param.value_type, ast.StaticSubsetTypeRef)
+    assert param.value_type.set_name == "V"
+
+
 def test_parse_size_builtin_in_numeric_context() -> None:
     text = """
 problem P {
@@ -133,6 +149,22 @@ problem P {
     program = parse_to_ast(text, filename="size_builtin.qsol")
     assert len(program.items) == 1
     assert isinstance(program.items[0], ast.ProblemDef)
+
+
+def test_parse_objective_labels() -> None:
+    text = """
+problem P {
+  set V;
+  find Pick : Subset(V);
+  minimize count(v in V where not Pick.has(v)) as missing;
+  maximize count(v in V where Pick.has(v)) as selected;
+}
+"""
+    program = parse_to_ast(text, filename="objective_labels.qsol")
+    problem = program.items[0]
+    assert isinstance(problem, ast.ProblemDef)
+    objectives = [stmt for stmt in problem.stmts if isinstance(stmt, ast.Objective)]
+    assert [objective.label for objective in objectives] == ["missing", "selected"]
 
 
 def test_parse_structure_decl_and_dotted_graph_domains() -> None:
