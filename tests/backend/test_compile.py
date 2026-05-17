@@ -1708,7 +1708,56 @@ problem = "Cubic"
         ),
     )
 
-    assert any(d.code == "QSOL3002" for d in unit.diagnostics)
+    cubic_errors = [d for d in unit.diagnostics if d.code == "QSOL3002"]
+    assert cubic_errors
+    help_text = "\n".join(cubic_errors[0].help)
+    assert "Use `indicator(...)`" in help_text
+    assert "Move variable-dependent aggregate filters into `if`" in help_text
+    assert "Introduce auxiliary `Bool` decisions" in help_text
+    assert "Prefer graph or route unknowns" in help_text
+
+
+def test_conditional_cubic_degree_reports_prescriptive_backend_help(tmp_path: Path) -> None:
+    source = """
+use stdlib.logic;
+
+problem ConditionalCubic {
+  set Items;
+  find Pick : Subset(Items);
+  minimize sum(
+    if Pick.has(i) then indicator(Pick.has(j)) * indicator(Pick.has(k)) else 0
+    for i in Items for j in Items for k in Items
+  );
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ConditionalCubic"
+
+[scenarios.baseline.sets]
+Items = ["i", "j", "k"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="conditional_cubic.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-conditional-cubic"),
+        ),
+    )
+
+    degree_errors = [d for d in unit.diagnostics if d.code == "QSOL3001"]
+    assert degree_errors
+    help_text = "\n".join(degree_errors[0].help)
+    assert "Use `indicator(...)`" in help_text
+    assert "Move variable-dependent aggregate filters into `if`" in help_text
+    assert "Introduce auxiliary `Bool` decisions" in help_text
+    assert "Prefer graph or route unknowns" in help_text
 
 
 def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:

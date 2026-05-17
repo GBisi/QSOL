@@ -17,6 +17,11 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 
 *   **Addition/Subtraction**: Fully supported (`a + b`, `a - b`).
 *   **Multiplication**: Supported if the result is at most quadratic (e.g., `const * var` or `var * var`). Unsupported multiplication shapes such as cubic terms (`var * var * var`) trigger `QSOL3002` or an expression-degree `QSOL3001` diagnostic.
+    When this happens, common rewrites are:
+    *   Use `indicator(...)` to turn Bool conditions into numeric masks.
+    *   Move variable-dependent aggregate filters into `if` terms so aggregate domains stay static, for example `sum(if Pick.has(i) then Cost[i] else 0 for i in Items)`.
+    *   Introduce auxiliary `Bool` decisions and constraints for repeated higher-order conjunctions or products.
+    *   Prefer graph or route unknowns when the expression is manually encoding graph or route structure.
 *   **Division**: Only supported if the divisor is a constant (e.g., `var / 2`). Division by variables is not supported.
 
 ## 3. Conditionals (`if-then-else`)

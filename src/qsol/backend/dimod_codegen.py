@@ -1560,7 +1560,7 @@ class DimodCodegen:
                         code="QSOL3002",
                         message="unsupported multiplication shape for backend `dimod-cqm-v1`",
                         span=expr.span,
-                        help=["Rewrite products so backend expressions remain at most quadratic."],
+                        help=self._backend_degree_help(),
                     )
                 )
                 return None
@@ -2084,6 +2084,13 @@ class DimodCodegen:
         )
 
     def _help_for_backend_message(self, message: str) -> list[str]:
+        if (
+            "degree exceeds backend support" in message
+            or "unsupported multiplication shape" in message
+            or "unsupported numeric comparison operands" in message
+            or "unsupported conditional numeric expression" in message
+        ):
+            return self._backend_degree_help()
         if "unsupported unknown kind" in message:
             return ["Backend v1 currently supports only `Subset` and `Mapping` unknown kinds."]
         if "unsupported route transition hard constraint shape" in message:
@@ -2122,3 +2129,17 @@ class DimodCodegen:
         if "unsupported comparison operator" in message:
             return ["Use one of `=`, `!=`, `<`, `<=`, `>`, `>=` in comparisons."]
         return []
+
+    def _backend_degree_help(self) -> list[str]:
+        return [
+            "Rewrite products so backend expressions remain at most quadratic.",
+            "Use `indicator(...)` to turn Bool conditions into numeric masks instead of "
+            "multiplying several decisions together.",
+            "Move variable-dependent aggregate filters into `if` terms so the aggregate "
+            "domain stays static, for example "
+            "`sum(if Pick.has(i) then Cost[i] else 0 for i in Items)`.",
+            "Introduce auxiliary `Bool` decisions and constraints for repeated "
+            "higher-order conjunctions or products.",
+            "Prefer graph or route unknowns when the expression is manually encoding "
+            "graph or route structure.",
+        ]
