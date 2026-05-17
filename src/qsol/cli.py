@@ -32,6 +32,7 @@ from qsol.config import (
     materialize_instance_payload,
     resolve_combine_mode,
     resolve_failure_policy,
+    resolve_objective_settings,
     resolve_output_format,
     resolve_runtime_options,
     resolve_selected_scenarios,
@@ -1156,6 +1157,9 @@ def targets_check(
         instance_payload = materialize_instance_payload(
             config=parsed_config, scenario_name=scenario_name
         )
+        qubo_policy, qubo_weights = resolve_objective_settings(
+            config=parsed_config, scenario_name=scenario_name
+        )
         unit = check_target_support(
             text,
             options=CompileOptions(
@@ -1163,6 +1167,8 @@ def targets_check(
                 instance_payload=instance_payload,
                 runtime_id=runtime,
                 plugin_specs=tuple(plugin),
+                qubo_policy=qubo_policy,
+                qubo_weights=qubo_weights,
             ),
         )
         has_errors = _print_diags(console, source, unit.diagnostics)
@@ -1402,6 +1408,9 @@ def build_cmd(
         instance_payload = materialize_instance_payload(
             config=parsed_config, scenario_name=scenario_name
         )
+        qubo_policy, qubo_weights = resolve_objective_settings(
+            config=parsed_config, scenario_name=scenario_name
+        )
         unit = build_for_target(
             text,
             options=CompileOptions(
@@ -1411,6 +1420,8 @@ def build_cmd(
                 output_format=resolved_output_format,
                 runtime_id=runtime,
                 plugin_specs=tuple(plugin),
+                qubo_policy=qubo_policy,
+                qubo_weights=qubo_weights,
             ),
         )
         has_errors = _print_diags(console, source, unit.diagnostics)
@@ -1762,6 +1773,9 @@ def solve_cmd(
         instance_payload = materialize_instance_payload(
             config=parsed_config, scenario_name=scenario_name
         )
+        qubo_policy, qubo_weights = resolve_objective_settings(
+            config=parsed_config, scenario_name=scenario_name
+        )
         unit, run_result = run_for_target(
             text,
             options=CompileOptions(
@@ -1771,6 +1785,8 @@ def solve_cmd(
                 output_format=resolved_output_format,
                 runtime_id=runtime,
                 plugin_specs=tuple(plugin),
+                qubo_policy=qubo_policy,
+                qubo_weights=qubo_weights,
             ),
             run_options=RuntimeRunOptions(params=runtime_params, outdir=str(scenario_outdir)),
         )

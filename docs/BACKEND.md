@@ -8,7 +8,8 @@ This backend supports:
 *   **Problem Types**: Optimization and Satisfaction.
 *   **Variables**: Binary variables generated from higher-level `Subset`, `Mapping`, and supported graph unknowns, scalar `Bool` decisions, and bounded scalar/indexed `Int` decisions.
 *   **Constraints**: Linear and Quadratic equality/inequality constraints.
-*   **Objectives**: One linear or quadratic objective statement.
+*   **Objectives**: One linear or quadratic objective statement, or multiple
+    objectives with explicit manual scalarization weights.
 *   **Static relations**: Base relation values are loaded from scenario data and derived relations are evaluated before backend compilation. Tuple iteration expands over grounded relation rows, and relation membership calls evaluate as constants for the grounded tuple values.
 *   **Static subsets**: `StaticSubset(S)` params are validated against their parent set and materialized as grounded static domains. They create no backend variables.
 *   **Static graph structures**: `UndirectedGraph` and `DirectedGraph` are resolved before backend compilation. Their derived domains are ordinary grounded static relations from the backend's perspective.
@@ -96,6 +97,54 @@ unknowns:
 These encoders are compiler/backend internals. They do not add public graph
 orientation syntax or a user-facing all-cycles domain.
 
+### `SteinerTree(G, Terminals)`
+
+`SteinerTree(G, Terminals)` requires `Terminals` to be a nonempty grounded
+`StaticSubset` of `G.vertices`. The backend creates binary variables for both
+selected vertices and selected edges:
+
+```text
+T.has_vertex(v) in {0,1}
+T.has_edge(u,v) in {0,1}
+```
+
+Every terminal is forced selected. Selected edges imply both endpoint vertices
+are selected. Internal integer flow variables route connectivity from one
+terminal root to each selected non-root vertex, and the tree count constraint
+`sum(selected_edges) == sum(selected_vertices) - 1` removes connected cycles.
+
+### `HamiltonianPath(G)` and `HamiltonianCycle(G)`
+
+`HamiltonianPath(G)` and `HamiltonianCycle(G)` use internal assignment
+variables for every grounded vertex and numeric position:
+
+```text
+P.at[p,v] in {0,1}
+```
+
+The backend adds two families of assignment constraints:
+
+* each position contains exactly one vertex;
+* each vertex appears in exactly one position.
+
+For every non-edge `(u, v)` and each consecutive position pair, the backend
+forbids selecting `u` immediately followed by `v`:
+
+```text
+P.at[p,u] + P.at[p+1,v] <= 1
+```
+
+Because `G` is undirected, both orientations are forbidden when the unordered
+pair is absent from `G.edges`. `HamiltonianCycle(G)` also adds the same
+non-adjacency constraints between the final and first positions.
+
+The public views are `P.at(pos, v)` and `P.uses(u, v)`. Positions are internal
+numeric positions `1..size(G.vertices)` and do not require a user-declared set.
+`uses(u, v)` is linked to adjacent-position transitions for the corresponding
+grounded edge. The encoding is deliberately direct and inspectable: it uses
+O(n^2) assignment variables and O(n^3) forbidden-pair constraints in the dense
+worst case.
+
 ### Scalar Decisions
 
 ```qsol
@@ -141,7 +190,7 @@ Boolean logic is converted to arithmetic constraints on binary selection variabl
 *   `minimize expr` adds `expr` to the CQM objective.
 *   `maximize expr` adds `-expr` to the CQM objective.
 *   `minimize expr as label` and `maximize expr as label` preserve label metadata for diagnostics.
-*   Multiple objective statements are rejected with `QSOL3201`; this backend does not silently sum or lexicographically scalarize them.
+*   Multiple objective statements are rejected with `QSOL3201` by default. With `qubo_policy = "manual"`, each objective label (or `objective_N` fallback) must have an explicit scalarization weight. `qubo_policy = "auto"` is reserved and reports `QSOL3202`.
 *   `should expr` adds a penalty to the objective if `expr` is violated (weight 10.0).
 *   `nice expr` adds a smaller penalty (weight 1.0).
 

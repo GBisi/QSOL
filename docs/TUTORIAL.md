@@ -47,8 +47,9 @@ problem MyFirstModel {
 ```
 
 Objectives can be labeled with `as name` for diagnostics. The current
-`dimod-cqm-v1` backend accepts one objective statement; combine weighted terms
-inside that statement when you need a scalar tradeoff.
+`dimod-cqm-v1` backend accepts one objective statement by default. For multiple
+labeled objectives, set `[entrypoint.objectives] qubo_policy = "manual"` and
+provide one explicit QUBO weight per label.
 
 ## 4. Preparing Data
 

@@ -1,0 +1,15 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "path"
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[scenarios.path]
+problem = "TutorialMatching"
+
+[scenarios.path.sets]
+V = ["a", "b", "c", "d"]
+
+[scenarios.path.relations]
+Edge = [["a", "b"], ["b", "c"], ["c", "d"]]

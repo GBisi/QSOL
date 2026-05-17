@@ -29,6 +29,11 @@ If instance data is provided (via `model.qsol.toml`), the compiler performs **in
 3.  **Compilation**: The backend translates the Ground IR into its native format (e.g., a `dimod.ConstrainedQuadraticModel`).
 4.  **Export**: Artifacts are written to disk.
 
+For `dimod-cqm-v1`, multiple objectives remain ordered in the IR. The backend
+only combines them when config explicitly selects manual scalarization with one
+weight for each objective label. Automatic bound-based scalarization is
+reserved and reports `QSOL3202`.
+
 ## 2. Output Directory Structure
 
 When running `qsol build` or `qsol solve`, the compiler generates an output directory (default: `outdir/<model_name>`).

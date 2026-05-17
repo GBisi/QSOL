@@ -5,7 +5,7 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from enum import Enum
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Literal, TypeAlias, TypeVar, cast
 
 from qsol.config.types import (
     CombineMode,
@@ -22,6 +22,7 @@ from qsol.config.types import (
 )
 
 E = TypeVar("E", bound=Enum)
+QuboPolicy: TypeAlias = Literal["error", "manual", "auto"]
 
 
 def discover_config_path(
@@ -263,7 +264,27 @@ def materialize_instance_payload(*, config: QsolConfig, scenario_name: str) -> d
     if execution_payload:
         payload["execution"] = execution_payload
 
+    qubo_policy = scenario.qubo_policy or config.entrypoint.qubo_policy
+    qubo_weights = copy.deepcopy(config.entrypoint.qubo_weights)
+    qubo_weights.update(copy.deepcopy(scenario.qubo_weights))
+    if qubo_policy != "error" or qubo_weights:
+        payload["objectives"] = {
+            "qubo_policy": qubo_policy,
+            "qubo_weights": qubo_weights,
+        }
+
     return payload
+
+
+def resolve_objective_settings(
+    *, config: QsolConfig, scenario_name: str
+) -> tuple[QuboPolicy, dict[str, float]]:
+    if scenario_name not in config.scenarios:
+        raise ValueError(f"unknown scenario `{scenario_name}`")
+    scenario = config.scenarios[scenario_name]
+    weights = copy.deepcopy(config.entrypoint.qubo_weights)
+    weights.update(copy.deepcopy(scenario.qubo_weights))
+    return scenario.qubo_policy or config.entrypoint.qubo_policy, weights
 
 
 def resolve_output_format(*, config: QsolConfig, cli_format: str | None) -> str:
@@ -318,6 +339,8 @@ def _parse_entrypoint(raw: object, *, path: str) -> EntryPointConfig:
         plugins = _parse_plugin_list(table.get("plugins"), path=f"{path}.plugins")
 
     runtime_options = _parse_optional_runtime_options(table, "runtime_options", path=path)
+    qubo_policy, qubo_weights = _parse_objective_settings(table, path=path)
+    assert qubo_policy is not None
 
     solutions: int | None = None
     if "solutions" in table:
@@ -349,6 +372,8 @@ def _parse_entrypoint(raw: object, *, path: str) -> EntryPointConfig:
         solutions=solutions,
         energy_min=energy_min,
         energy_max=energy_max,
+        qubo_policy=qubo_policy,
+        qubo_weights=qubo_weights,
     )
 
 
@@ -411,6 +436,9 @@ def _parse_scenarios(raw: object, *, path: str) -> dict[str, ScenarioConfig]:
             scenario_table.get("execution"), path=f"{scenario_path}.execution"
         )
         solve = _parse_solve(scenario_table.get("solve"), path=f"{scenario_path}.solve")
+        qubo_policy, qubo_weights = _parse_objective_settings(
+            scenario_table, path=scenario_path, default_policy=None
+        )
 
         scenarios[scenario_name] = ScenarioConfig(
             problem=problem,
@@ -419,6 +447,8 @@ def _parse_scenarios(raw: object, *, path: str) -> dict[str, ScenarioConfig]:
             params=params,
             execution=execution,
             solve=solve,
+            qubo_policy=qubo_policy,
+            qubo_weights=qubo_weights,
         )
     return scenarios
 
@@ -456,6 +486,37 @@ def _parse_solve(raw: object, *, path: str) -> SolveConfig:
         raise ValueError(f"`{path}` requires `energy_min <= energy_max`")
 
     return SolveConfig(solutions=solutions, energy_min=energy_min, energy_max=energy_max)
+
+
+def _parse_objective_settings(
+    table: Mapping[str, object],
+    *,
+    path: str,
+    default_policy: QuboPolicy | None = "error",
+) -> tuple[QuboPolicy | None, dict[str, float]]:
+    raw = table.get("objectives")
+    if raw is None:
+        return default_policy, {}
+    objectives = _require_mapping(raw, f"{path}.objectives")
+    policy_raw = objectives.get("qubo_policy", default_policy)
+    policy: QuboPolicy | None
+    if policy_raw is None:
+        policy = None
+    elif isinstance(policy_raw, str) and policy_raw in {"error", "manual", "auto"}:
+        policy = cast(QuboPolicy, policy_raw)
+    else:
+        raise ValueError(f"`{path}.objectives.qubo_policy` must be one of: error, manual, auto")
+
+    weights: dict[str, float] = {}
+    raw_weights = objectives.get("qubo_weights", {})
+    if not isinstance(raw_weights, Mapping):
+        raise ValueError(f"`{path}.objectives.qubo_weights` must be a TOML table/object")
+    for key, value in raw_weights.items():
+        name = str(key).strip()
+        if not name:
+            raise ValueError(f"`{path}.objectives.qubo_weights` keys must be non-empty strings")
+        weights[name] = _parse_float(value, path=f"{path}.objectives.qubo_weights.{name}")
+    return policy, weights
 
 
 def _merge_execution(defaults: ExecutionConfig, scenario: ExecutionConfig) -> ExecutionConfig:

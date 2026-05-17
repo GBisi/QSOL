@@ -61,6 +61,7 @@ Field rules:
 - `schema_version`: currently must be `"1"`.
 - `entrypoint`: optional CLI-equivalent defaults (`scenario`/`scenarios`/`all_scenarios`, `runtime`, `backend`, `plugins`, `runtime_options`, `solutions`, `energy_min`, `energy_max`, `out`, `format`, `combine_mode`, `failure_policy`).
 - `scenarios.<name>`: scenario payload (`problem`, `sets`, `relations`, `params`, optional `execution`, optional `solve`).
+- `entrypoint.objectives` and `scenarios.<name>.objectives`: optional objective scalarization settings. Use `qubo_policy = "manual"` with `qubo_weights` when compiling multiple objective statements for `dimod-cqm-v1`.
 
 Static relations are supplied under `scenarios.<name>.relations`:
 
@@ -91,6 +92,19 @@ adds pairwise hard constraints, while `adjacent` and `nonedge` are rewritten to
 relation membership formulas before target support checks. `inspect estimate
 --json` reports relation arity/size, decision summaries, expression summary
 fields, backend CQM counts, and backend warnings.
+
+If your model has multiple objective statements, the default backend reports
+`QSOL3201`. To compile them intentionally, label each objective and add manual
+weights to the config:
+
+```toml
+[entrypoint.objectives]
+qubo_policy = "manual"
+
+[entrypoint.objectives.qubo_weights]
+primary = 1000.0
+secondary = 1.0
+```
 
 Auto-discovery when `--config` is omitted:
 - Search only `*.qsol.toml` in the model directory.

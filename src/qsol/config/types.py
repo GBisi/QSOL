@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 
 class SelectionMode(str, Enum):
@@ -51,6 +52,8 @@ class EntryPointConfig:
     solutions: int | None = None
     energy_min: float | None = None
     energy_max: float | None = None
+    qubo_policy: Literal["error", "manual", "auto"] = "error"
+    qubo_weights: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +71,8 @@ class ScenarioConfig:
     params: dict[str, object] = field(default_factory=dict)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     solve: SolveConfig = field(default_factory=SolveConfig)
+    qubo_policy: Literal["error", "manual", "auto"] | None = None
+    qubo_weights: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

@@ -396,6 +396,56 @@ def test_build_command_exports_artifacts_and_report(tmp_path: Path) -> None:
     assert (outdir / "capability_report.json").exists()
 
 
+def test_build_uses_manual_objective_scalarization_from_config(tmp_path: Path) -> None:
+    model = tmp_path / "multi.qsol"
+    model.write_text(
+        """
+problem MultiObjective {
+  set A;
+  find S : Subset(A);
+  minimize count(x in A where not S.has(x)) as missing;
+  minimize count(x in A where S.has(x)) as selected;
+}
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / "multi.qsol.toml"
+    config.write_text(
+        """
+schema_version = "1"
+
+[entrypoint]
+scenario = "base"
+
+[entrypoint.objectives]
+qubo_policy = "manual"
+
+[entrypoint.objectives.qubo_weights]
+missing = 1000.0
+selected = 1.0
+
+[scenarios.base]
+problem = "MultiObjective"
+
+[scenarios.base.sets]
+A = ["a1", "a2"]
+""".lstrip(),
+        encoding="utf-8",
+    )
+    outdir = tmp_path / "out-multi"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["build", str(model), "-c", str(config), "-u", "local-dimod", "-o", str(outdir), "-n"],
+    )
+
+    assert result.exit_code == 0
+    assert (outdir / "model.cqm").exists()
+    assert (outdir / "qubo.json").exists()
+
+
 def test_build_rejects_invalid_output_format(tmp_path: Path) -> None:
     model = tmp_path / "demo.qsol"
     _write_model(model)

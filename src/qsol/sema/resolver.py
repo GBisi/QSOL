@@ -344,20 +344,30 @@ class Resolver:
                     "MaximalMatching",
                     "SpanningTree",
                     "Forest",
+                    "SteinerTree",
                     "HamiltonianPath",
                     "HamiltonianCycle",
                 }:
-                    if len(unknown_ref.args) != 1:
+                    expected_args = 2 if unknown_ref.kind == "SteinerTree" else 1
+                    if len(unknown_ref.args) != expected_args:
                         diagnostics.append(
                             Diagnostic(
                                 severity=Severity.ERROR,
                                 code="QSOL2001",
                                 message=(
-                                    f"{unknown_ref.kind} expects one UndirectedGraph "
-                                    "structure argument"
+                                    f"{unknown_ref.kind} expects "
+                                    + (
+                                        "an UndirectedGraph and StaticSubset argument"
+                                        if unknown_ref.kind == "SteinerTree"
+                                        else "one UndirectedGraph structure argument"
+                                    )
                                 ),
                                 span=stmt.span,
-                                help=[f"Use `find M : {unknown_ref.kind}(G);`."],
+                                help=[
+                                    f"Use `find T : {unknown_ref.kind}(G, Terminals);`."
+                                    if unknown_ref.kind == "SteinerTree"
+                                    else f"Use `find M : {unknown_ref.kind}(G);`."
+                                ],
                             )
                         )
                     else:
@@ -384,6 +394,36 @@ class Resolver:
                                     ],
                                 )
                             )
+                        if unknown_ref.kind == "SteinerTree":
+                            subset_name = unknown_ref.args[1]
+                            subset_symbol = scope.lookup(subset_name)
+                            graph_vertex_set = (
+                                graph_symbol.type.vertex_set
+                                if graph_symbol is not None
+                                and isinstance(graph_symbol.type, StructureInstanceType)
+                                else None
+                            )
+                            if (
+                                subset_symbol is None
+                                or subset_symbol.kind != SymbolKind.SET
+                                or not isinstance(subset_symbol.type, SetType)
+                                or subset_symbol.type.element_set != graph_vertex_set
+                            ):
+                                diagnostics.append(
+                                    Diagnostic(
+                                        severity=Severity.ERROR,
+                                        code="QSOL2001",
+                                        message=(
+                                            "SteinerTree expects a StaticSubset whose parent set "
+                                            "matches the graph vertices"
+                                        ),
+                                        span=stmt.span,
+                                        help=[
+                                            "Declare `param Terminals : StaticSubset(V);` for "
+                                            "`structure G = UndirectedGraph(V, Edge);`."
+                                        ],
+                                    )
+                                )
                 else:
                     if global_scope.lookup(unknown_ref.kind) is None:
                         candidates = [

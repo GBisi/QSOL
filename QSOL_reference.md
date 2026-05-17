@@ -256,6 +256,9 @@ QSOL has scalar, element, comprehension, and decision-abstraction types.
 | `MaximalMatching(G)` | Unknown maximal matching over an undirected graph | `find M : MaximalMatching(G);` |
 | `SpanningTree(G)` | Unknown spanning tree over an undirected graph | `find T : SpanningTree(G);` |
 | `Forest(G)` | Unknown forest over an undirected graph | `find F : Forest(G);` |
+| `SteinerTree(G, Terminals)` | Unknown Steiner tree spanning a static terminal subset | `find T : SteinerTree(G, Terminals);` |
+| `HamiltonianPath(G)` | Unknown Hamiltonian path over an undirected graph | `find P : HamiltonianPath(G);` |
+| `HamiltonianCycle(G)` | Unknown Hamiltonian cycle over an undirected graph | `find C : HamiltonianCycle(G);` |
 | User unknown | Custom abstraction from `unknown` | `find Tour : Permutation(Cities);` |
 
 Numeric literals are typed as `Real`. Integer decision bounds use numeric
@@ -330,6 +333,9 @@ find M : Matching(G);
 find MM : MaximalMatching(G);
 find T : SpanningTree(G);
 find F : Forest(G);
+find ST : SteinerTree(G, Terminals);
+find P : HamiltonianPath(G);
+find C : HamiltonianCycle(G);
 find Enabled : Bool;
 find Load[Machines] : Int[0 .. Capacity];
 ```
@@ -348,6 +354,16 @@ Semantics:
 - `SpanningTree(G)` has the same view and selects a connected acyclic edge set
   spanning all vertices in `G.vertices`.
 - `Forest(G)` has the same view and selects an acyclic edge set.
+- `SteinerTree(G, Terminals)` expects `G` to be an `UndirectedGraph` and
+  `Terminals` to be a `StaticSubset` of `G.vertices`. It exposes
+  `T.has_edge(u, v)` and `T.has_vertex(v)`, selects every terminal vertex,
+  connects selected vertices by selected edges, and enforces tree cardinality.
+- `HamiltonianPath(G)` expects `G` to be an `UndirectedGraph`. It exposes
+  `P.at(pos, v)` for internal numeric positions `1..size(G.vertices)` and
+  `P.uses(u, v)` for graph edges. Each position contains exactly one vertex,
+  each vertex appears exactly once, and consecutive positions must be adjacent.
+- `HamiltonianCycle(G)` has the same views and also requires the final and
+  first positions to be adjacent.
 - Scalar `Bool` creates one binary decision.
 - Scalar `Int[lo .. hi]` creates a bounded integer CQM decision. Indexed integer
   finds create one bounded integer decision per grounded index.
@@ -529,9 +545,10 @@ unique within a problem.
 
 Multiple objective statements express ordered objective intent in source order.
 The current `dimod-cqm-v1` backend is single-objective and rejects multiple
-objective statements with `QSOL3201` instead of silently summing them. To build
-with this backend today, combine terms explicitly in one weighted objective
-expression.
+objective statements with `QSOL3201` instead of silently summing them unless
+configuration selects manual scalarization. To build multiple objectives with
+this backend, label each objective and provide one explicit QUBO weight per
+label under `[entrypoint.objectives.qubo_weights]` or scenario overrides.
 
 ## 12. Compiler-Owned Helpers and Piecewise Forms
 
@@ -649,6 +666,9 @@ find M : Matching(G);
 find MM : MaximalMatching(G);
 find T : SpanningTree(G);
 find F : Forest(G);
+find ST : SteinerTree(G, Terminals);
+find P : HamiltonianPath(G);
+find C : HamiltonianCycle(G);
 ```
 
 `Matching(G)` requires an `UndirectedGraph`. It creates a matching decision over
@@ -657,6 +677,13 @@ view and additionally enforces that no extra graph edge can be added to the
 matching. `SpanningTree(G)` and `Forest(G)` also use `has_edge`; they enforce
 tree/acyclic graph structure while leaving cardinality, weights, and
 optimization direction in ordinary `minimize` or `maximize` objectives.
+`SteinerTree(G, Terminals)` adds a vertex-selection view `has_vertex(v)` and
+requires `Terminals` to be a nonempty grounded `StaticSubset` of graph vertices.
+`HamiltonianPath(G)` and `HamiltonianCycle(G)` expose vertex-order views
+`at(pos, v)` and edge-use views `uses(u, v)`. Positions are compiler-owned
+numeric positions `1..size(G.vertices)`; users do not declare a positions set.
+The path form requires adjacent consecutive positions, and the cycle form also
+requires wraparound adjacency from the final position to the first.
 
 ## 14. TOML Configuration Format
 

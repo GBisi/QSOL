@@ -1,0 +1,11 @@
+use stdlib.graph;
+
+problem TutorialMatching {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+
+  find M : Matching(G);
+
+  maximize count((u, v) in G.edges where M.has_edge(u, v));
+}

@@ -199,6 +199,9 @@ find M : Matching(G); // from `use stdlib.graph;`
 find MM : MaximalMatching(G); // from `use stdlib.graph;`
 find T : SpanningTree(G); // from `use stdlib.graph;`
 find F : Forest(G); // from `use stdlib.graph;`
+find ST : SteinerTree(G, Terminals); // `Terminals : StaticSubset(V)`
+find P : HamiltonianPath(G); // from `use stdlib.graph;`
+find C : HamiltonianCycle(G); // from `use stdlib.graph;`
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
@@ -227,6 +230,13 @@ Scalar decisions are also valid:
 - `SpanningTree(G)` has the same `has_edge` view and selects a connected tree
   spanning all vertices.
 - `Forest(G)` has the same `has_edge` view and selects an acyclic edge set.
+- `SteinerTree(G, Terminals)` has `has_edge(u, v)` and `has_vertex(v)` views;
+  `Terminals` must be a `StaticSubset` of graph vertices.
+- `HamiltonianPath(G)` expects an `UndirectedGraph` and exposes
+  `P.at(pos, v)` and `P.uses(u, v)`. Positions are internal numeric positions
+  `1..size(G.vertices)`; consecutive positions must be adjacent in `G`.
+- `HamiltonianCycle(G)` has the same views and also requires the final and
+  first positions to be adjacent.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,
@@ -283,7 +293,8 @@ minimize numeric_expr as label;
 Objective labels are optional metadata and must be unique within a problem. They
 do not create expression aliases. Multiple objective statements are ordered by
 source order at the language level, but the current `dimod-cqm-v1` backend
-rejects multiple objective statements instead of silently scalarizing them.
+rejects multiple objective statements unless config selects manual scalarization
+with one explicit QUBO weight per objective label.
 
 ## 5. Expressions
 

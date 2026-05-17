@@ -205,6 +205,7 @@ To reduce unsupported diagnostics:
 - Use `sum` + arithmetic in objectives, or the supported piecewise objective forms when they remove manual auxiliaries.
 - Validate early with `targets check` on concrete scenarios.
 - Custom unknowns in `find` are supported through frontend elaboration into primitive finds and generated constraints.
+- For graph-shaped answers, `stdlib.graph` provides compiler-owned unknowns such as `Matching(G)` and `SteinerTree(G, Terminals)`.
 
 > For a complete list of unsupported patterns, see [Backend V1 Limits](../../docs/BACKEND_V1_LIMITS.md).
 
@@ -214,4 +215,4 @@ Try one at a time and rerun `inspect check` and `targets check`:
 
 1. Add a `should` balance preference.
 2. Add a boolean forbidden-assignment param and hard exclusion.
-3. Add another weighted term to the same objective statement.
+3. Add another weighted term to the same objective statement, or label multiple objectives and configure manual scalarization weights.

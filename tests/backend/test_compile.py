@@ -662,6 +662,104 @@ Edge = [
     assert "C.uses[a,b]" in varmap
 
 
+def test_steiner_tree_requires_nonempty_terminals(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem SteinerTreeDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(V);
+  find T : SteinerTree(G, Terminals);
+  minimize count((u, v) in G.edges where T.has_edge(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SteinerTreeDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"]]
+
+[scenarios.baseline.params]
+Terminals = []
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="steiner_empty.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-steiner-empty"),
+        ),
+    )
+
+    assert any(
+        d.code == "QSOL3304" and "SteinerTree requires nonempty Terminals" in d.message
+        for d in unit.diagnostics
+    )
+
+
+def test_steiner_tree_builds_vertex_edge_connectivity(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem SteinerTreeDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(V);
+  find T : SteinerTree(G, Terminals);
+  must forall t in Terminals: T.has_vertex(t);
+  minimize count((u, v) in G.edges where T.has_edge(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SteinerTreeDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [["a", "b"], ["b", "c"]]
+
+[scenarios.baseline.params]
+Terminals = ["a", "c"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="steiner.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-steiner"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    varmap = json.loads(Path(unit.artifacts.varmap_path or "").read_text(encoding="utf-8"))
+    assert varmap["T.has_vertex[a]"] == "T.has_vertex(a)"
+    assert varmap["T.has_edge[a,b]"] == "T.has_edge(a,b)"
+    labels = set(unit.compiled_model.cqm.constraints) if unit.compiled_model else set()
+    assert "implicit_steiner_terminal:T:a" in labels
+    assert "implicit_steiner_tree_count:T" in labels
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {
@@ -1251,6 +1349,107 @@ V = ["a", "b"]
         d.code == "QSOL3201" and "multiple objective statements" in d.message
         for d in unit.diagnostics
     )
+
+
+def test_compile_manual_scalarizes_multiple_objectives(tmp_path: Path) -> None:
+    source = """
+problem MultiObjective {
+  set V;
+  find Pick : Subset(V);
+
+  minimize count(v in V where not Pick.has(v)) as missing;
+  minimize count(v in V where Pick.has(v)) as selected;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MultiObjective"
+
+[scenarios.baseline.sets]
+V = ["a", "b"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="multi_objective_manual.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-multi-objective-manual"),
+            qubo_policy="manual",
+            qubo_weights={"missing": 1000.0, "selected": 1.0},
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+
+
+def test_compile_auto_scalarization_reports_qsol3202(tmp_path: Path) -> None:
+    source = """
+problem MultiObjective {
+  set V;
+  find Pick : Subset(V);
+  minimize count(v in V where not Pick.has(v)) as missing;
+  minimize count(v in V where Pick.has(v)) as selected;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "MultiObjective"
+
+[scenarios.baseline.sets]
+V = ["a"]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="multi_objective_auto.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-multi-objective-auto"),
+            qubo_policy="auto",
+        ),
+    )
+
+    assert any(d.code == "QSOL3202" for d in unit.diagnostics)
+
+
+def test_cubic_terms_report_backend_shape_diagnostic(tmp_path: Path) -> None:
+    source = """
+problem Cubic {
+  find A : Int[0 .. 1];
+  find B : Int[0 .. 1];
+  find C : Int[0 .. 1];
+  minimize A * B * C;
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "Cubic"
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="cubic.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-cubic"),
+        ),
+    )
+
+    assert any(d.code == "QSOL3002" for d in unit.diagnostics)
 
 
 def test_compile_supports_bare_scalar_real_and_bool_params(tmp_path: Path) -> None:

@@ -1,0 +1,18 @@
+schema_version = "1"
+
+[entrypoint]
+scenario = "small"
+runtime = "local-dimod"
+backend = "dimod-cqm-v1"
+
+[scenarios.small]
+problem = "TutorialSteinerTree"
+
+[scenarios.small.sets]
+V = ["a", "b", "c", "d"]
+
+[scenarios.small.relations]
+Edge = [["a", "b"], ["b", "c"], ["b", "d"], ["c", "d"]]
+
+[scenarios.small.params]
+Terminals = ["a", "d"]

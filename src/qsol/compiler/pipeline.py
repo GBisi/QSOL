@@ -265,6 +265,8 @@ def check_target_support(text: str, *, options: CompileOptions) -> CompilationUn
         selection=selection,
         backend=backend,
         runtime=runtime,
+        qubo_policy=options.qubo_policy,
+        qubo_weights=options.qubo_weights,
     )
     unit.support_report = compat.report
     unit.compiled_model = compat.compiled_model

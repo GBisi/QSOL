@@ -111,6 +111,11 @@ problem GraphColoring {
 
 > For more on the QSOL syntax, see [QSOL Syntax Guide](docs/QSOL_SYNTAX.md). For the full standard library, see [stdlib reference](docs/STDLIB.md).
 
+For graph models, `use stdlib.graph;` exposes compiler-owned unknowns such as
+`Matching(G)`, `SteinerTree(G, Terminals)`, and Hamiltonian path/cycle forms.
+They keep graph semantics declarative while the backend owns the internal
+variables and connectivity encodings.
+
 ### 2. The Data (`graph_coloring.qsol.toml`)
 
 The **configuration file** (`.qsol.toml`) provides the concrete data for a specific instance of the problem. While the `.qsol` model describes the *structure* (sets, unknowns, constraints), the TOML file fills in the *values*: which scenario to run, what elements belong to each set, and the actual parameter values.

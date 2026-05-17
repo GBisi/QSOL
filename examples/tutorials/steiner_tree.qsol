@@ -1,0 +1,12 @@
+use stdlib.graph;
+
+problem TutorialSteinerTree {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(V);
+
+  find T : SteinerTree(G, Terminals);
+
+  minimize count((u, v) in G.edges where T.has_edge(u, v));
+}

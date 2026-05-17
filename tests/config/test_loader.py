@@ -10,6 +10,7 @@ from qsol.config.loader import (
     materialize_instance_payload,
     resolve_combine_mode,
     resolve_failure_policy,
+    resolve_objective_settings,
     resolve_output_format,
     resolve_runtime_options,
     resolve_selected_scenarios,
@@ -671,3 +672,43 @@ def test_resolve_output_format_and_runtime_options_from_entrypoint() -> None:
     assert resolve_runtime_options(
         config=config, cli_runtime_options={"num_reads": 10, "seed": 7}
     ) == {"sampler": "exact", "num_reads": 10, "seed": 7}
+
+
+def test_load_config_parses_objective_scalarization_settings(tmp_path: Path) -> None:
+    config_path = tmp_path / "objectives.qsol.toml"
+    _write_text(
+        config_path,
+        """
+        schema_version = "1"
+
+        [entrypoint.objectives]
+        qubo_policy = "manual"
+
+        [entrypoint.objectives.qubo_weights]
+        conflicts = 1000.0
+        used_colors = 1.0
+
+        [scenarios.base]
+
+        [scenarios.override.objectives]
+        qubo_policy = "auto"
+
+        [scenarios.override.objectives.qubo_weights]
+        used_colors = 2.0
+        """,
+    )
+
+    config = load_config(config_path)
+    assert resolve_objective_settings(config=config, scenario_name="base") == (
+        "manual",
+        {"conflicts": 1000.0, "used_colors": 1.0},
+    )
+    assert resolve_objective_settings(config=config, scenario_name="override") == (
+        "auto",
+        {"conflicts": 1000.0, "used_colors": 2.0},
+    )
+    payload = materialize_instance_payload(config=config, scenario_name="base")
+    assert payload["objectives"] == {
+        "qubo_policy": "manual",
+        "qubo_weights": {"conflicts": 1000.0, "used_colors": 1.0},
+    }

@@ -528,6 +528,45 @@ problem P {{
         )
 
 
+def test_steiner_tree_unknown_requires_graph_and_static_subset() -> None:
+    valid_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(V);
+  find T : SteinerTree(G, Terminals);
+  must forall (u, v) in G.edges: T.has_edge(u, v) or not T.has_edge(u, v);
+  must forall v in G.vertices: T.has_vertex(v) or not T.has_vertex(v);
+}
+"""
+    valid_unit = compile_source(valid_text, options=CompileOptions(filename="steiner_ok.qsol"))
+    assert not any(d.is_error for d in valid_unit.diagnostics)
+
+    wrong_subset_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  set W;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  param Terminals : StaticSubset(W);
+  find T : SteinerTree(G, Terminals);
+}
+"""
+    wrong_subset_unit = compile_source(
+        wrong_subset_text, options=CompileOptions(filename="steiner_bad_subset.qsol")
+    )
+    assert any(
+        d.code == "QSOL2001"
+        and "SteinerTree expects a StaticSubset whose parent set matches" in d.message
+        for d in wrong_subset_unit.diagnostics
+    )
+
+
 def test_hamiltonian_graph_unknowns_type_views() -> None:
     valid_text = """
 use stdlib.graph;

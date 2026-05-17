@@ -16,7 +16,7 @@ The `dimod-cqm-v1` backend targets Constrained Quadratic Models (CQM). This mean
 ## 2. Arithmetic Limitations
 
 *   **Addition/Subtraction**: Fully supported (`a + b`, `a - b`).
-*   **Multiplication**: Supported if the result is at most quadratic (e.g., `const * var` or `var * var`). Cubic terms (`var * var * var`) are **NOT** supported and will trigger `QSOL3001`.
+*   **Multiplication**: Supported if the result is at most quadratic (e.g., `const * var` or `var * var`). Unsupported multiplication shapes such as cubic terms (`var * var * var`) trigger `QSOL3002` or an expression-degree `QSOL3001` diagnostic.
 *   **Division**: Only supported if the divisor is a constant (e.g., `var / 2`). Division by variables is not supported.
 
 ## 3. Conditionals (`if-then-else`)
@@ -38,4 +38,4 @@ If you encounter `QSOL3001`, you have likely used a construct that cannot be low
 *   **Aggregate Bound Blowups**: Aggregate bounds are evaluated during grounding. Large static domains or relations can increase grounding time even though they do not add backend expression degree by themselves.
 *   **Global Helper Blowups**: `all_different` creates pairwise constraints over its finite domain. Large domains can produce quadratic constraint growth.
 *   **Unsupported Piecewise Contexts**: `maximize abs(e)`, `minimize min(...)`, `maximize max(...)`, `abs(e) >= C`, non-affine expressions that would exceed backend degree, and missing finite auxiliary bounds are rejected with `QSOL3101`.
-*   **Multiple Objectives**: More than one objective statement is rejected with `QSOL3201`. Combine terms explicitly in one weighted objective expression until a target supports ordered objectives or explicit scalarization policy.
+*   **Multiple Objectives**: More than one objective statement is rejected with `QSOL3201` unless config uses `qubo_policy = "manual"` and provides one `qubo_weights` entry for every objective label (or `objective_N` fallback name). `qubo_policy = "auto"` is reserved and reports `QSOL3202`.

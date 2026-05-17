@@ -152,6 +152,8 @@ compiler-owned:
 ```qsol
 find M : Matching(G);
 minimize count((u, v) in G.edges where M.has_edge(u, v));
+find C : HamiltonianCycle(G);
+minimize count((u, v) in G.edges where C.uses(u, v));
 ```
 
 *   **`Matching(G)`** expects an `UndirectedGraph` structure. It selects a set
@@ -164,6 +166,17 @@ minimize count((u, v) in G.edges where M.has_edge(u, v));
     connected tree over all vertices in `G.vertices`.
 *   **`Forest(G)`** has the same view and selects an acyclic subset of
     `G.edges`.
+*   **`SteinerTree(G, Terminals)`** expects an `UndirectedGraph` and a
+    `StaticSubset` whose parent set is the graph vertex set. It exposes
+    `has_edge(u, v)` and `has_vertex(v)`, selects all terminals, and connects
+    selected vertices as a tree.
+*   **`HamiltonianPath(G)`** expects an `UndirectedGraph` structure. It orders
+    every vertex exactly once and requires consecutive positions to be adjacent.
+*   **Views**: `at(pos: Real, v: Elem(V))` and
+    `uses(u: Elem(V), v: Elem(V))`. Positions are internal numeric positions
+    `1..size(G.vertices)`; users do not declare a positions set.
+*   **`HamiltonianCycle(G)`** has the same views and also requires the last
+    and first positions to be adjacent.
 
 For `dimod-cqm-v1`, `Matching(G)` creates one binary variable per grounded edge
 in `G.edges`. The backend adds incident-edge `<= 1` constraints only for
@@ -181,6 +194,19 @@ selected edge count to `size(G.vertices) - 1`, and adds internal rooted-flow
 connectivity constraints. `Forest(G)` creates one edge variable per grounded
 edge and adds internal acyclicity constraints. Both keep objective choices
 outside the unknown.
+
+`HamiltonianPath(G)` creates internal assignment variables `P.at[pos,vertex]`
+for every numeric position and grounded vertex. It constrains each position to
+contain exactly one vertex, each vertex to appear exactly once, and forbids
+non-adjacent consecutive vertex pairs. `HamiltonianCycle(G)` adds the same
+encoding plus wraparound non-adjacency constraints between the final and first
+positions. `uses(u, v)` is an edge-use view linked to adjacent position pairs.
+
+`SteinerTree(G, Terminals)` creates one vertex variable per grounded vertex and
+one edge variable per grounded edge. It requires nonempty terminals, selects
+every terminal vertex, gates selected edges by selected endpoints, routes
+internal connectivity flow from one terminal root, and enforces
+`sum(selected_edges) == sum(selected_vertices) - 1`.
 
 The graph module also keeps the older compiler-owned relation helpers:
 

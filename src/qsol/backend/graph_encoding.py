@@ -79,6 +79,12 @@ class GraphUnknownLabels:
         u, v = edge
         return f"{self.find_name}.has_edge({u},{v})"
 
+    def vertex_var(self, vertex: object) -> str:
+        return f"{self.find_name}.has_vertex[{vertex}]"
+
+    def vertex_meaning(self, vertex: object) -> str:
+        return f"{self.find_name}.has_vertex({vertex})"
+
 
 @dataclass(frozen=True, slots=True)
 class ConnectivityEncoding:
@@ -200,6 +206,130 @@ def add_rooted_connectivity_constraints(
         flow_labels=tuple(_flow_label(labels.find_name, u, v) for u, v in _oriented_edges(graph)),
         added_constraints=added,
     )
+
+
+def add_steiner_tree_constraints(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    graph: GraphData,
+    labels: GraphUnknownLabels,
+    binaries: dict[str, Any],
+    terminals: tuple[str, ...],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> int:
+    if not terminals:
+        diagnostics.append(
+            _graph_diagnostic(span, "QSOL3304", "SteinerTree requires nonempty Terminals")
+        )
+        return 0
+
+    missing = [vertex for vertex in terminals if vertex not in graph.vertices]
+    if missing:
+        diagnostics.append(
+            _graph_diagnostic(
+                span,
+                "QSOL3304",
+                f"SteinerTree terminal `{missing[0]}` is not a vertex of `{graph.name}`",
+            )
+        )
+        return 0
+
+    root = terminals[0]
+    selected_vertices = {
+        vertex: binaries[labels.vertex_var(vertex)]
+        for vertex in graph.vertices
+        if labels.vertex_var(vertex) in binaries
+    }
+    selected_edges = {
+        edge: binaries[labels.edge_var(edge)]
+        for edge in graph.edges
+        if labels.edge_var(edge) in binaries
+    }
+    if len(selected_vertices) != len(graph.vertices) or len(selected_edges) != len(graph.edges):
+        diagnostics.append(
+            _graph_diagnostic(
+                span,
+                "QSOL3303",
+                f"missing SteinerTree variables for `{labels.find_name}`",
+            )
+        )
+        return 0
+
+    added = 0
+    for terminal in terminals:
+        cqm.add_constraint(
+            selected_vertices[terminal] == 1.0,
+            label=f"implicit_steiner_terminal:{labels.find_name}:{terminal}",
+        )
+        added += 1
+
+    for u, v in graph.edges:
+        edge_var = selected_edges[(u, v)]
+        cqm.add_constraint(
+            edge_var - selected_vertices[u] <= 0.0,
+            label=f"implicit_steiner_edge_endpoint:{labels.find_name}:{u}:{v}:u",
+        )
+        cqm.add_constraint(
+            edge_var - selected_vertices[v] <= 0.0,
+            label=f"implicit_steiner_edge_endpoint:{labels.find_name}:{u}:{v}:v",
+        )
+        added += 2
+
+    edge_sum = sum(selected_edges.values(), 0.0)
+    vertex_sum = sum(selected_vertices.values(), 0.0)
+    cqm.add_constraint(
+        edge_sum - vertex_sum == -1.0,
+        label=f"implicit_steiner_tree_count:{labels.find_name}",
+    )
+    added += 1
+
+    max_flow = max(len(graph.vertices) - 1, 1)
+    flows: dict[tuple[str, str], Any] = {}
+    for u, v in _oriented_edges(graph):
+        label = _flow_label(labels.find_name, u, v)
+        flows[(u, v)] = dimod.Integer(label, lower_bound=0, upper_bound=max_flow)
+
+    for u, v in graph.edges:
+        edge_var = selected_edges[(u, v)]
+        for a, b in ((u, v), (v, u)):
+            _add_model_constraint(
+                cqm,
+                lhs=flows[(a, b)] - (max_flow * edge_var),
+                rhs=0,
+                sense="<=",
+                label=f"implicit_steiner_flow_capacity:{labels.find_name}:{a}:{b}",
+            )
+            added += 1
+
+    for vertex in graph.vertices:
+        inflow = sum(
+            (flows[(u, v)] for u, v in _oriented_edges(graph) if v == vertex),
+            0.0,
+        )
+        outflow = sum(
+            (flows[(u, v)] for u, v in _oriented_edges(graph) if u == vertex),
+            0.0,
+        )
+        if vertex == root:
+            _add_model_constraint(
+                cqm,
+                lhs=outflow - inflow - vertex_sum + 1,
+                rhs=0,
+                sense="==",
+                label=f"implicit_steiner_flow_balance:{labels.find_name}:{vertex}",
+            )
+        else:
+            _add_model_constraint(
+                cqm,
+                lhs=inflow - outflow - selected_vertices[vertex],
+                rhs=0,
+                sense="==",
+                label=f"implicit_steiner_flow_balance:{labels.find_name}:{vertex}",
+            )
+        added += 1
+
+    return added
 
 
 def add_maximal_matching_constraints(

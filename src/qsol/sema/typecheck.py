@@ -618,7 +618,7 @@ class TypeChecker:
             return BOOL
 
         if (
-            ref_name in {"Matching", "MaximalMatching", "SpanningTree", "Forest"}
+            ref_name in {"Matching", "MaximalMatching", "SpanningTree", "Forest", "SteinerTree"}
             and expr.name == "has_edge"
         ):
             if len(expr.args) != 2:
@@ -641,6 +641,28 @@ class TypeChecker:
                         diagnostics.append(
                             self._type_err(arg.span, f"expected element of `{expected_set}`")
                         )
+            return BOOL
+
+        if ref_name == "SteinerTree" and expr.name == "has_vertex":
+            graph_name = target_ty.ref.args[0] if target_ty.ref.args else ""
+            graph_symbol = scope.lookup(graph_name)
+            expected_set = ""
+            if (
+                graph_symbol is not None
+                and isinstance(graph_symbol.type, StructureInstanceType)
+                and graph_symbol.type.vertex_set is not None
+            ):
+                expected_set = graph_symbol.type.vertex_set
+            if len(expr.args) != 1:
+                diagnostics.append(
+                    self._type_err(expr.span, "SteinerTree.has_vertex expects one argument")
+                )
+            else:
+                arg_ty = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+                if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                    diagnostics.append(
+                        self._type_err(expr.args[0].span, f"expected element of `{expected_set}`")
+                    )
             return BOOL
 
         if ref_name in {"HamiltonianPath", "HamiltonianCycle"} and expr.name in {"at", "uses"}:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,3 +15,5 @@ class CompileOptions:
     runtime_id: str | None = None
     backend_id: str | None = None
     plugin_specs: tuple[str, ...] = ()
+    qubo_policy: Literal["error", "manual", "auto"] = "error"
+    qubo_weights: dict[str, float] | None = None

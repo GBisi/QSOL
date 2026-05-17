@@ -553,7 +553,7 @@ git push origin main
 - Test: `tests/backend/test_compile.py`
 - Docs: `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, `docs/STDLIB.md`, `docs/BACKEND.md`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Program:
 
@@ -585,7 +585,7 @@ uv run pytest tests/backend/test_compile.py::test_hamiltonian_path_builds_positi
 
 Expected: fail.
 
-- [ ] **Step 2: Implement sema/type support**
+- [x] **Step 2: Implement sema/type support**
 
 Views:
 
@@ -596,7 +596,7 @@ Views:
 
 Positions are internal numeric positions `1..|V|`; do not require users to declare a positions set.
 
-- [ ] **Step 3: Implement backend encoding**
+- [x] **Step 3: Implement backend encoding**
 
 Use assignment variables:
 
@@ -613,7 +613,10 @@ Constraints:
 
 This is O(n^2) variables and O(n^3) forbidden-pair constraints in dense worst case, but it is simple, correct, and inspectable.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
+
+Mandatory gates passed. Commit and push are intentionally not performed by the
+agent unless explicitly requested by the user.
 
 Run mandatory gates, then:
 
@@ -642,7 +645,7 @@ git push origin main
 - Test: `tests/backend/test_instance_and_codegen_branches.py`
 - Docs: `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, `docs/STDLIB.md`, `docs/BACKEND.md`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Program:
 
@@ -677,7 +680,7 @@ uv run pytest tests/backend/test_compile.py::test_steiner_tree_requires_nonempty
 
 Expected: fail.
 
-- [ ] **Step 2: Implement sema/type support**
+- [x] **Step 2: Implement sema/type support**
 
 `SteinerTree` takes:
 
@@ -689,7 +692,7 @@ Views:
 - `T.has_edge(u, v) -> Bool`
 - `T.has_vertex(v) -> Bool`
 
-- [ ] **Step 3: Implement backend encoding**
+- [x] **Step 3: Implement backend encoding**
 
 Variables:
 
@@ -710,7 +713,10 @@ sum(selected_edges) == sum(selected_vertices) - 1
 
 because connectivity plus this count enforces a tree on selected vertices.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
+
+Mandatory gates passed. Commit and push are intentionally not performed by the
+agent unless explicitly requested by the user.
 
 Run mandatory gates, then:
 
@@ -737,7 +743,7 @@ git push origin main
 - Test: `tests/cli/test_cli_commands.py`
 - Docs: `QSOL_reference.md`, `docs/BACKEND.md`, `docs/COMPILER.md`, `docs/CLI.md`, `docs/tutorials/03-compiling-running-and-reading-results.md`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Config:
 
@@ -766,7 +772,7 @@ uv run pytest tests/config/test_loader.py::test_objective_qubo_weights_parse tes
 
 Expected: fail.
 
-- [ ] **Step 2: Implement config model**
+- [x] **Step 2: Implement config model**
 
 Add:
 
@@ -777,7 +783,7 @@ qubo_weights: dict[str, float] = field(default_factory=dict)
 
 Support entrypoint defaults and scenario overrides.
 
-- [ ] **Step 3: Implement manual scalarization only**
+- [x] **Step 3: Implement manual scalarization only**
 
 For multiple objectives:
 
@@ -787,7 +793,10 @@ For multiple objectives:
 
 Do not guess weights.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
+
+Mandatory gates passed. Commit and push are intentionally not performed by the
+agent unless explicitly requested by the user.
 
 Run mandatory gates, then:
 
@@ -810,7 +819,7 @@ git push origin main
 - Test: `tests/cli/test_cli_commands.py`
 - Docs: `docs/BACKEND.md`, `docs/BACKEND_V1_LIMITS.md`, `docs/COMPILER.md`
 
-- [ ] **Step 1: Add failing diagnostics tests**
+- [x] **Step 1: Add failing diagnostics tests**
 
 Cases:
 
@@ -827,7 +836,7 @@ uv run pytest tests/backend/test_compile.py::test_cubic_terms_report_backend_sha
 
 Expected: fail for missing or vague diagnostics.
 
-- [ ] **Step 2: Add diagnostic family**
+- [x] **Step 2: Add diagnostic family**
 
 Use:
 
@@ -836,7 +845,10 @@ Use:
 - `QSOL3101`: existing piecewise limit;
 - `QSOL330x`: graph lowering/encoding issues.
 
-- [ ] **Step 3: Gate and commit**
+- [x] **Step 3: Gate and commit**
+
+Mandatory gates passed. Commit and push are intentionally not performed by the
+agent unless explicitly requested by the user.
 
 Run mandatory gates, then:
 
@@ -862,15 +874,18 @@ git push origin main
 - Modify: `README.md`
 - Test: `tests/cli/test_cli_commands.py`
 
-- [ ] **Step 1: Add examples**
+- [x] **Step 1: Add examples**
 
 Examples must compile with `dimod-cqm-v1` and have small deterministic scenario data.
 
-- [ ] **Step 2: Add examples to equivalence suite only when stable**
+- [x] **Step 2: Add examples to equivalence suite only when stable**
+
+Graph examples were added under `examples/tutorials/` but intentionally not
+added to the required equivalence suite to keep the suite fast and stable.
 
 Do not add slow graph examples to the required suite until runtime is acceptable.
 
-- [ ] **Step 3: Run final gates**
+- [x] **Step 3: Run final gates**
 
 Run:
 
@@ -882,7 +897,10 @@ uv run python examples/run_equivalence_suite.py
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
+
+Commit and push are intentionally not performed by the agent unless explicitly
+requested by the user.
 
 ```bash
 git add README.md docs examples tests

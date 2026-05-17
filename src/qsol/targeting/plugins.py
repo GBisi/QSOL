@@ -761,6 +761,7 @@ class DimodCQMBackendPlugin(BackendPlugin):
             "unknown.graph.maximal_matching.v1": "full",
             "unknown.graph.spanning_tree.v1": "full",
             "unknown.graph.forest.v1": "full",
+            "unknown.graph.steiner_tree.v1": "full",
             "unknown.graph.hamiltonian_path.v1": "full",
             "unknown.graph.hamiltonian_cycle.v1": "full",
             "unknown.custom.v1": "none",
@@ -804,8 +805,14 @@ class DimodCQMBackendPlugin(BackendPlugin):
                 )
         return issues
 
-    def compile_model(self, ground: GroundIR) -> CompiledModel:
-        codegen = DimodCodegen().compile(ground)
+    def compile_model(
+        self,
+        ground: GroundIR,
+        *,
+        qubo_policy: str = "error",
+        qubo_weights: Mapping[str, float] | None = None,
+    ) -> CompiledModel:
+        codegen = DimodCodegen().compile(ground, qubo_policy=qubo_policy, qubo_weights=qubo_weights)
         stats = dimod_model_stats(cqm=codegen.cqm, bqm=codegen.bqm)
         return CompiledModel(
             kind="cqm",

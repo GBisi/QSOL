@@ -5,7 +5,8 @@
 //   nonedge(Edge, u, v) -> not Edge(u, v) and not Edge(v, u)
 //
 // The compiler also recognizes stdlib-surfaced graph unknowns such as
-// Matching(G), MaximalMatching(G), SpanningTree(G), and Forest(G). Their
+// Matching(G), MaximalMatching(G), SpanningTree(G), Forest(G), SteinerTree(G, Terminals),
+// HamiltonianPath(G), and HamiltonianCycle(G). Their
 // implementations live in the compiler/backend because they need efficient
 // graph-indexed decision variables and constraints.
 //

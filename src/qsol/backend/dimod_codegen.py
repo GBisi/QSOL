@@ -15,6 +15,7 @@ from qsol.backend.graph_encoding import (
     add_forest_constraints,
     add_maximal_matching_constraints,
     add_rooted_connectivity_constraints,
+    add_steiner_tree_constraints,
 )
 from qsol.diag.diagnostic import Diagnostic, Severity
 from qsol.diag.source import Span
@@ -61,12 +62,19 @@ class CodegenResult:
 
 
 class DimodCodegen:
-    def compile(self, ground: ir.GroundIR) -> CodegenResult:
+    def compile(
+        self,
+        ground: ir.GroundIR,
+        *,
+        qubo_policy: str = "error",
+        qubo_weights: Mapping[str, float] | None = None,
+    ) -> CodegenResult:
         self._label_counter = 0
         cqm = _new_cqm()
         diagnostics: list[Diagnostic] = []
         varmap: dict[str, str] = {}
         binaries: dict[str, BinaryVar] = {}
+        weights = dict(qubo_weights or {})
 
         objective = 0.0
 
@@ -80,26 +88,16 @@ class DimodCodegen:
                     )
 
             if len(problem.objectives) > 1:
-                names = [
-                    objective_stmt.label or f"objective_{idx}"
-                    for idx, objective_stmt in enumerate(problem.objectives, start=1)
-                ]
-                diagnostics.append(
-                    Diagnostic(
-                        severity=Severity.ERROR,
-                        code="QSOL3201",
-                        message=(
-                            "multiple objective statements are not supported by backend "
-                            "`dimod-cqm-v1`"
-                        ),
-                        span=problem.objectives[0].span,
-                        notes=[f"objectives in source order: {', '.join(names)}"],
-                        help=[
-                            "Combine terms explicitly in one weighted objective expression.",
-                            "Keep separate objective labels for future ordered-objective backends.",
-                        ],
-                    )
+                objective_terms = self._objective_terms(
+                    problem,
+                    binaries,
+                    diagnostics,
+                    cqm,
+                    qubo_policy=qubo_policy,
+                    qubo_weights=weights,
                 )
+                for term in objective_terms:
+                    objective += term
             else:
                 for objective_stmt in problem.objectives:
                     expr_obj = self._num_expr(
@@ -149,6 +147,90 @@ class DimodCodegen:
             varmap=varmap,
             diagnostics=diagnostics,
         )
+
+    def _objective_terms(
+        self,
+        problem: ir.GroundProblem,
+        binaries: dict[str, BinaryVar],
+        diagnostics: list[Diagnostic],
+        cqm: dimod.ConstrainedQuadraticModel,
+        *,
+        qubo_policy: str,
+        qubo_weights: Mapping[str, float],
+    ) -> list[Any]:
+        names = [
+            objective_stmt.label or f"objective_{idx}"
+            for idx, objective_stmt in enumerate(problem.objectives, start=1)
+        ]
+        if qubo_policy == "auto":
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL3202",
+                    message="automatic objective scalarization is not implemented",
+                    span=problem.objectives[0].span,
+                    notes=[f"objectives in source order: {', '.join(names)}"],
+                    help=['Use `qubo_policy = "manual"` with explicit `qubo_weights`.'],
+                )
+            )
+            return []
+        if qubo_policy != "manual":
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL3201",
+                    message=(
+                        "multiple objective statements are not supported by backend "
+                        "`dimod-cqm-v1` without manual scalarization"
+                    ),
+                    span=problem.objectives[0].span,
+                    notes=[f"objectives in source order: {', '.join(names)}"],
+                    help=[
+                        "Combine terms explicitly in one weighted objective expression.",
+                        'Or configure `[entrypoint.objectives] qubo_policy = "manual"` with weights.',
+                    ],
+                )
+            )
+            return []
+
+        missing = [name for name in names if name not in qubo_weights]
+        unknown = sorted(set(qubo_weights) - set(names))
+        if missing or unknown:
+            notes = [f"objectives in source order: {', '.join(names)}"]
+            if missing:
+                notes.append(f"missing weights: {', '.join(missing)}")
+            if unknown:
+                notes.append(f"unknown weights: {', '.join(unknown)}")
+            diagnostics.append(
+                Diagnostic(
+                    severity=Severity.ERROR,
+                    code="QSOL3201",
+                    message="manual objective scalarization requires exactly one weight per objective",
+                    span=problem.objectives[0].span,
+                    notes=notes,
+                    help=["Use each objective label, or `objective_N` for unlabeled objectives."],
+                )
+            )
+            return []
+
+        terms: list[Any] = []
+        for name, objective_stmt in zip(names, problem.objectives, strict=True):
+            expr_obj = self._num_expr(
+                problem,
+                objective_stmt.expr,
+                binaries,
+                diagnostics,
+                env={},
+                cqm=cqm,
+            )
+            if expr_obj is None:
+                diagnostics.append(
+                    self._unsupported(objective_stmt.span, "unsupported objective expression")
+                )
+                continue
+            signed = expr_obj if objective_stmt.kind.value == "minimize" else -expr_obj
+            terms.append(float(qubo_weights[name]) * signed)
+        return terms
 
     def _declare_find_variables(
         self,
@@ -213,7 +295,7 @@ class DimodCodegen:
                         span=find.span,
                         diagnostics=diagnostics,
                     )
-            elif kind in {"Matching", "MaximalMatching", "SpanningTree", "Forest"}:
+            elif kind in {"Matching", "MaximalMatching", "SpanningTree", "Forest", "SteinerTree"}:
                 self._declare_matching_variables(problem, find, cqm, binaries, varmap, diagnostics)
             elif kind in {"HamiltonianPath", "HamiltonianCycle"}:
                 self._declare_hamiltonian_variables(
@@ -356,9 +438,15 @@ class DimodCodegen:
         varmap: dict[str, str],
         diagnostics: list[Diagnostic],
     ) -> None:
-        if len(find.unknown_type.args) != 1:
+        expected_args = 2 if find.unknown_type.kind == "SteinerTree" else 1
+        if len(find.unknown_type.args) != expected_args:
             diagnostics.append(
-                self._unsupported(find.span, "`Matching` expects one graph argument")
+                self._unsupported(
+                    find.span,
+                    "`SteinerTree` expects graph and terminals arguments"
+                    if find.unknown_type.kind == "SteinerTree"
+                    else "`Matching` expects one graph argument",
+                )
             )
             return
         graph_name = find.unknown_type.args[0]
@@ -367,6 +455,11 @@ class DimodCodegen:
             return
 
         labels = GraphUnknownLabels(find.name)
+        if find.unknown_type.kind == "SteinerTree":
+            for vertex in sorted(graph.vertices, key=str):
+                label = labels.vertex_var(vertex)
+                binaries[label] = _new_binary(label)
+                varmap[label] = labels.vertex_meaning(vertex)
         for edge in sorted(graph.edges, key=lambda item: tuple(str(part) for part in item)):
             label = labels.edge_var(edge)
             binaries[label] = _new_binary(label)
@@ -414,6 +507,23 @@ class DimodCodegen:
                 graph=graph,
                 labels=labels,
                 binaries=binaries,
+                span=find.span,
+                diagnostics=diagnostics,
+            )
+        elif find.unknown_type.kind == "SteinerTree":
+            terminal_name = find.unknown_type.args[1]
+            raw_terminals = problem.set_values.get(terminal_name)
+            if raw_terminals is None:
+                diagnostics.append(
+                    self._unsupported(find.span, f"missing StaticSubset `{terminal_name}`")
+                )
+                return
+            add_steiner_tree_constraints(
+                cqm,
+                graph=graph,
+                labels=labels,
+                binaries=binaries,
+                terminals=tuple(str(vertex) for vertex in raw_terminals),
                 span=find.span,
                 diagnostics=diagnostics,
             )
@@ -1339,7 +1449,13 @@ class DimodCodegen:
                 return left * right
             except TypeError:
                 diagnostics.append(
-                    self._unsupported(expr.span, "unsupported numeric multiplication operands")
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL3002",
+                        message="unsupported multiplication shape for backend `dimod-cqm-v1`",
+                        span=expr.span,
+                        help=["Rewrite products so backend expressions remain at most quadratic."],
+                    )
                 )
                 return None
         if isinstance(expr, ir.KDiv):
@@ -1574,7 +1690,7 @@ class DimodCodegen:
                 find is None
                 or not isinstance(find.decision_type, ir.KUnknownDecisionType)
                 or find.unknown_type.kind
-                not in {"Matching", "MaximalMatching", "SpanningTree", "Forest"}
+                not in {"Matching", "MaximalMatching", "SpanningTree", "Forest", "SteinerTree"}
             ):
                 return None
             a = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
@@ -1598,6 +1714,34 @@ class DimodCodegen:
                 )
             )
             return None
+        if expr.name == "has_vertex" and len(expr.args) == 1:
+            find = next(
+                (candidate for candidate in problem.finds if candidate.name == target), None
+            )
+            if (
+                find is None
+                or not isinstance(find.decision_type, ir.KUnknownDecisionType)
+                or find.unknown_type.kind != "SteinerTree"
+            ):
+                return None
+            vertex = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+            if vertex is None:
+                return None
+            graph_name = find.unknown_type.args[0] if find.unknown_type.args else ""
+            graph = GraphData.from_ground_problem(problem, graph_name, expr.span, diagnostics)
+            if graph is None:
+                return None
+            if vertex not in graph.vertices:
+                diagnostics.append(
+                    Diagnostic(
+                        severity=Severity.ERROR,
+                        code="QSOL3302",
+                        message=f"`{target}.has_vertex({vertex})` is not a vertex of `{graph_name}`",
+                        span=expr.span,
+                    )
+                )
+                return None
+            return GraphUnknownLabels(target).vertex_var(vertex)
         if expr.name in {"at", "uses"}:
             find = next(
                 (candidate for candidate in problem.finds if candidate.name == target), None
@@ -1777,9 +1921,14 @@ class DimodCodegen:
         return f"c:{span.line}:{span.col}:{span.end_line}:{span.end_col}:{self._label_counter}"
 
     def _unsupported(self, span: Span, message: str) -> Diagnostic:
+        code = "QSOL3001"
+        if "degree exceeds backend support" in message:
+            code = "QSOL3001"
+        elif "multiplication" in message:
+            code = "QSOL3002"
         return Diagnostic(
             severity=Severity.ERROR,
-            code="QSOL3001",
+            code=code,
             message=message,
             span=span,
             help=self._help_for_backend_message(message),

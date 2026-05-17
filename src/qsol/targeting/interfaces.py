@@ -28,7 +28,13 @@ class BackendPlugin(Protocol):
         self, ground: GroundIR, *, required_capabilities: Collection[str]
     ) -> list[SupportIssue]: ...
 
-    def compile_model(self, ground: GroundIR) -> CompiledModel: ...
+    def compile_model(
+        self,
+        ground: GroundIR,
+        *,
+        qubo_policy: str = "error",
+        qubo_weights: Mapping[str, float] | None = None,
+    ) -> CompiledModel: ...
 
     def export_model(
         self,

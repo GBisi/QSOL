@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 from qsol.diag.diagnostic import Severity
 from qsol.lower import ir
@@ -31,6 +31,8 @@ def extract_required_capabilities(ground: ir.GroundIR) -> set[str]:
                 capabilities.add("unknown.graph.spanning_tree.v1")
             elif kind == "Forest":
                 capabilities.add("unknown.graph.forest.v1")
+            elif kind == "SteinerTree":
+                capabilities.add("unknown.graph.steiner_tree.v1")
             elif kind == "HamiltonianPath":
                 capabilities.add("unknown.graph.hamiltonian_path.v1")
             elif kind == "HamiltonianCycle":
@@ -152,6 +154,8 @@ def check_pair_support(
     selection: TargetSelection,
     backend: BackendPlugin,
     runtime: RuntimePlugin,
+    qubo_policy: str = "error",
+    qubo_weights: Mapping[str, float] | None = None,
 ) -> CompatibilityResult:
     required = sorted(extract_required_capabilities(ground))
     backend_catalog = dict(backend.capability_catalog())
@@ -177,7 +181,9 @@ def check_pair_support(
 
     compiled_model = None
     if not issues:
-        compiled_model = backend.compile_model(ground)
+        compiled_model = backend.compile_model(
+            ground, qubo_policy=qubo_policy, qubo_weights=qubo_weights
+        )
         for diag in compiled_model.diagnostics:
             if diag.severity != Severity.ERROR:
                 continue

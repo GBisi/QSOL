@@ -133,6 +133,22 @@ $ qsol build examples/tutorials/first_program.qsol \
 
 See [Build Artifacts Deep Dive](#build-artifacts-deep-dive) for a detailed breakdown of each generated file.
 
+Multiple objective statements can be compiled by `dimod-cqm-v1` only when the
+configuration opts into manual scalarization:
+
+```toml
+[entrypoint.objectives]
+qubo_policy = "manual" # "error" (default), "manual", or reserved "auto"
+
+[entrypoint.objectives.qubo_weights]
+conflicts = 1000.0
+used_colors = 1.0
+```
+
+Weights use objective labels, or `objective_N` for unlabeled objectives.
+Scenario `[scenarios.<name>.objectives]` tables override/extend entrypoint
+settings.
+
 ---
 
 ### `qsol solve`
