@@ -464,7 +464,7 @@ git push origin main
 - Test: `tests/targeting/test_compatibility.py`
 - Docs: `QSOL_reference.md`, `docs/QSOL_SYNTAX.md`, `docs/STDLIB.md`, `docs/BACKEND.md`
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 Programs:
 
@@ -505,14 +505,14 @@ uv run pytest tests/backend/test_compile.py::test_spanning_tree_builds_connectiv
 
 Expected: fail.
 
-- [ ] **Step 2: Implement sema/type support**
+- [x] **Step 2: Implement sema/type support**
 
 Both unknowns:
 
 - require one `UndirectedGraph` argument;
 - expose `.has_edge(u, v) -> Bool`.
 
-- [ ] **Step 3: Implement backend encoding**
+- [x] **Step 3: Implement backend encoding**
 
 `SpanningTree(G)`:
 
@@ -525,7 +525,7 @@ Both unknowns:
 - reuse selected-edge variable allocation;
 - add internal forest/acyclic constraints.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
 
 Run mandatory gates, then:
 

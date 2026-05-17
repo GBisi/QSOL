@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from itertools import product
+from itertools import combinations, product
 
 from qsol.backend.graph_encoding import GraphData
 from qsol.lower import ir
@@ -63,6 +63,9 @@ def estimate_ground_ir(
         mapping_exactly_one = 0
         graph_matching_degree = 0
         graph_maximal_matching = 0
+        graph_spanning_tree_edge_count = 0
+        graph_spanning_tree_connectivity = 0
+        graph_forest_acyclic = 0
 
         for find in problem.finds:
             is_auxiliary = find.name.startswith("__qsol_")
@@ -92,32 +95,56 @@ def estimate_ground_ir(
                         "binary_variables": count,
                         "exactly_one_constraints": dom_count,
                     }
-                elif kind in {"Matching", "MaximalMatching"}:
+                elif kind in {"Matching", "MaximalMatching", "SpanningTree", "Forest"}:
                     graph_name = find.decision_type.unknown_type.args[0]
                     graph = GraphData.from_ground_problem(problem, graph_name, find.span, [])
                     edge_count = 0 if graph is None else len(graph.edges)
                     degree_constraints = 0
                     maximality_constraints = 0
+                    spanning_edge_count_constraints = 0
+                    connectivity_constraints = 0
+                    forest_constraints = 0
                     if graph is not None:
                         degree_constraints = sum(
                             1 for vertex in graph.vertices if len(graph.incident_edges(vertex)) > 1
                         )
                         if kind == "MaximalMatching":
                             maximality_constraints = edge_count
+                        elif kind == "SpanningTree":
+                            spanning_edge_count_constraints = 1 if graph.vertices else 0
+                            connectivity_constraints = (2 * edge_count) + len(graph.vertices)
+                        elif kind == "Forest":
+                            forest_constraints = _forest_constraint_count(graph)
                     cqm_binary += edge_count
+                    if kind == "SpanningTree":
+                        cqm_integer += 2 * edge_count
                     if is_auxiliary:
                         auxiliary_binary += edge_count
                     graph_matching_degree += degree_constraints
                     graph_maximal_matching += maximality_constraints
+                    graph_spanning_tree_edge_count += spanning_edge_count_constraints
+                    graph_spanning_tree_connectivity += connectivity_constraints
+                    graph_forest_acyclic += forest_constraints
                     decision_report[find.name] = {
                         "kind": kind,
                         "binary_variables": edge_count,
-                        "degree_constraints": degree_constraints,
                     }
+                    if kind in {"Matching", "MaximalMatching"}:
+                        decision_report[find.name]["degree_constraints"] = degree_constraints
                     if kind == "MaximalMatching":
                         decision_report[find.name]["maximality_constraints"] = (
                             maximality_constraints
                         )
+                    elif kind == "SpanningTree":
+                        decision_report[find.name]["flow_variables"] = 2 * edge_count
+                        decision_report[find.name]["edge_count_constraints"] = (
+                            spanning_edge_count_constraints
+                        )
+                        decision_report[find.name]["connectivity_constraints"] = (
+                            connectivity_constraints
+                        )
+                    elif kind == "Forest":
+                        decision_report[find.name]["acyclicity_constraints"] = forest_constraints
                 else:
                     decision_report[find.name] = {"kind": kind, "supported": False}
                 continue
@@ -154,6 +181,12 @@ def estimate_ground_ir(
             constraint_report["graph_matching_degree"] = graph_matching_degree
         if graph_maximal_matching:
             constraint_report["graph_maximal_matching"] = graph_maximal_matching
+        if graph_spanning_tree_edge_count:
+            constraint_report["graph_spanning_tree_edge_count"] = graph_spanning_tree_edge_count
+        if graph_spanning_tree_connectivity:
+            constraint_report["graph_spanning_tree_connectivity"] = graph_spanning_tree_connectivity
+        if graph_forest_acyclic:
+            constraint_report["graph_forest_acyclic"] = graph_forest_acyclic
 
         reports.append(
             EstimateReport(
@@ -208,6 +241,22 @@ def _indexed_count(problem: ir.GroundProblem, indices: tuple[str, ...]) -> int:
     ]
     for _values in product(*domains):
         count += 1
+    return count
+
+
+def _forest_constraint_count(graph: GraphData) -> int:
+    count = 0
+    vertices = tuple(graph.vertices)
+    for size in range(2, len(vertices) + 1):
+        for subset in combinations(vertices, size):
+            subset_values = frozenset(subset)
+            induced_edges = tuple(
+                edge
+                for edge in graph.edges
+                if edge[0] in subset_values and edge[1] in subset_values
+            )
+            if len(induced_edges) > size - 1:
+                count += 1
     return count
 
 

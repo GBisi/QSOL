@@ -492,6 +492,42 @@ problem P {
     )
 
 
+def test_tree_graph_unknowns_use_matching_graph_contract() -> None:
+    for unknown_name in ("SpanningTree", "Forest"):
+        valid_text = f"""
+use stdlib.graph;
+
+problem P {{
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find T : {unknown_name}(G);
+  must forall (u, v) in G.edges: T.has_edge(u, v) or not T.has_edge(u, v);
+}}
+"""
+        valid_unit = compile_source(
+            valid_text, options=CompileOptions(filename=f"{unknown_name}_ok.qsol")
+        )
+        assert not any(d.is_error for d in valid_unit.diagnostics)
+
+        wrong_arg_text = f"""
+use stdlib.graph;
+
+problem P {{
+  set V;
+  find T : {unknown_name}(V);
+}}
+"""
+        wrong_arg_unit = compile_source(
+            wrong_arg_text, options=CompileOptions(filename=f"{unknown_name}_bad_arg.qsol")
+        )
+        assert any(
+            d.code == "QSOL2001"
+            and f"{unknown_name} expects an UndirectedGraph structure argument" in d.message
+            for d in wrong_arg_unit.diagnostics
+        )
+
+
 def test_graph_structure_rejects_wrong_relation_shape() -> None:
     ternary_text = """
 problem P {

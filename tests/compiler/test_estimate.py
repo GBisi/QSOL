@@ -264,3 +264,50 @@ problem MaximalMatchingEstimate {
     }
     assert report["constraints"]["graph_matching_degree"] == 1
     assert report["constraints"]["graph_maximal_matching"] == 2
+
+
+def test_estimate_reports_tree_graph_unknowns() -> None:
+    source = """
+use stdlib.graph;
+
+problem TreeEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find T : SpanningTree(G);
+  find F : Forest(G);
+  minimize count((u, v) in G.edges where T.has_edge(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="tree_estimate.qsol",
+            instance_payload={
+                "problem": "TreeEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Edge": [["A", "B"], ["A", "C"], ["B", "C"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+
+    assert report["decision_variables"]["T"] == {
+        "kind": "SpanningTree",
+        "binary_variables": 3,
+        "flow_variables": 6,
+        "edge_count_constraints": 1,
+        "connectivity_constraints": 9,
+    }
+    assert report["decision_variables"]["F"] == {
+        "kind": "Forest",
+        "binary_variables": 3,
+        "acyclicity_constraints": 1,
+    }
+    assert report["decisions"]["binary"] == 6
+    assert report["decisions"]["integer"] == 6
+    assert report["constraints"]["graph_spanning_tree_edge_count"] == 1
+    assert report["constraints"]["graph_spanning_tree_connectivity"] == 9
+    assert report["constraints"]["graph_forest_acyclic"] == 1

@@ -63,6 +63,27 @@ sum(M.has_edge(e) for e incident to u or v) >= 1
 for every `(u, v)` in `G.edges`. This means no unselected edge can be added
 without touching an already selected edge.
 
+### `SpanningTree(G)` and `Forest(G)`
+
+`SpanningTree(G)` and `Forest(G)` use one binary variable per grounded edge in
+`G.edges`, with the same `T.has_edge(u, v)` view shape.
+
+`SpanningTree(G)` adds:
+
+* `sum(T.has_edge(e) for e in G.edges) == size(G.vertices) - 1`;
+* rooted connectivity constraints using internal integer flow variables over
+  both orientations of each grounded edge.
+
+`Forest(G)` adds internal subset edge-count constraints:
+
+```text
+selected_edges_inside(S) <= |S| - 1
+```
+
+for vertex subsets that have enough induced edges to form a cycle. This
+encoding is exact but can be large on dense graphs; it is an internal backend
+encoding, not public cycle-domain syntax.
+
 Internal graph encoders also provide reusable building blocks for later graph
 unknowns:
 

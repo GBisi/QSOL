@@ -160,6 +160,10 @@ minimize count((u, v) in G.edges where M.has_edge(u, v));
 *   **`MaximalMatching(G)`** has the same view and also enforces maximality:
     for every edge in `G.edges`, the edge is selected or at least one endpoint
     is already incident to a selected edge.
+*   **`SpanningTree(G)`** has the same view and selects edges forming one
+    connected tree over all vertices in `G.vertices`.
+*   **`Forest(G)`** has the same view and selects an acyclic subset of
+    `G.edges`.
 
 For `dimod-cqm-v1`, `Matching(G)` creates one binary variable per grounded edge
 in `G.edges`. The backend adds incident-edge `<= 1` constraints only for
@@ -171,6 +175,12 @@ component.
 `MaximalMatching(G)` reuses the same edge variables and degree constraints, then
 adds one maximality constraint per grounded edge. It does not impose a minimum
 or maximum cardinality objective by itself.
+
+`SpanningTree(G)` creates one edge variable per grounded edge, constrains the
+selected edge count to `size(G.vertices) - 1`, and adds internal rooted-flow
+connectivity constraints. `Forest(G)` creates one edge variable per grounded
+edge and adds internal acyclicity constraints. Both keep objective choices
+outside the unknown.
 
 The graph module also keeps the older compiler-owned relation helpers:
 

@@ -254,6 +254,8 @@ QSOL has scalar, element, comprehension, and decision-abstraction types.
 | `Mapping(A -> B)` | Unknown total mapping from `A` to `B` | `find Assign : Mapping(Tasks -> Workers);` |
 | `Matching(G)` | Unknown matching over an undirected graph | `find M : Matching(G);` |
 | `MaximalMatching(G)` | Unknown maximal matching over an undirected graph | `find M : MaximalMatching(G);` |
+| `SpanningTree(G)` | Unknown spanning tree over an undirected graph | `find T : SpanningTree(G);` |
+| `Forest(G)` | Unknown forest over an undirected graph | `find F : Forest(G);` |
 | User unknown | Custom abstraction from `unknown` | `find Tour : Permutation(Cities);` |
 
 Numeric literals are typed as `Real`. Integer decision bounds use numeric
@@ -326,6 +328,8 @@ find Pick : Subset(Items);
 find Assign : Mapping(Tasks -> Workers);
 find M : Matching(G);
 find MM : MaximalMatching(G);
+find T : SpanningTree(G);
+find F : Forest(G);
 find Enabled : Bool;
 find Load[Machines] : Int[0 .. Capacity];
 ```
@@ -341,6 +345,9 @@ Semantics:
   by compiler/backend graph encoders for efficient edge-indexed variables.
 - `MaximalMatching(G)` has the same view and additionally enforces that every
   edge in `G.edges` is selected or touches a selected edge.
+- `SpanningTree(G)` has the same view and selects a connected acyclic edge set
+  spanning all vertices in `G.vertices`.
+- `Forest(G)` has the same view and selects an acyclic edge set.
 - Scalar `Bool` creates one binary decision.
 - Scalar `Int[lo .. hi]` creates a bounded integer CQM decision. Indexed integer
   finds create one bounded integer decision per grounded index.
@@ -640,13 +647,16 @@ use stdlib.graph;
 
 find M : Matching(G);
 find MM : MaximalMatching(G);
+find T : SpanningTree(G);
+find F : Forest(G);
 ```
 
 `Matching(G)` requires an `UndirectedGraph`. It creates a matching decision over
 `G.edges` and exposes `M.has_edge(u, v)`. `MaximalMatching(G)` uses the same
 view and additionally enforces that no extra graph edge can be added to the
-matching. Cardinality, weights, and optimization direction belong in ordinary
-`minimize` or `maximize` objectives.
+matching. `SpanningTree(G)` and `Forest(G)` also use `has_edge`; they enforce
+tree/acyclic graph structure while leaving cardinality, weights, and
+optimization direction in ordinary `minimize` or `maximize` objectives.
 
 ## 14. TOML Configuration Format
 

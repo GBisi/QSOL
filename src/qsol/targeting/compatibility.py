@@ -27,6 +27,10 @@ def extract_required_capabilities(ground: ir.GroundIR) -> set[str]:
                 capabilities.add("unknown.graph.matching.v1")
             elif kind == "MaximalMatching":
                 capabilities.add("unknown.graph.maximal_matching.v1")
+            elif kind == "SpanningTree":
+                capabilities.add("unknown.graph.spanning_tree.v1")
+            elif kind == "Forest":
+                capabilities.add("unknown.graph.forest.v1")
             else:
                 capabilities.add("unknown.custom.v1")
 

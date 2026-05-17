@@ -339,7 +339,12 @@ class Resolver:
                                     help=help_items,
                                 )
                             )
-                elif unknown_ref.kind in {"Matching", "MaximalMatching"}:
+                elif unknown_ref.kind in {
+                    "Matching",
+                    "MaximalMatching",
+                    "SpanningTree",
+                    "Forest",
+                }:
                     if len(unknown_ref.args) != 1:
                         diagnostics.append(
                             Diagnostic(

@@ -5,9 +5,9 @@
 //   nonedge(Edge, u, v) -> not Edge(u, v) and not Edge(v, u)
 //
 // The compiler also recognizes stdlib-surfaced graph unknowns such as
-// Matching(G) and MaximalMatching(G). Their implementations live in the
-// compiler/backend because they need efficient graph-indexed decision variables
-// and constraints.
+// Matching(G), MaximalMatching(G), SpanningTree(G), and Forest(G). Their
+// implementations live in the compiler/backend because they need efficient
+// graph-indexed decision variables and constraints.
 //
 // This module exists so models can declare `use stdlib.graph;` explicitly.
 predicate graph_module_loaded(): Bool = true;

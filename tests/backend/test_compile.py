@@ -470,6 +470,103 @@ Edge = [
     }
 
 
+def test_spanning_tree_builds_connectivity_and_edge_count(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem SpanningTreeDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find T : SpanningTree(G);
+  minimize count((u, v) in G.edges where T.has_edge(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "SpanningTreeDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="spanning_tree.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-spanning-tree"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert unit.artifacts.stats["cqm_binary_variables"] == 2
+    assert unit.artifacts.stats["cqm_integer_variables"] == 4
+    assert unit.artifacts.stats["num_constraints"] >= 8
+
+
+def test_forest_rejects_selected_cycle(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem ForestDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find F : Forest(G);
+  minimize count((u, v) in G.edges where F.has_edge(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "ForestDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["a", "c"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="forest.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-forest"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.compiled_model is not None
+    cqm = unit.compiled_model.cqm
+    cycle_sample = {"F.has_edge[a,b]": 1, "F.has_edge[a,c]": 1, "F.has_edge[b,c]": 1}
+    path_sample = {"F.has_edge[a,b]": 1, "F.has_edge[a,c]": 1, "F.has_edge[b,c]": 0}
+    assert not cqm.check_feasible(cycle_sample)
+    assert cqm.check_feasible(path_sample)
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {

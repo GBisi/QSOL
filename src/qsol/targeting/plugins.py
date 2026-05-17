@@ -759,6 +759,8 @@ class DimodCQMBackendPlugin(BackendPlugin):
             "unknown.mapping.v1": "full",
             "unknown.graph.matching.v1": "full",
             "unknown.graph.maximal_matching.v1": "full",
+            "unknown.graph.spanning_tree.v1": "full",
+            "unknown.graph.forest.v1": "full",
             "unknown.custom.v1": "none",
             "decision.scalar.bool.v1": "full",
             "decision.scalar.int.v1": "full",

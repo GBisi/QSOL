@@ -197,6 +197,8 @@ find Pick : Subset(Workers);
 find Assign : Mapping(Workers -> Tasks);
 find M : Matching(G); // from `use stdlib.graph;`
 find MM : MaximalMatching(G); // from `use stdlib.graph;`
+find T : SpanningTree(G); // from `use stdlib.graph;`
+find F : Forest(G); // from `use stdlib.graph;`
 find Perm : Permutation(Workers); // from `use stdlib.permutation;`
 find Enabled : Bool;
 find Makespan : Int[0 .. 100];
@@ -222,6 +224,9 @@ Scalar decisions are also valid:
   one selected edge.
 - `MaximalMatching(G)` has the same `has_edge` view and also ensures no
   additional graph edge can be added without violating the matching property.
+- `SpanningTree(G)` has the same `has_edge` view and selects a connected tree
+  spanning all vertices.
+- `Forest(G)` has the same `has_edge` view and selects an acyclic edge set.
 
 `Int` bounds must be scenario-time integer constants. They may use literals,
 numeric params, indexed params over static binders, `size(Set)`,
