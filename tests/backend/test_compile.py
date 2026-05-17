@@ -567,6 +567,101 @@ Edge = [
     assert cqm.check_feasible(path_sample)
 
 
+def test_hamiltonian_path_builds_position_assignment(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem HamiltonianPathDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find P : HamiltonianPath(G);
+  minimize count(v in G.vertices where P.at(1, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "HamiltonianPathDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="hamiltonian_path.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-hamiltonian-path"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert unit.artifacts.stats["cqm_binary_variables"] == 19
+    assert unit.artifacts.stats["num_constraints"] >= 12
+
+
+def test_hamiltonian_cycle_adds_wraparound_adjacency(tmp_path: Path) -> None:
+    source = """
+use stdlib.graph;
+
+problem HamiltonianCycleDemo {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find C : HamiltonianCycle(G);
+  minimize count((u, v) in G.edges where C.uses(u, v));
+}
+"""
+    instance_payload = tomllib.loads(
+        """
+schema_version = "1"
+
+[scenarios.baseline]
+problem = "HamiltonianCycleDemo"
+
+[scenarios.baseline.sets]
+V = ["a", "b", "c"]
+
+[scenarios.baseline.relations]
+Edge = [
+  ["a", "b"],
+  ["a", "c"],
+  ["b", "c"],
+]
+""".lstrip()
+    )
+
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="hamiltonian_cycle.qsol",
+            instance_payload=instance_payload["scenarios"]["baseline"],
+            outdir=str(tmp_path / "out-hamiltonian-cycle"),
+            output_format="qubo",
+        ),
+    )
+
+    assert not any(d.is_error for d in unit.diagnostics)
+    assert unit.artifacts is not None
+    assert unit.artifacts.stats["cqm_binary_variables"] == 30
+    varmap = json.loads(Path(unit.artifacts.varmap_path or "").read_text(encoding="utf-8"))
+    assert "C.at[1,a]" in varmap
+    assert "C.uses[a,b]" in varmap
+
+
 def test_graph_structure_rejects_loops() -> None:
     source = """
 problem Loopy {

@@ -31,6 +31,10 @@ def extract_required_capabilities(ground: ir.GroundIR) -> set[str]:
                 capabilities.add("unknown.graph.spanning_tree.v1")
             elif kind == "Forest":
                 capabilities.add("unknown.graph.forest.v1")
+            elif kind == "HamiltonianPath":
+                capabilities.add("unknown.graph.hamiltonian_path.v1")
+            elif kind == "HamiltonianCycle":
+                capabilities.add("unknown.graph.hamiltonian_cycle.v1")
             else:
                 capabilities.add("unknown.custom.v1")
 

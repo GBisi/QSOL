@@ -227,6 +227,45 @@ def test_extract_required_capabilities_includes_tree_graph_unknowns() -> None:
     assert "unknown.graph.forest.v1" in required
 
 
+def test_extract_required_capabilities_includes_hamiltonian_graph_unknowns() -> None:
+    span = _span()
+    ground = ir.GroundIR(
+        span=span,
+        problems=(
+            ir.GroundProblem(
+                span=span,
+                name="P",
+                set_values={"G.vertices": ("a", "b"), "V": ("a", "b")},
+                relation_values={"G.edges": (("a", "b"),)},
+                params={},
+                finds=(
+                    ir.KFindDecl(
+                        span=span,
+                        name="Pth",
+                        unknown_type=ast.UnknownTypeRef(
+                            span=span, kind="HamiltonianPath", args=("G",)
+                        ),
+                    ),
+                    ir.KFindDecl(
+                        span=span,
+                        name="Cyc",
+                        unknown_type=ast.UnknownTypeRef(
+                            span=span, kind="HamiltonianCycle", args=("G",)
+                        ),
+                    ),
+                ),
+                constraints=(),
+                objectives=(),
+            ),
+        ),
+    )
+
+    required = extract_required_capabilities(ground)
+
+    assert "unknown.graph.hamiltonian_path.v1" in required
+    assert "unknown.graph.hamiltonian_cycle.v1" in required
+
+
 def test_check_pair_support_full_support() -> None:
     ground = _ground_program()
     selection = TargetSelection(runtime_id="local-dimod", backend_id="dimod-cqm-v1")

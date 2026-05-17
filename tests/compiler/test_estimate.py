@@ -311,3 +311,53 @@ problem TreeEstimate {
     assert report["constraints"]["graph_spanning_tree_edge_count"] == 1
     assert report["constraints"]["graph_spanning_tree_connectivity"] == 9
     assert report["constraints"]["graph_forest_acyclic"] == 1
+
+
+def test_estimate_reports_hamiltonian_graph_unknowns() -> None:
+    source = """
+use stdlib.graph;
+
+problem HamiltonianEstimate {
+  set V;
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find P : HamiltonianPath(G);
+  find C : HamiltonianCycle(G);
+  minimize count((u, v) in G.edges where C.uses(u, v));
+}
+"""
+    unit = compile_source(
+        source,
+        options=CompileOptions(
+            filename="hamiltonian_estimate.qsol",
+            instance_payload={
+                "problem": "HamiltonianEstimate",
+                "sets": {"V": ["A", "B", "C"]},
+                "relations": {"Edge": [["A", "B"], ["A", "C"], ["B", "C"]]},
+            },
+        ),
+    )
+
+    assert unit.ground_ir is not None
+    report = estimate_ground_ir(unit.ground_ir)[0].to_dict()
+
+    assert report["decision_variables"]["P"] == {
+        "kind": "HamiltonianPath",
+        "at_variables": 9,
+        "uses_variables": 3,
+        "transition_variables": 12,
+        "assignment_constraints": 6,
+        "adjacency_constraints": 0,
+        "uses_link_constraints": 39,
+    }
+    assert report["decision_variables"]["C"] == {
+        "kind": "HamiltonianCycle",
+        "at_variables": 9,
+        "uses_variables": 3,
+        "transition_variables": 18,
+        "assignment_constraints": 6,
+        "adjacency_constraints": 0,
+        "uses_link_constraints": 57,
+    }
+    assert report["constraints"]["graph_hamiltonian_assignment"] == 12
+    assert report["constraints"]["graph_hamiltonian_uses_link"] == 96

@@ -215,10 +215,137 @@ class DimodCodegen:
                     )
             elif kind in {"Matching", "MaximalMatching", "SpanningTree", "Forest"}:
                 self._declare_matching_variables(problem, find, cqm, binaries, varmap, diagnostics)
+            elif kind in {"HamiltonianPath", "HamiltonianCycle"}:
+                self._declare_hamiltonian_variables(
+                    problem, find, cqm, binaries, varmap, diagnostics
+                )
             else:
                 diagnostics.append(
                     self._unsupported(find.span, f"unsupported unknown kind `{kind}`")
                 )
+
+    def _declare_hamiltonian_variables(
+        self,
+        problem: ir.GroundProblem,
+        find: ir.KFindDecl,
+        cqm: dimod.ConstrainedQuadraticModel,
+        binaries: dict[str, BinaryVar],
+        varmap: dict[str, str],
+        diagnostics: list[Diagnostic],
+    ) -> None:
+        if len(find.unknown_type.args) != 1:
+            diagnostics.append(
+                self._unsupported(
+                    find.span, f"`{find.unknown_type.kind}` expects one graph argument"
+                )
+            )
+            return
+        graph_name = find.unknown_type.args[0]
+        graph = GraphData.from_ground_problem(problem, graph_name, find.span, diagnostics)
+        if graph is None:
+            return
+
+        positions = tuple(str(pos) for pos in range(1, len(graph.vertices) + 1))
+        for pos in positions:
+            for vertex in graph.vertices:
+                label = self._hamiltonian_at_label(find.name, pos, vertex)
+                binaries[label] = _new_binary(label)
+                varmap[label] = f"{find.name}.at({pos},{vertex})"
+        for edge in graph.edges:
+            label = self._hamiltonian_uses_label(find.name, edge[0], edge[1])
+            binaries[label] = _new_binary(label)
+            varmap[label] = f"{find.name}.uses({edge[0]},{edge[1]})"
+
+        for pos in positions:
+            cqm.add_constraint(
+                sum(
+                    (
+                        binaries[self._hamiltonian_at_label(find.name, pos, vertex)]
+                        for vertex in graph.vertices
+                    ),
+                    0.0,
+                )
+                == 1.0,
+                label=f"implicit_hamiltonian_position:{find.name}:{pos}",
+            )
+        for vertex in graph.vertices:
+            cqm.add_constraint(
+                sum(
+                    (
+                        binaries[self._hamiltonian_at_label(find.name, pos, vertex)]
+                        for pos in positions
+                    ),
+                    0.0,
+                )
+                == 1.0,
+                label=f"implicit_hamiltonian_vertex:{find.name}:{vertex}",
+            )
+
+        adjacent_position_pairs = tuple(zip(positions, positions[1:], strict=False))
+        if find.unknown_type.kind == "HamiltonianCycle" and len(positions) > 1:
+            adjacent_position_pairs = (*adjacent_position_pairs, (positions[-1], positions[0]))
+
+        for left_pos, right_pos in adjacent_position_pairs:
+            for left in graph.vertices:
+                for right in graph.vertices:
+                    if left == right or graph.edge_key(left, right) is not None:
+                        continue
+                    cqm.add_constraint(
+                        binaries[self._hamiltonian_at_label(find.name, left_pos, left)]
+                        + binaries[self._hamiltonian_at_label(find.name, right_pos, right)]
+                        <= 1.0,
+                        label=(
+                            f"implicit_hamiltonian_adjacency:{find.name}:"
+                            f"{left_pos}:{right_pos}:{left}:{right}"
+                        ),
+                    )
+
+        for edge in graph.edges:
+            terms = []
+            u, v = edge
+            for left_pos, right_pos in adjacent_position_pairs:
+                forward = self._hamiltonian_transition_label(find.name, left_pos, right_pos, u, v)
+                reverse = self._hamiltonian_transition_label(find.name, left_pos, right_pos, v, u)
+                binaries[forward] = _new_binary(forward)
+                binaries[reverse] = _new_binary(reverse)
+                self._link_binary_product(
+                    cqm,
+                    result=binaries[forward],
+                    left=binaries[self._hamiltonian_at_label(find.name, left_pos, u)],
+                    right=binaries[self._hamiltonian_at_label(find.name, right_pos, v)],
+                    label_prefix=f"implicit_hamiltonian_transition:{forward}",
+                )
+                self._link_binary_product(
+                    cqm,
+                    result=binaries[reverse],
+                    left=binaries[self._hamiltonian_at_label(find.name, left_pos, v)],
+                    right=binaries[self._hamiltonian_at_label(find.name, right_pos, u)],
+                    label_prefix=f"implicit_hamiltonian_transition:{reverse}",
+                )
+                terms.append(binaries[forward])
+                terms.append(binaries[reverse])
+            self._add_numeric_constraint(
+                cqm,
+                lhs=binaries[self._hamiltonian_uses_label(find.name, u, v)],
+                rhs=sum(terms, 0.0),
+                op="=",
+                label=f"implicit_hamiltonian_uses:{find.name}:{u}:{v}",
+                span=find.span,
+                diagnostics=diagnostics,
+            )
+
+    def _link_binary_product(
+        self,
+        cqm: dimod.ConstrainedQuadraticModel,
+        *,
+        result: BinaryVar,
+        left: BinaryVar,
+        right: BinaryVar,
+        label_prefix: str,
+    ) -> None:
+        cqm.add_constraint(result - left <= 0, label=f"{label_prefix}:left")
+        cqm.add_constraint(result - right <= 0, label=f"{label_prefix}:right")
+        cqm.add_constraint(result - left - right >= -1, label=f"{label_prefix}:both")
 
     def _declare_matching_variables(
         self,
@@ -1471,6 +1598,63 @@ class DimodCodegen:
                 )
             )
             return None
+        if expr.name in {"at", "uses"}:
+            find = next(
+                (candidate for candidate in problem.finds if candidate.name == target), None
+            )
+            if (
+                find is None
+                or not isinstance(find.decision_type, ir.KUnknownDecisionType)
+                or find.unknown_type.kind not in {"HamiltonianPath", "HamiltonianCycle"}
+            ):
+                return None
+            graph_name = find.unknown_type.args[0] if find.unknown_type.args else ""
+            graph = GraphData.from_ground_problem(problem, graph_name, expr.span, diagnostics)
+            if graph is None:
+                return None
+            if expr.name == "at" and len(expr.args) == 2:
+                pos = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+                vertex = self._resolve_name_arg(problem, expr.args[1], diagnostics, env)
+                if pos is None or vertex is None:
+                    return None
+                if pos not in {str(idx) for idx in range(1, len(graph.vertices) + 1)}:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL3302",
+                            message=f"`{target}.at({pos}, {vertex})` uses an invalid position",
+                            span=expr.span,
+                        )
+                    )
+                    return None
+                if vertex not in graph.vertices:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL3302",
+                            message=f"`{target}.at({pos}, {vertex})` uses an invalid vertex",
+                            span=expr.span,
+                        )
+                    )
+                    return None
+                return self._hamiltonian_at_label(target, pos, vertex)
+            if expr.name == "uses" and len(expr.args) == 2:
+                a = self._resolve_name_arg(problem, expr.args[0], diagnostics, env)
+                b = self._resolve_name_arg(problem, expr.args[1], diagnostics, env)
+                if a is None or b is None:
+                    return None
+                edge = graph.edge_key(a, b)
+                if edge is None:
+                    diagnostics.append(
+                        Diagnostic(
+                            severity=Severity.ERROR,
+                            code="QSOL3302",
+                            message=f"`{target}.uses({a}, {b})` is not an edge of `{graph_name}`",
+                            span=expr.span,
+                        )
+                    )
+                    return None
+                return self._hamiltonian_uses_label(target, edge[0], edge[1])
         return None
 
     def _int_bounds(self, decision_type: ir.KIntDecisionType) -> tuple[int | None, int | None]:
@@ -1571,6 +1755,22 @@ class DimodCodegen:
 
     def _mapping_label(self, name: str, a: object, b: object) -> str:
         return f"{name}.is[{a},{b}]"
+
+    def _hamiltonian_at_label(self, name: str, pos: object, vertex: object) -> str:
+        return f"{name}.at[{pos},{vertex}]"
+
+    def _hamiltonian_uses_label(self, name: str, u: object, v: object) -> str:
+        return f"{name}.uses[{u},{v}]"
+
+    def _hamiltonian_transition_label(
+        self,
+        name: str,
+        left_pos: object,
+        right_pos: object,
+        left_vertex: object,
+        right_vertex: object,
+    ) -> str:
+        return f"__qsol_ham_transition:{name}:{left_pos}:{right_pos}:{left_vertex}:{right_vertex}"
 
     def _constraint_label(self, span: Span) -> str:
         self._label_counter += 1

@@ -344,6 +344,8 @@ class Resolver:
                     "MaximalMatching",
                     "SpanningTree",
                     "Forest",
+                    "HamiltonianPath",
+                    "HamiltonianCycle",
                 }:
                     if len(unknown_ref.args) != 1:
                         diagnostics.append(

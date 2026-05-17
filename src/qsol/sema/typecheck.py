@@ -643,6 +643,50 @@ class TypeChecker:
                         )
             return BOOL
 
+        if ref_name in {"HamiltonianPath", "HamiltonianCycle"} and expr.name in {"at", "uses"}:
+            graph_name = target_ty.ref.args[0] if target_ty.ref.args else ""
+            graph_symbol = scope.lookup(graph_name)
+            expected_set = ""
+            if (
+                graph_symbol is not None
+                and isinstance(graph_symbol.type, StructureInstanceType)
+                and graph_symbol.type.vertex_set is not None
+            ):
+                expected_set = graph_symbol.type.vertex_set
+
+            if expr.name == "at":
+                if len(expr.args) != 2:
+                    diagnostics.append(
+                        self._type_err(expr.span, f"{ref_name}.at expects two arguments")
+                    )
+                else:
+                    pos_ty = self._expr_type(expr.args[0], scope, binders, diagnostics, tmap)
+                    if not is_numeric(pos_ty):
+                        diagnostics.append(
+                            self._type_err(expr.args[0].span, "position must be numeric")
+                        )
+                    vertex_ty = self._expr_type(expr.args[1], scope, binders, diagnostics, tmap)
+                    if not isinstance(vertex_ty, ElemOfType) or vertex_ty.set_name != expected_set:
+                        diagnostics.append(
+                            self._type_err(
+                                expr.args[1].span, f"expected element of `{expected_set}`"
+                            )
+                        )
+                return BOOL
+
+            if len(expr.args) != 2:
+                diagnostics.append(
+                    self._type_err(expr.span, f"{ref_name}.uses expects two arguments")
+                )
+            else:
+                for arg in expr.args:
+                    arg_ty = self._expr_type(arg, scope, binders, diagnostics, tmap)
+                    if not isinstance(arg_ty, ElemOfType) or arg_ty.set_name != expected_set:
+                        diagnostics.append(
+                            self._type_err(arg.span, f"expected element of `{expected_set}`")
+                        )
+            return BOOL
+
         for arg in expr.args:
             self._expr_type(arg, scope, binders, diagnostics, tmap)
         return BOOL

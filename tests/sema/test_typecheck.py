@@ -528,6 +528,44 @@ problem P {{
         )
 
 
+def test_hamiltonian_graph_unknowns_type_views() -> None:
+    valid_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  set Pos = Range(1, size(V));
+  relation Edge(u: V, v: V);
+  structure G = UndirectedGraph(V, Edge);
+  find Pth : HamiltonianPath(G);
+  find Cyc : HamiltonianCycle(G);
+  must forall p in Pos: forall v in G.vertices: Pth.at(p, v) or not Pth.at(p, v);
+  must forall (u, v) in G.edges: Cyc.uses(u, v) or not Cyc.uses(u, v);
+}
+"""
+    valid_unit = compile_source(
+        valid_text, options=CompileOptions(filename="hamiltonian_views_ok.qsol")
+    )
+    assert not any(d.is_error for d in valid_unit.diagnostics)
+
+    wrong_arg_text = """
+use stdlib.graph;
+
+problem P {
+  set V;
+  find H : HamiltonianPath(V);
+}
+"""
+    wrong_arg_unit = compile_source(
+        wrong_arg_text, options=CompileOptions(filename="hamiltonian_bad_arg.qsol")
+    )
+    assert any(
+        d.code == "QSOL2001"
+        and "HamiltonianPath expects an UndirectedGraph structure argument" in d.message
+        for d in wrong_arg_unit.diagnostics
+    )
+
+
 def test_graph_structure_rejects_wrong_relation_shape() -> None:
     ternary_text = """
 problem P {

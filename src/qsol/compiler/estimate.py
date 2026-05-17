@@ -66,6 +66,9 @@ def estimate_ground_ir(
         graph_spanning_tree_edge_count = 0
         graph_spanning_tree_connectivity = 0
         graph_forest_acyclic = 0
+        graph_hamiltonian_assignment = 0
+        graph_hamiltonian_adjacency = 0
+        graph_hamiltonian_uses_link = 0
 
         for find in problem.finds:
             is_auxiliary = find.name.startswith("__qsol_")
@@ -145,6 +148,44 @@ def estimate_ground_ir(
                         )
                     elif kind == "Forest":
                         decision_report[find.name]["acyclicity_constraints"] = forest_constraints
+                elif kind in {"HamiltonianPath", "HamiltonianCycle"}:
+                    graph_name = find.decision_type.unknown_type.args[0]
+                    graph = GraphData.from_ground_problem(problem, graph_name, find.span, [])
+                    vertex_count = 0 if graph is None else len(graph.vertices)
+                    edge_count = 0 if graph is None else len(graph.edges)
+                    adjacent_pair_count = 0
+                    nonedge_ordered_count = 0
+                    if graph is not None:
+                        adjacent_pair_count = (
+                            vertex_count
+                            if kind == "HamiltonianCycle" and vertex_count > 1
+                            else max(vertex_count - 1, 0)
+                        )
+                        nonedge_ordered_count = sum(
+                            1
+                            for left in graph.vertices
+                            for right in graph.vertices
+                            if left != right and graph.edge_key(left, right) is None
+                        )
+                    at_variables = vertex_count * vertex_count
+                    uses_variables = edge_count
+                    transition_variables = 2 * edge_count * adjacent_pair_count
+                    assignment_constraints = 2 * vertex_count
+                    adjacency_constraints = adjacent_pair_count * nonedge_ordered_count
+                    uses_link_constraints = edge_count + (3 * transition_variables)
+                    cqm_binary += at_variables + uses_variables + transition_variables
+                    graph_hamiltonian_assignment += assignment_constraints
+                    graph_hamiltonian_adjacency += adjacency_constraints
+                    graph_hamiltonian_uses_link += uses_link_constraints
+                    decision_report[find.name] = {
+                        "kind": kind,
+                        "at_variables": at_variables,
+                        "uses_variables": uses_variables,
+                        "transition_variables": transition_variables,
+                        "assignment_constraints": assignment_constraints,
+                        "adjacency_constraints": adjacency_constraints,
+                        "uses_link_constraints": uses_link_constraints,
+                    }
                 else:
                     decision_report[find.name] = {"kind": kind, "supported": False}
                 continue
@@ -187,6 +228,12 @@ def estimate_ground_ir(
             constraint_report["graph_spanning_tree_connectivity"] = graph_spanning_tree_connectivity
         if graph_forest_acyclic:
             constraint_report["graph_forest_acyclic"] = graph_forest_acyclic
+        if graph_hamiltonian_assignment:
+            constraint_report["graph_hamiltonian_assignment"] = graph_hamiltonian_assignment
+        if graph_hamiltonian_adjacency:
+            constraint_report["graph_hamiltonian_adjacency"] = graph_hamiltonian_adjacency
+        if graph_hamiltonian_uses_link:
+            constraint_report["graph_hamiltonian_uses_link"] = graph_hamiltonian_uses_link
 
         reports.append(
             EstimateReport(
