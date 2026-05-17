@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Any
 
 import dimod
@@ -79,6 +80,12 @@ class GraphUnknownLabels:
         return f"{self.find_name}.has_edge({u},{v})"
 
 
+@dataclass(frozen=True, slots=True)
+class ConnectivityEncoding:
+    flow_labels: tuple[str, ...]
+    added_constraints: int
+
+
 def add_degree_at_most_one_constraints(
     cqm: dimod.ConstrainedQuadraticModel,
     *,
@@ -111,6 +118,88 @@ def add_degree_at_most_one_constraints(
             continue
         added += 1
     return added
+
+
+def add_rooted_connectivity_constraints(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    graph: GraphData,
+    labels: GraphUnknownLabels,
+    binaries: dict[str, Any],
+    root: object,
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> ConnectivityEncoding:
+    root_key = str(root)
+    if root_key not in graph.vertices:
+        diagnostics.append(
+            _graph_diagnostic(
+                span, "QSOL3303", f"connectivity root `{root_key}` is not in graph `{graph.name}`"
+            )
+        )
+        return ConnectivityEncoding(flow_labels=(), added_constraints=0)
+
+    capacity = max(len(graph.vertices) - 1, 1)
+    flow_vars: dict[tuple[str, str], Any] = {}
+    for u, v in _oriented_edges(graph):
+        label = _flow_label(labels.find_name, u, v)
+        flow_vars[(u, v)] = dimod.Integer(label, lower_bound=0, upper_bound=capacity)
+
+    added = 0
+    for u, v in _oriented_edges(graph):
+        edge = graph.edge_key(u, v)
+        if edge is None:
+            continue
+        selected = binaries.get(labels.edge_var(edge))
+        if selected is None:
+            diagnostics.append(
+                _graph_diagnostic(
+                    span,
+                    "QSOL3303",
+                    f"missing selected-edge variable for `{labels.find_name}`",
+                )
+            )
+            continue
+        _add_model_constraint(
+            cqm,
+            lhs=flow_vars[(u, v)],
+            rhs=capacity * selected,
+            sense="<=",
+            label=f"implicit_connectivity_capacity:{labels.find_name}:{u}:{v}",
+        )
+        added += 1
+
+    for vertex in graph.vertices:
+        inflow = sum(
+            (var for (u, v), var in flow_vars.items() if v == vertex),
+            0.0,
+        )
+        outflow = sum(
+            (var for (u, v), var in flow_vars.items() if u == vertex),
+            0.0,
+        )
+        if vertex == root_key:
+            _add_model_constraint(
+                cqm,
+                lhs=outflow - inflow,
+                rhs=len(graph.vertices) - 1,
+                sense="==",
+                label=f"implicit_connectivity_balance:{labels.find_name}:{vertex}",
+            )
+        else:
+            _add_model_constraint(
+                cqm,
+                lhs=inflow - outflow,
+                rhs=1,
+                sense="==",
+                label=f"implicit_connectivity_balance:{labels.find_name}:{vertex}",
+            )
+        added += 1
+
+    return ConnectivityEncoding(
+        flow_labels=tuple(_flow_label(labels.find_name, u, v) for u, v in _oriented_edges(graph)),
+        added_constraints=added,
+    )
 
 
 def add_maximal_matching_constraints(
@@ -157,6 +246,69 @@ def add_maximal_matching_constraints(
             continue
         added += 1
     return added
+
+
+def add_forest_constraints(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    graph: GraphData,
+    labels: GraphUnknownLabels,
+    binaries: dict[str, Any],
+    span: Span,
+    diagnostics: list[Diagnostic],
+) -> int:
+    added = 0
+    vertices = tuple(graph.vertices)
+    for size in range(2, len(vertices) + 1):
+        for subset in combinations(vertices, size):
+            subset_values = frozenset(subset)
+            induced_edges = tuple(
+                edge
+                for edge in graph.edges
+                if edge[0] in subset_values and edge[1] in subset_values
+            )
+            if len(induced_edges) <= size - 1:
+                continue
+            terms = []
+            for edge in induced_edges:
+                label = labels.edge_var(edge)
+                if label not in binaries:
+                    diagnostics.append(
+                        _graph_diagnostic(
+                            span,
+                            "QSOL3303",
+                            f"missing selected-edge variable for `{labels.find_name}`",
+                        )
+                    )
+                    continue
+                terms.append(binaries[label])
+            if not terms:
+                continue
+            cqm.add_constraint(
+                sum(terms, 0.0) <= size - 1,
+                label=f"implicit_forest:{labels.find_name}:{':'.join(subset)}",
+            )
+            added += 1
+    return added
+
+
+def _oriented_edges(graph: GraphData) -> tuple[tuple[str, str], ...]:
+    return tuple((u, v) for edge in graph.edges for u, v in (edge, (edge[1], edge[0])))
+
+
+def _flow_label(find_name: str, u: object, v: object) -> str:
+    return f"__qsol_flow:{find_name}:{u}:{v}"
+
+
+def _add_model_constraint(
+    cqm: dimod.ConstrainedQuadraticModel,
+    *,
+    lhs: Any,
+    rhs: Any,
+    sense: str,
+    label: str,
+) -> None:
+    cqm.add_constraint_from_model(lhs - rhs, sense=sense, rhs=0.0, label=label)
 
 
 def _graph_diagnostic(span: Span, code: str, message: str) -> Diagnostic:

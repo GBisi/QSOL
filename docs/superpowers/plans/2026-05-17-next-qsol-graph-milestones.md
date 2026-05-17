@@ -397,7 +397,7 @@ git push origin main
 - Test: `tests/backend/test_compile.py`
 - Docs: `docs/BACKEND.md`, `docs/CODEBASE.md`
 
-- [ ] **Step 1: Add failing tests for connected and forest encoders**
+- [x] **Step 1: Add failing tests for connected and forest encoders**
 
 Tests should use tiny grounded graphs:
 
@@ -413,7 +413,7 @@ uv run pytest tests/backend/test_graph_encoding.py::test_connectivity_encoder_us
 
 Expected: fail.
 
-- [ ] **Step 2: Implement rooted flow connectivity**
+- [x] **Step 2: Implement rooted flow connectivity**
 
 Encoding:
 
@@ -425,17 +425,17 @@ Encoding:
 
 Keep orientation internal. Do not add user-visible orientation APIs.
 
-- [ ] **Step 3: Implement forest acyclicity**
+- [x] **Step 3: Implement forest acyclicity**
 
 KISS first encoding:
 
 - selected edge count <= selected vertex count - number_of_components is hard without component variables;
-- use order/depth variables for selected edges if simpler to express in CQM;
-- if the simple generic forest encoding is too large or fragile, defer public `Forest(G)` until `SpanningTree(G)` is working.
+- use internal subset edge-count constraints `selected_edges_inside(S) <= |S| - 1`;
+- keep this exponential encoding internal and documented until estimator warnings are added.
 
 Decision rule: correctness beats compactness; variable count must be reported.
 
-- [ ] **Step 4: Gate and commit**
+- [x] **Step 4: Gate and commit**
 
 Run mandatory gates, then:
 

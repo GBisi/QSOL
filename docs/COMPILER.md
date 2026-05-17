@@ -82,7 +82,10 @@ adds one maximality constraint per grounded edge.
 The reusable graph encoding helpers live in `qsol.backend.graph_encoding`.
 They centralize canonical undirected edge lookup, incident-edge enumeration,
 graph-unknown variable labels, and small graph constraint emitters so future
-stdlib graph unknowns can share the same grounded graph semantics.
+stdlib graph unknowns can share the same grounded graph semantics. Connectivity
+is encoded with internal rooted flow variables, and forest acyclicity is encoded
+with internal subset edge-count constraints. Both are implementation details;
+QSOL source still has no public orientation or all-cycles syntax.
 
 Bounded `Int` decisions are checked for groundability in sema and evaluated in grounding. Valid bounds may use static params, indexed params over static binders, `size(Set)`, `size(Relation)`, static `sum`/`count`, static `if` expressions, relation membership over static values, and arithmetic. Bounds that depend on decisions are rejected before backend code generation.
 

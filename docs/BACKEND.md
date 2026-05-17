@@ -63,6 +63,18 @@ sum(M.has_edge(e) for e incident to u or v) >= 1
 for every `(u, v)` in `G.edges`. This means no unselected edge can be added
 without touching an already selected edge.
 
+Internal graph encoders also provide reusable building blocks for later graph
+unknowns:
+
+* rooted connectivity uses internal integer flow variables over both
+  orientations of each grounded undirected edge, with capacity gated by selected
+  edge variables;
+* forest acyclicity uses subset edge-count constraints of the form
+  `selected_edges_inside(S) <= |S| - 1`.
+
+These encoders are compiler/backend internals. They do not add public graph
+orientation syntax or a user-facing all-cycles domain.
+
 ### Scalar Decisions
 
 ```qsol

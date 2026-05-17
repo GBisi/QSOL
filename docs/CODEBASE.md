@@ -123,6 +123,12 @@ Backend graph encoders use `QSOL330x` diagnostics for grounded graph data or
 graph-unknown encoding failures, for example a graph unknown referencing a graph
 that did not materialize during grounding.
 
+`src/qsol/backend/graph_encoding.py` owns shared graph encoding utilities:
+canonical undirected edge lookup, graph unknown labels, matching/maximality
+constraints, rooted connectivity flow constraints, and internal forest
+acyclicity constraints. These utilities are backend internals and should not
+leak orientation or cycle-enumeration syntax into QSOL source.
+
 ## 8. Test Suite Map
 
 - `tests/parser/`: grammar + AST builder
